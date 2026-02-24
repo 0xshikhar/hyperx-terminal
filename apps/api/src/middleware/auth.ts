@@ -64,7 +64,7 @@ export async function requireAuth(
     }
 
     return true;
-  } catch (error) {
+  } catch {
     reply.status(401).send({ error: "Invalid or expired token" });
     return false;
   }
@@ -75,7 +75,7 @@ export async function requireAuth(
  */
 export async function optionalAuth(
   req: FastifyRequest,
-  reply: FastifyReply
+  _reply: FastifyReply
 ): Promise<boolean> {
   const token = extractToken(req);
   

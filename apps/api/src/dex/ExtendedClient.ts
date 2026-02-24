@@ -13,8 +13,6 @@ import type {
   ExtendedTrade,
   ExtendedAccountInfo,
   ExtendedCreateOrderRequest,
-  OrderSide,
-  OrderType,
 } from "@hyperx/types/dex";
 
 export interface ExtendedClientOptions extends DEXConfig {

@@ -9,7 +9,7 @@ import type { MetricPayload } from "@hyperx/types/api";
 import { env } from "./config/env";
 import { prisma } from "./db/client";
 import { registerRateLimit } from "./middleware/rateLimit";
-import { requireAuth, optionalAuth } from "./middleware/auth.js";
+import { requireAuth } from "./middleware/auth.js";
 import { authRoutes } from "./routes/auth.js";
 import { z } from "zod";
 import { createNotification, formatNotifAmount } from "./services/notifications.service.js";
@@ -556,7 +556,9 @@ app.post("/api/orders", async (req, reply) => {
           amount: body.data.size,
         });
       }
-    } catch {}
+    } catch {
+      // allowed to fail silently — notification delivery is best-effort
+    }
     return { id };
   } catch (error) {
     reply.status(500);
@@ -800,7 +802,7 @@ function mapParadexFunding(raw: Record<string, unknown>) {
   return { id, market, rate, payment, time };
 }
 
-app.get("/api/positions", async (req, reply) => {
+app.get("/api/positions", async (req, _reply) => {
   const network = getParadexNetwork(req);
   const client = getParadexClient(network);
 
@@ -1093,5 +1095,7 @@ app.get("/api/dex/health", async () => {
   const health = await orderRouter.healthCheck();
   return { exchanges: health };
 });
+
+await app.listen({ port: PORT, host: "0.0.0.0" });
 
 await app.listen({ port: PORT, host: "0.0.0.0" });

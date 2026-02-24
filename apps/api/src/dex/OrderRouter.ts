@@ -15,7 +15,6 @@ import type {
   RouteLeg,
   OrderRouteDecision,
   OrderSide,
-  OrderType,
 } from "@hyperx/types/dex";
 import { toParadexMarketSymbol } from "@hyperx/types/common";
 import { ExtendedClient } from "./ExtendedClient.js";

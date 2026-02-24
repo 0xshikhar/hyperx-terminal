@@ -106,7 +106,9 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
             type: "info",
           });
         }
-      } catch {}
+      } catch {
+        // allowed to fail silently — notification delivery is best-effort
+      }
 
       return {
         token,
@@ -169,7 +171,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       });
 
       return { token };
-    } catch (error) {
+    } catch {
       reply.status(401);
       return {
         error: "unauthorized",

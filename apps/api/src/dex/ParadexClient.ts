@@ -14,8 +14,6 @@ import type {
   ParadexPosition,
   ParadexBalance,
   ParadexCreateOrderRequest,
-  OrderSide,
-  OrderType,
 } from "@hyperx/types/dex";
 
 import { ec, shortString, typedData } from "starknet";
