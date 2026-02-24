@@ -1,9 +1,8 @@
 import { useEffect, useMemo } from "react";
-import { createReferenceOrderbook } from "@/lib/mockMarketData";
 import { wsClient } from "@/services/wsClient";
 import { useOrderbookStore, type OrderbookLevel } from "@/store/orderbookStore";
 import { useOrdersStore } from "@/store/ordersStore";
-import { useMarketStore } from "@/store/marketStore";
+import { useNetworkStore } from "@/store/networkStore";
 import { normalizeMarketSymbol } from "@hyperx/types/common";
 
 type OrderBookRow = {
@@ -61,9 +60,7 @@ const aggregateLevels = (levels: OrderbookLevel[], aggregation: number, side: "b
 
 export function useOrderBook(market: string) {
   const normalizedMarket = useMemo(() => normalizeMarketSymbol(market), [market]);
-  const marketSnapshot = useMarketStore((state) =>
-    state.markets.find((entry) => entry.symbol === normalizedMarket)
-  );
+  const network = useNetworkStore((s) => s.network);
   const aggregation = useOrderbookStore((state) => state.aggregation);
   const setAggregation = useOrderbookStore((state) => state.setAggregation);
   const bids = useOrderbookStore((state) => state.bids);
@@ -72,11 +69,11 @@ export function useOrderBook(market: string) {
 
   useEffect(() => {
     useOrderbookStore.getState().setMarket(normalizedMarket);
-    wsClient.subscribe("orderbook", normalizedMarket);
+    wsClient.subscribe("orderbook", normalizedMarket, network);
     return () => {
-      wsClient.unsubscribe("orderbook", normalizedMarket);
+      wsClient.unsubscribe("orderbook", normalizedMarket, network);
     };
-  }, [normalizedMarket]);
+  }, [normalizedMarket, network]);
 
   const minePriceSet = useMemo(() => {
     const prices = openOrders
@@ -95,13 +92,8 @@ export function useOrderBook(market: string) {
     return set;
   }, [openOrders, normalizedMarket, aggregation]);
 
-  const referenceLevels = useMemo(
-    () => createReferenceOrderbook(marketSnapshot?.lastPrice ?? 100),
-    [marketSnapshot?.lastPrice]
-  );
-
-  const sourceBids = bids.length > 0 ? bids : referenceLevels.bids;
-  const sourceAsks = asks.length > 0 ? asks : referenceLevels.asks;
+  const sourceBids = bids;
+  const sourceAsks = asks;
 
   const aggregatedBids = useMemo(
     () => aggregateLevels(sourceBids, aggregation, "bid"),
@@ -141,6 +133,6 @@ export function useOrderBook(market: string) {
     askRows,
     aggregatedBids,
     aggregatedAsks,
-    isReference: bids.length === 0 || asks.length === 0,
+    isReference: false,
   };
 }

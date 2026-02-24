@@ -38,6 +38,8 @@ export type StatusMessage = {
   type: "status";
   blockHeight?: number;
   gasPrice?: string;
+  network?: "testnet" | "mainnet";
+  networkStatus?: "healthy" | "degraded" | "down";
   timestamp: number;
 };
 
@@ -73,12 +75,12 @@ export const makeCandlesChannel = (market: string, interval: CandleInterval) =>
 
 export type SubscribeMessage = {
   type: "subscribe";
-  channels: { channel: SubscribableChannel | CandlesChannel; market?: string }[];
+  channels: { channel: SubscribableChannel | CandlesChannel; market?: string; network?: "testnet" | "mainnet" }[];
 };
 
 export type UnsubscribeMessage = {
   type: "unsubscribe";
-  channels: { channel: SubscribableChannel | CandlesChannel; market?: string }[];
+  channels: { channel: SubscribableChannel | CandlesChannel; market?: string; network?: "testnet" | "mainnet" }[];
 };
 
 export type ClientMessage = SubscribeMessage | UnsubscribeMessage | { type: "ping"; timestamp: number };

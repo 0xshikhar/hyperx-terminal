@@ -1,6 +1,5 @@
 import { create } from "zustand";
 import { listOpenPositions } from "@/services/apiClient/positions.api";
-import { useTradingModeStore } from "@/store/tradingModeStore";
 
 export type PositionSide = "long" | "short";
 
@@ -54,48 +53,6 @@ const buildPnlById = (positions: Position[]) =>
     positions.map((position) => [position.id, { pnl: position.pnl, pnlPercent: position.pnlPercent }])
   );
 
-const seedPositions: Position[] = [
-  {
-    id: "pos-btc-1",
-    market: "BTC-USD",
-    side: "long" as PositionSide,
-    size: 0.25,
-    entryPrice: 94200,
-    markPrice: 95410,
-    leverage: 8,
-    margin: 0,
-    openedAt: "2026-03-08T00:20:00Z",
-    pnl: 0,
-    pnlPercent: 0,
-  },
-  {
-    id: "pos-eth-1",
-    market: "ETH-USD",
-    side: "short" as PositionSide,
-    size: 3.1,
-    entryPrice: 4810,
-    markPrice: 4762,
-    leverage: 6,
-    margin: 0,
-    openedAt: "2026-03-08T00:10:00Z",
-    pnl: 0,
-    pnlPercent: 0,
-  },
-  {
-    id: "pos-strk-1",
-    market: "STRK-USD",
-    side: "long" as PositionSide,
-    size: 1200,
-    entryPrice: 2.12,
-    markPrice: 2.34,
-    leverage: 4,
-    margin: 0,
-    openedAt: "2026-03-07T23:40:00Z",
-    pnl: 0,
-    pnlPercent: 0,
-  },
-].map(normalizePosition);
-
 const canHydrate = (delta: PositionDelta): delta is Position =>
   typeof delta.market === "string" &&
   (delta.side === "long" || delta.side === "short") &&
@@ -105,13 +62,9 @@ const canHydrate = (delta: PositionDelta): delta is Position =>
   typeof delta.leverage === "number" &&
   typeof delta.openedAt === "string";
 
-function getInitialPositions(): Position[] {
-  return useTradingModeStore.getState().mode === "real" ? [] : [...seedPositions];
-}
-
 export const usePositionsStore = create<PositionsState>()((set) => ({
-  positions: getInitialPositions().sort((a, b) => b.openedAt.localeCompare(a.openedAt)),
-  pnlById: buildPnlById(getInitialPositions()),
+  positions: [],
+  pnlById: {},
   isLoading: false,
   error: null,
   setSnapshot: (positions) => {

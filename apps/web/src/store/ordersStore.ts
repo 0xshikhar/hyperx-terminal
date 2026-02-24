@@ -1,6 +1,5 @@
 import { create } from "zustand";
 import { listOpenOrders } from "@/services/apiClient/positions.api";
-import { useTradingModeStore } from "@/store/tradingModeStore";
 import type { TradeOrder } from "@/components/trade-form/TradeForm";
 
 export type OrderSide = "buy" | "sell";
@@ -60,51 +59,6 @@ const normalizeOrderStatus = (status: string): OrderLifecycleStatus => {
   }
 };
 
-const createTimestampedOrder = (order: Omit<Order, "createdAt" | "updatedAt">): Order => ({
-  ...order,
-  createdAt: now(),
-  updatedAt: now(),
-});
-
-const seedOrders: Order[] = [
-  createTimestampedOrder({
-    id: "ord-btc-1",
-    exchangeOrderId: "ex-btc-1",
-    market: "BTC-USD",
-    side: "buy",
-    type: "limit",
-    price: 94750,
-    size: 0.12,
-    status: "open",
-    filledSize: 0,
-    source: "api",
-  }),
-  createTimestampedOrder({
-    id: "ord-eth-1",
-    exchangeOrderId: "ex-eth-1",
-    market: "ETH-USD",
-    side: "sell",
-    type: "limit",
-    price: 4888,
-    size: 2,
-    status: "partially_filled",
-    filledSize: 0.65,
-    source: "api",
-  }),
-  createTimestampedOrder({
-    id: "ord-strk-1",
-    exchangeOrderId: "ex-strk-1",
-    market: "STRK-USD",
-    side: "buy",
-    type: "stop",
-    price: 2.2,
-    size: 900,
-    status: "open",
-    filledSize: 0,
-    source: "api",
-  }),
-];
-
 const updateOrder = (
   orders: Order[],
   id: string,
@@ -136,7 +90,7 @@ function canFill(order: Order) {
 }
 
 export const useOrdersStore = create<OrdersState>()((set) => ({
-  openOrders: useTradingModeStore.getState().mode === "real" ? [] : seedOrders,
+  openOrders: [],
   isLoading: false,
   error: null,
 
@@ -246,9 +200,8 @@ export const useOrdersStore = create<OrdersState>()((set) => ({
         updatedAt: now(),
         source: "api",
       }));
-      const mode = useTradingModeStore.getState().mode;
       set({
-        openOrders: mapped.length > 0 ? mapped : (mode === "real" ? [] : seedOrders),
+        openOrders: mapped.length > 0 ? mapped : [],
         isLoading: false,
       });
     } catch (error) {

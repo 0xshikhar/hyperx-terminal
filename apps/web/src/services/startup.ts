@@ -97,6 +97,6 @@ async function hydrateMarkets() {
       useMarketStore.getState().setMarkets(normalized);
     }
   } catch {
-    // Keep seeded local snapshots when API market bootstrap fails.
+    // API market bootstrap failed, using empty state.
   }
 }

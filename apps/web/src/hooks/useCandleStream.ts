@@ -1,6 +1,4 @@
 import { useEffect, useMemo, useState } from "react";
-import { createReferenceCandles } from "@/lib/mockMarketData";
-import { useMarketStore } from "@/store/marketStore";
 import { getMarketCandles } from "@/services/apiClient/markets.api";
 import {
   candleIntervals,
@@ -12,6 +10,7 @@ import {
   type TickerMessage,
 } from "@/services/wsClient";
 import { normalizeMarketSymbol } from "@hyperx/types/common";
+import { useNetworkStore } from "@/store/networkStore";
 import { useQuery } from "@tanstack/react-query";
 
 const intervalSeconds: Record<CandleInterval, number> = {
@@ -50,9 +49,7 @@ const updateFromTicker = (
 export function useCandleStream(market: string, interval: CandleInterval) {
   const [candles, setCandles] = useState<Candle[]>([]);
   const normalizedMarket = useMemo(() => normalizeMarketSymbol(market), [market]);
-  const marketSnapshot = useMarketStore((state) =>
-    state.markets.find((entry) => entry.symbol === normalizedMarket)
-  );
+  const network = useNetworkStore((s) => s.network);
   const { data: candleData } = useQuery({
     queryKey: ["market-candles", normalizedMarket, interval],
     queryFn: () => getMarketCandles(normalizedMarket, interval),
@@ -62,7 +59,6 @@ export function useCandleStream(market: string, interval: CandleInterval) {
   });
 
   const historicalCandles = candleData?.candles ?? [];
-  const backendIsReference = candleData?.isReference ?? false;
 
   useEffect(() => {
     setCandles([]);
@@ -76,8 +72,8 @@ export function useCandleStream(market: string, interval: CandleInterval) {
 
   useEffect(() => {
     const channel = makeCandlesChannel(normalizedMarket, interval);
-    wsClient.subscribe(channel);
-    wsClient.subscribe("ticker", normalizedMarket);
+    wsClient.subscribe(channel, undefined, network);
+    wsClient.subscribe("ticker", normalizedMarket, network);
 
     const unsubscribeCandles = wsClient.on("candles", (message: CandlesMessage) => {
       if (normalizeMarketSymbol(message.market) !== normalizedMarket) return;
@@ -92,19 +88,15 @@ export function useCandleStream(market: string, interval: CandleInterval) {
     });
 
     return () => {
-      wsClient.unsubscribe(channel);
-      wsClient.unsubscribe("ticker", normalizedMarket);
+      wsClient.unsubscribe(channel, undefined, network);
+      wsClient.unsubscribe("ticker", normalizedMarket, network);
       unsubscribeCandles();
       unsubscribeTicker();
     };
-  }, [normalizedMarket, interval]);
+  }, [normalizedMarket, interval, network]);
 
-  const referenceCandles = useMemo(
-    () => createReferenceCandles(marketSnapshot?.lastPrice ?? 100, interval),
-    [interval, marketSnapshot?.lastPrice]
-  );
-  const series = candles.length > 0 ? candles : referenceCandles;
+  const series = candles.length > 0 ? candles : [];
   const latest = useMemo(() => series[series.length - 1] ?? null, [series]);
 
-  return { candles: series, latest, isReference: candles.length === 0 || backendIsReference };
+  return { candles: series, latest, isReference: false };
 }

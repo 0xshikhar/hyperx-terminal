@@ -145,7 +145,7 @@ export class WSClient {
     this.ws.send(JSON.stringify(message));
   }
 
-  subscribe(channel: SubscribableChannel | CandlesChannel, market?: string) {
+  subscribe(channel: SubscribableChannel | CandlesChannel, market?: string, network?: "testnet" | "mainnet") {
     const key = this.subscriptionKey(channel, market);
     const existing = this.activeSubscriptions.get(key);
     if (existing) {
@@ -154,10 +154,10 @@ export class WSClient {
     }
 
     this.activeSubscriptions.set(key, { channel, market, count: 1 });
-    this.sendSubscription("subscribe", channel, market);
+    this.sendSubscription("subscribe", channel, market, network);
   }
 
-  unsubscribe(channel: SubscribableChannel | CandlesChannel, market?: string) {
+  unsubscribe(channel: SubscribableChannel | CandlesChannel, market?: string, network?: "testnet" | "mainnet") {
     const key = this.subscriptionKey(channel, market);
     const existing = this.activeSubscriptions.get(key);
     if (!existing) return;
@@ -168,7 +168,7 @@ export class WSClient {
     }
 
     this.activeSubscriptions.delete(key);
-    this.sendSubscription("unsubscribe", channel, market);
+    this.sendSubscription("unsubscribe", channel, market, network);
   }
 
   onStateChange(listener: Listener<ConnectionState>) {
@@ -218,12 +218,13 @@ export class WSClient {
   private sendSubscription(
     type: "subscribe" | "unsubscribe",
     channel: SubscribableChannel | CandlesChannel,
-    market?: string
+    market?: string,
+    network?: "testnet" | "mainnet"
   ) {
     const usesRawChannel = typeof channel === "string" && channel.startsWith("candles:");
     this.send({
       type,
-      channels: [usesRawChannel ? { channel } : { channel, market }],
+      channels: [usesRawChannel ? { channel } : { channel, market, network }],
     });
   }
 
