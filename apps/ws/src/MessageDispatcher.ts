@@ -7,7 +7,7 @@
 
 import { WebSocket } from "ws";
 import type { ServerMessage } from "@hyperx/types/websocket";
-import { getSubscriptionManager, type ClientInfo } from "./SubscriptionManager.js";
+import { getSubscriptionManager } from "./SubscriptionManager.js";
 import { publishMessage, isPubSubEnabled } from "./pubsub.js";
 
 interface DispatchOptions {

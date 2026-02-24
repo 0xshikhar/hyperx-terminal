@@ -1,7 +1,8 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { WebSocketServer, type WebSocket } from "ws";
 import { z } from "zod";
-import type { ClientMessage, ServerMessage, SubscribeMessage, UnsubscribeMessage } from "@hyperx/types/websocket";
+import type { ClientMessage, ServerMessage } from "@hyperx/types/websocket";
+import type { ParadexNetwork } from "@hyperx/types/common";
 import { getSubscriptionManager } from "./SubscriptionManager.js";
 import { getMessageDispatcher } from "./MessageDispatcher.js";
 import { authenticateConnection, requiresAuth, validateAccountChannel } from "./auth.js";
@@ -10,39 +11,51 @@ import { initParadexWsBridge } from "./paradexWs.js";
 
 const PORT = Number(process.env.PORT ?? 3002);
 
-// Initialize Redis Pub/Sub
 const result = initRedisPubSub();
 if (result.enabled) {
   startRedisSubscriber();
 }
 
-// Initialize subscription manager and message dispatcher
 const subscriptionManager = getSubscriptionManager();
 const messageDispatcher = getMessageDispatcher();
+
+const bridges = new Map<ParadexNetwork, ReturnType<typeof initParadexWsBridge> | null>();
 const paradexWsEnabled = process.env.PARADEX_WS_ENABLED?.toLowerCase() !== "false";
-const paradexWsUrl =
-  process.env.PARADEX_WS_URL ||
-  (process.env.NODE_ENV === "production"
-    ? "wss://ws.api.prod.paradex.trade/v1"
-    : "wss://ws.api.testnet.paradex.trade/v1");
-const paradexBridge = paradexWsEnabled
-  ? initParadexWsBridge({
-      wsUrl: paradexWsUrl,
+
+const wsUrls: Record<ParadexNetwork, string> = {
+  testnet: process.env.PARADEX_WS_URL || "wss://ws.api.testnet.paradex.trade/v1",
+  mainnet: process.env.PARADEX_MAINNET_WS_URL || "wss://ws.api.prod.paradex.trade/v1",
+};
+
+for (const network of ["testnet", "mainnet"] as ParadexNetwork[]) {
+  if (!paradexWsEnabled) {
+    bridges.set(network, null);
+    continue;
+  }
+
+  try {
+    const bridge = initParadexWsBridge({
+      wsUrl: wsUrls[network],
       jwtToken: process.env.PARADEX_JWT_TOKEN,
       onStatus: (status) => {
         messageDispatcher.dispatch({
           channel: "status",
           data: {
             type: "status",
+            network,
             networkStatus: status,
             timestamp: Date.now(),
           } as ServerMessage,
         });
       },
-    })
-  : null;
+    });
+    bridges.set(network, bridge);
+  } catch (error) {
+    console.error(`Failed to initialize Paradex WS bridge for ${network}:`, error);
+    bridges.set(network, null);
+  }
+}
 
-// Message schemas
 const subscribeSchema = z.object({
   type: z.union([z.literal("subscribe"), z.literal("unsubscribe")]),
   channels: z.array(
@@ -53,9 +66,10 @@ const subscribeSchema = z.object({
         z.literal("trades"),
         z.literal("status"),
         z.literal("candles"),
-        z.string().regex(/^account:.+/), // account:{userId} format
+        z.string().regex(/^account:.+/),
       ]),
       market: z.string().optional(),
+      network: z.enum(["testnet", "mainnet"]).optional().default("testnet"),
     })
   ),
 });
@@ -70,16 +84,10 @@ const authSchema = z.object({
   token: z.string(),
 });
 
-// Helper functions
 function channelKey(channel: string, market?: string) {
   return market ? `${channel}:${market}` : channel;
 }
 
-function randomBetween(min: number, max: number) {
-  return min + Math.random() * (max - min);
-}
-
-// HTTP health check server
 const httpServer = createServer((req: IncomingMessage, res: ServerResponse) => {
   if (req.url === "/health") {
     const metrics = subscriptionManager.getMetrics();
@@ -95,28 +103,20 @@ const httpServer = createServer((req: IncomingMessage, res: ServerResponse) => {
   res.end();
 });
 
-// WebSocket server
 const wss = new WebSocketServer({ server: httpServer });
 
-// Handle Redis pub/sub messages
 if (isPubSubEnabled()) {
   onPubSubMessage((message) => {
     messageDispatcher.handlePubSubMessage(message as { channel: string; market?: string; data: ServerMessage });
   });
 }
 
-// WebSocket connection handler
 wss.on("connection", (ws: WebSocket, req: IncomingMessage) => {
   const id = `${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
-
-  // Try to authenticate on connection
   const authResult = authenticateConnection(req.url, req.headers.cookie);
   const userId = authResult?.userId;
-
-  // Register client with subscription manager
   const client = subscriptionManager.registerClient(id, ws, userId);
 
-  // Send welcome message
   ws.send(JSON.stringify({
     type: "connected",
     clientId: id,
@@ -125,7 +125,6 @@ wss.on("connection", (ws: WebSocket, req: IncomingMessage) => {
     timestamp: Date.now(),
   }));
 
-  // Handle messages
   ws.on("message", (data: Buffer) => {
     const raw = data.toString();
     let parsed: unknown;
@@ -136,7 +135,6 @@ wss.on("connection", (ws: WebSocket, req: IncomingMessage) => {
       return;
     }
 
-    // Handle ping
     const ping = pingSchema.safeParse(parsed);
     if (ping.success) {
       subscriptionManager.updatePing(id);
@@ -148,7 +146,6 @@ wss.on("connection", (ws: WebSocket, req: IncomingMessage) => {
       return;
     }
 
-    // Handle auth message
     const auth = authSchema.safeParse(parsed);
     if (auth.success) {
       const authResult = authenticateConnection(undefined, `token=${auth.data.token}`);
@@ -167,7 +164,6 @@ wss.on("connection", (ws: WebSocket, req: IncomingMessage) => {
       return;
     }
 
-    // Handle subscribe/unsubscribe
     const sub = subscribeSchema.safeParse(parsed);
     if (!sub.success) {
       ws.send(JSON.stringify({ type: "error", message: "Invalid message format" }));
@@ -177,7 +173,6 @@ wss.on("connection", (ws: WebSocket, req: IncomingMessage) => {
     for (const channelInfo of sub.data.channels) {
       const key = channelKey(channelInfo.channel, channelInfo.market);
 
-      // Check if channel requires authentication
       if (requiresAuth(key)) {
         if (!client.userId) {
           ws.send(JSON.stringify({
@@ -187,7 +182,6 @@ wss.on("connection", (ws: WebSocket, req: IncomingMessage) => {
           continue;
         }
 
-        // Validate account channel access
         if (!validateAccountChannel(key, client.userId)) {
           ws.send(JSON.stringify({
             type: "error",
@@ -197,20 +191,24 @@ wss.on("connection", (ws: WebSocket, req: IncomingMessage) => {
         }
       }
 
+      const bridgeNetwork = channelInfo.network ?? "testnet";
+      const bridge = bridges.get(bridgeNetwork);
+
       if (sub.data.type === "subscribe") {
         const success = subscriptionManager.subscribe(id, key, requiresAuth(key));
         if (success) {
           if (
-            paradexBridge &&
+            bridge &&
             (channelInfo.channel === "ticker" ||
               channelInfo.channel === "orderbook" ||
               channelInfo.channel === "trades")
           ) {
-            paradexBridge.subscribe(channelInfo.channel, channelInfo.market);
+            bridge.subscribe(channelInfo.channel, channelInfo.market);
           }
           ws.send(JSON.stringify({
             type: "subscribed",
-            channel: key
+            channel: key,
+            network: bridgeNetwork,
           }));
         } else {
           ws.send(JSON.stringify({
@@ -221,27 +219,28 @@ wss.on("connection", (ws: WebSocket, req: IncomingMessage) => {
       } else {
         subscriptionManager.unsubscribe(id, key);
         if (
-          paradexBridge &&
+          bridge &&
           (channelInfo.channel === "ticker" ||
             channelInfo.channel === "orderbook" ||
             channelInfo.channel === "trades")
         ) {
-          paradexBridge.unsubscribe(channelInfo.channel, channelInfo.market);
+          bridge.unsubscribe(channelInfo.channel, channelInfo.market);
         }
         ws.send(JSON.stringify({
           type: "unsubscribed",
-          channel: key
+          channel: key,
+          network: bridgeNetwork,
         }));
       }
     }
   });
 
   ws.on("close", () => {
-    if (paradexBridge) {
-      for (const subKey of client.subscriptions) {
-        const [channel, market] = subKey.split(":");
-        if (channel === "ticker" || channel === "orderbook" || channel === "trades") {
-          paradexBridge.unsubscribe(channel as "ticker" | "orderbook" | "trades", market);
+    for (const subKey of client.subscriptions) {
+      const [channel, market] = subKey.split(":");
+      for (const bridge of bridges.values()) {
+        if (bridge && (channel === "ticker" || channel === "orderbook" || channel === "trades")) {
+          bridge.unsubscribe(channel as "ticker" | "orderbook" | "trades", market);
         }
       }
     }
@@ -249,11 +248,11 @@ wss.on("connection", (ws: WebSocket, req: IncomingMessage) => {
   });
 
   ws.on("error", () => {
-    if (paradexBridge) {
-      for (const subKey of client.subscriptions) {
-        const [channel, market] = subKey.split(":");
-        if (channel === "ticker" || channel === "orderbook" || channel === "trades") {
-          paradexBridge.unsubscribe(channel as "ticker" | "orderbook" | "trades", market);
+    for (const subKey of client.subscriptions) {
+      const [channel, market] = subKey.split(":");
+      for (const bridge of bridges.values()) {
+        if (bridge && (channel === "ticker" || channel === "orderbook" || channel === "trades")) {
+          bridge.unsubscribe(channel as "ticker" | "orderbook" | "trades", market);
         }
       }
     }
@@ -261,7 +260,6 @@ wss.on("connection", (ws: WebSocket, req: IncomingMessage) => {
   });
 });
 
-// Heartbeat and cleanup intervals
 const HEARTBEAT_INTERVAL = 30000;
 const PING_INTERVAL = 15000;
 
@@ -272,139 +270,26 @@ setInterval(() => {
   }
 }, PING_INTERVAL);
 
-// Data publishers
-function publishTicker(market: string) {
-  const base = market === "ETH-USD" ? 4800 : market === "STRK-USD" ? 2.2 : 95000;
-  const lastPrice = base + randomBetween(-1, 1) * (market === "STRK-USD" ? 0.02 : 120);
-
-  messageDispatcher.dispatch({
-    channel: "ticker",
-    market,
-    data: {
-      type: "ticker",
-      market,
-      lastPrice,
-      changePercent24h: randomBetween(-5, 5),
-      volume24h: randomBetween(10_000_000, 1_200_000_000),
-      openInterest: randomBetween(1_000_000, 800_000_000),
-      fundingRate: randomBetween(-0.03, 0.03),
-      timestamp: Date.now(),
-    } as ServerMessage,
-  });
-}
-
-function publishOrderbook(market: string) {
-  const base = market === "ETH-USD" ? 4800 : market === "STRK-USD" ? 2.2 : 95000;
-  const mid = base + randomBetween(-1, 1) * (market === "STRK-USD" ? 0.02 : 80);
-  const tick = market === "STRK-USD" ? 0.001 : market === "ETH-USD" ? 0.5 : 5;
-
-  const bids = Array.from({ length: 30 }).map((_, i) => ({
-    price: Math.round((mid - i * tick) / tick) * tick,
-    size: randomBetween(0.01, 5) * (1 + i / 10),
-  }));
-  const asks = Array.from({ length: 30 }).map((_, i) => ({
-    price: Math.round((mid + i * tick) / tick) * tick,
-    size: randomBetween(0.01, 5) * (1 + i / 10),
-  }));
-
-  messageDispatcher.dispatch({
-    channel: "orderbook",
-    market,
-    data: {
-      type: "orderbook",
-      market,
-      bids,
-      asks,
-      timestamp: Date.now(),
-    } as ServerMessage,
-  });
-}
-
-function publishTrades(market: string) {
-  const base = market === "ETH-USD" ? 4800 : market === "STRK-USD" ? 2.2 : 95000;
-  const price = base + randomBetween(-1, 1) * (market === "STRK-USD" ? 0.02 : 80);
-
-  messageDispatcher.dispatch({
-    channel: "trades",
-    market,
-    data: {
-      type: "trades",
-      market,
-      trades: [
-        {
-          id: `${market}-${Date.now()}-${Math.floor(Math.random() * 1e6)}`,
-          side: Math.random() > 0.5 ? "buy" : "sell",
-          price,
-          size: randomBetween(0.01, 2),
-          timestamp: Date.now(),
-        },
-      ],
-      timestamp: Date.now(),
-    } as ServerMessage,
-  });
-}
-
-function publishStatus() {
+setInterval(() => {
   messageDispatcher.dispatch({
     channel: "status",
     data: {
       type: "status",
-      blockHeight: Math.floor(randomBetween(1_200_000, 2_100_000)),
-      gasPrice: randomBetween(5, 80).toFixed(2),
+      network: "testnet",
+      networkStatus: bridges.get("testnet")?.getStatus() ?? "down",
       timestamp: Date.now(),
     } as ServerMessage,
   });
-}
-
-// Mock account data publisher (for auth-gated channels)
-function publishAccountUpdates() {
-  const metrics = subscriptionManager.getMetrics();
-
-  // Publish to each authenticated user's account channel
-  for (const [channel, count] of metrics.channels.entries()) {
-    if (channel.startsWith("account:")) {
-      const userId = channel.split(":")[1];
-      messageDispatcher.dispatchToUser(userId, {
-        type: "account",
-        userId,
-        balance: 10000 + randomBetween(-1000, 1000),
-        marginUsed: randomBetween(1000, 5000),
-        unrealizedPnl: randomBetween(-500, 500),
-        timestamp: Date.now(),
-      } as ServerMessage);
-    }
-  }
-}
-
-const useMockStreams = !paradexBridge;
-const markets = ["BTC-USD", "ETH-USD", "STRK-USD"] as const;
-
-if (useMockStreams) {
-  setInterval(() => {
-    for (const market of markets) {
-      publishTicker(market);
-      publishOrderbook(market);
-      publishTrades(market);
-    }
-    publishStatus();
-  }, 500);
-} else {
-  setInterval(() => {
-    messageDispatcher.dispatch({
-      channel: "status",
-      data: {
-        type: "status",
-        networkStatus: paradexBridge?.getStatus() ?? "down",
-        timestamp: Date.now(),
-      } as ServerMessage,
-    });
-  }, 5000);
-}
-
-// Publish account updates (every 2 seconds)
-setInterval(() => {
-  publishAccountUpdates();
-}, 2000);
+  messageDispatcher.dispatch({
+    channel: "status",
+    data: {
+      type: "status",
+      network: "mainnet",
+      networkStatus: bridges.get("mainnet")?.getStatus() ?? "down",
+      timestamp: Date.now(),
+    } as ServerMessage,
+  });
+}, 5000);
 
 httpServer.listen(PORT, () => {
   console.log(`WS server running on port ${PORT}`);

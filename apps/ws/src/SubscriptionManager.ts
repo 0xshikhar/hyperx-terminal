@@ -8,7 +8,6 @@
  */
 
 import type { WebSocket } from "ws";
-import type { WSChannel } from "@hyperx/types/websocket";
 
 type ClientId = string;
 type ChannelKey = string;
