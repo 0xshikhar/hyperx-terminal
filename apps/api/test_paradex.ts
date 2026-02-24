@@ -3,14 +3,16 @@ import * as dotenv from "dotenv";
 dotenv.config({ path: path.resolve(process.cwd(), "../../.env") });
 import { createParadexClient } from "./src/dex/ParadexClient.js";
 
+const useMainnet = process.argv.includes("--mainnet");
+const network = useMainnet ? "mainnet" : "testnet";
+
 async function main() {
     const address = process.env.PARADEX_STARKNET_ADDRESS;
     const privateKey = process.env.PARADEX_STARKNET_PRIVATE_KEY;
     const jwtToken = process.env.PARADEX_JWT_TOKEN;
-    const baseUrl =
-        process.env.PARADEX_API_URL ||
-        process.env.PARADEX_REST_URL ||
-        "https://api.testnet.paradex.trade";
+    const baseUrl = useMainnet
+        ? process.env.PARADEX_MAINNET_API_URL || "https://api.prod.paradex.trade"
+        : process.env.PARADEX_API_URL || process.env.PARADEX_REST_URL || "https://api.testnet.paradex.trade";
     const isTestnet = baseUrl.toLowerCase().includes("testnet");
 
     if (!jwtToken && (!address || !privateKey)) {
@@ -18,9 +20,11 @@ async function main() {
         process.exit(1);
     }
 
+    console.log(`Testing on ${network} (${baseUrl})`);
+
     const client = createParadexClient({
-        name: "paradex",
-        baseUrl, // Use testnet for safe testing
+        name: `paradex-${network}`,
+        baseUrl,
         network: isTestnet ? "sepolia" : "mainnet",
         chainId: Number(process.env.PARADEX_CHAIN_ID ?? ""),
         credentials: {
