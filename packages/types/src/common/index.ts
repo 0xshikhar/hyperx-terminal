@@ -24,6 +24,7 @@ export type CandleInterval = "1m" | "5m" | "15m" | "1h" | "4h" | "1d" | "1w";
 
 // DEX related
 export type SupportedNetwork = "mainnet" | "sepolia";
+export type ParadexNetwork = "testnet" | "mainnet";
 export type DEXOrderStatus = "pending" | "open" | "filled" | "partial" | "canceled" | "failed";
 
 // Pagination

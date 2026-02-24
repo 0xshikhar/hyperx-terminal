@@ -103,6 +103,7 @@ export interface StatusMessage extends WSMessageBase {
   type: "status";
   blockHeight?: number;
   gasPrice?: string;
+  network?: "testnet" | "mainnet";
   networkStatus?: "healthy" | "degraded" | "down";
 }
 
