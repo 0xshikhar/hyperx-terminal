@@ -11,15 +11,9 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
-import { useTradingModeStore } from "@/store/tradingModeStore";
+import { useNetworkStore } from "@/store/networkStore";
 
 const PAGE_SIZE = 20;
-
-const demoItems: FundingHistoryDto[] = [
-  { id: "demo-funding-1", market: "BTC-USD", rate: 0.0001, payment: 1.72, time: "2026-05-24T00:00:00Z" },
-  { id: "demo-funding-2", market: "ETH-USD", rate: -0.0002, payment: -0.58, time: "2026-05-23T20:00:00Z" },
-  { id: "demo-funding-3", market: "STRK-USD", rate: 0.00035, payment: 0.24, time: "2026-05-23T16:00:00Z" },
-];
 
 const formatNumber = (value: number, fractionDigits = 4) =>
   value.toLocaleString(undefined, { maximumFractionDigits: fractionDigits });
@@ -28,18 +22,16 @@ const formatTime = (value: string) => new Date(value).toLocaleTimeString();
 
 export function FundingHistoryTable() {
   const [page, setPage] = useState(1);
-  const tradingMode = useTradingModeStore((s) => s.mode);
-  const shouldFetch = tradingMode === "real";
+  const network = useNetworkStore((s) => s.network);
   const { data, isLoading } = useQuery<{ items: FundingHistoryDto[]; total: number }>({
-    queryKey: ["funding-history", page, tradingMode],
+    queryKey: ["funding-history", page, network],
     queryFn: () => listFundingHistory(page),
     staleTime: 60_000,
     placeholderData: keepPreviousData,
     retry: false,
-    enabled: shouldFetch,
   });
 
-  const items = shouldFetch ? (data?.items ?? []) : demoItems;
+  const items = data?.items ?? [];
   const totalPages = Math.max(1, Math.ceil((data?.total ?? 0) / PAGE_SIZE));
 
   return (

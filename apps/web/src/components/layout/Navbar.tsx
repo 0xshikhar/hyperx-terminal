@@ -5,7 +5,7 @@ import { ConnectWalletButton } from "@/components/wallet/ConnectWalletButton";
 import { AlertBell } from "@/components/alerts/AlertBell";
 import { NotificationBell } from "@/components/notifications/NotificationBell";
 import { useRuntimeHealthStore } from "@/store/runtimeHealthStore";
-import { TradingModeToggle } from "@/components/layout/TradingModeToggle";
+import { NetworkToggle } from "@/components/layout/NetworkToggle";
 
 const navItems = [
   { href: "/terminal", label: "TRADE", icon: BarChart3 },
@@ -66,7 +66,7 @@ export function Navbar() {
       
       {/* Right side actions */}
       <div className="flex items-center gap-3">
-        <TradingModeToggle />
+        <NetworkToggle />
         {/* Connection status */}
         <div className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded bg-secondary/50 border border-border/50">
           <div

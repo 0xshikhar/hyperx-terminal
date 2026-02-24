@@ -4,7 +4,7 @@ import { cn } from "@/lib/utils";
 import { LatencyDisplay } from "@/components/monitoring/LatencyDisplay";
 import { useWebSocket } from "@/hooks/useWebSocket";
 import { useMarketStore } from "@/store/marketStore";
-import { useTradingModeStore } from "@/store/tradingModeStore";
+import { useNetworkStore } from "@/store/networkStore";
 import { useRuntimeHealthStore } from "@/store/runtimeHealthStore";
 
 type StatusData = {
@@ -20,7 +20,7 @@ type StatusBarProps = {
 
 export function StatusBar({ className, showDetails = true }: StatusBarProps) {
   const activeMarket = useMarketStore((state) => state.activeMarket);
-  const tradingMode = useTradingModeStore((state) => state.mode);
+  const network = useNetworkStore((s) => s.network);
   const [status, setStatus] = useState<StatusData>({});
   const [timeAgo, setTimeAgo] = useState<number | null>(null);
   const [currentTime, setCurrentTime] = useState<string>("");
@@ -102,16 +102,16 @@ export function StatusBar({ className, showDetails = true }: StatusBarProps) {
           </span>
         </div>
 
-        {/* Trading mode indicator */}
+        {/* Network indicator */}
         <div className="flex items-center gap-2">
           <div
             className={cn(
               "w-1.5 h-1.5 rounded-full",
-              tradingMode === "real" ? "bg-emerald-400" : tradingMode === "paper" ? "bg-amber-400" : "bg-rose-400"
+              network === "mainnet" ? "bg-emerald-400" : "bg-amber-400"
             )}
           />
           <span className="font-mono text-muted-foreground uppercase tracking-wider text-[10px]">
-            {tradingMode === "real" ? "LIVE" : tradingMode === "paper" ? "PAPER" : "DEMO"}
+            {network === "mainnet" ? "MAINNET" : "TESTNET"}
           </span>
         </div>
 
