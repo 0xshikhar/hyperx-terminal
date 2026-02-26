@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { useMarketStore } from "@/store/marketStore";
 import { cn } from "@/lib/utils";
+import { placeOrder } from "@/services/apiClient/orders.api";
+import { toast } from "sonner";
 
 export type TradeOrder = {
   market: string;
@@ -20,8 +22,10 @@ export function TradeForm({ onSubmit }: TradeFormProps) {
   const [orderType, setOrderType] = useState<"market" | "limit">("market");
   const [size, setSize] = useState("");
   const [price, setPrice] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const submit = () => {
+  const submit = async () => {
+    if (isSubmitting) return;
     const order: TradeOrder = {
       market: activeMarket,
       side,
@@ -29,7 +33,16 @@ export function TradeForm({ onSubmit }: TradeFormProps) {
       size,
       price: orderType === "limit" ? price : undefined,
     };
-    onSubmit?.(order);
+    setIsSubmitting(true);
+    try {
+      await onSubmit?.(order);
+      const placed = await placeOrder(order);
+      toast.success(`Order submitted (${placed.id})`);
+    } catch {
+      toast.error("Order submission failed");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -100,6 +113,7 @@ export function TradeForm({ onSubmit }: TradeFormProps) {
 
       <button
         onClick={submit}
+        disabled={isSubmitting || !size || (orderType === "limit" && !price)}
         className={cn(
           "mt-5 w-full rounded-md px-3 py-2 text-sm font-semibold",
           side === "buy"
@@ -107,7 +121,11 @@ export function TradeForm({ onSubmit }: TradeFormProps) {
             : "bg-rose-500 text-white"
         )}
       >
-        {side === "buy" ? "Place Buy" : "Place Sell"}
+        {isSubmitting
+          ? "Submitting..."
+          : side === "buy"
+            ? "Place Buy"
+            : "Place Sell"}
       </button>
     </div>
   );
