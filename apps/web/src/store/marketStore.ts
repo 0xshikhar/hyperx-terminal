@@ -15,6 +15,7 @@ type MarketState = {
     markets: MarketSnapshot[];
     setActiveMarket: (symbol: string) => void;
     setMarkets: (markets: MarketSnapshot[]) => void;
+    updateMarket: (symbol: string, data: Partial<MarketSnapshot>) => void;
 };
 
 const initialMarkets: MarketSnapshot[] = [
@@ -52,4 +53,10 @@ export const useMarketStore = create<MarketState>()((set) => ({
     markets: initialMarkets,
     setActiveMarket: (symbol: string) => set({ activeMarket: symbol }),
     setMarkets: (markets: MarketSnapshot[]) => set({ markets }),
+    updateMarket: (symbol: string, data: Partial<MarketSnapshot>) =>
+        set((state) => ({
+            markets: state.markets.map((market) =>
+                market.symbol === symbol ? { ...market, ...data } : market
+            ),
+        })),
 }));
