@@ -1,7 +1,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { WebSocketServer, type WebSocket } from "ws";
 import { z } from "zod";
-import type { ClientMessage, ServerMessage } from "@hyperx/types/websocket";
+import type { ServerMessage } from "@hyperx/types/websocket";
 import type { ParadexNetwork } from "@hyperx/types/common";
 import { getSubscriptionManager } from "./SubscriptionManager.js";
 import { getMessageDispatcher } from "./MessageDispatcher.js";

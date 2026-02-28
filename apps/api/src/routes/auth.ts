@@ -107,7 +107,6 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
           });
         }
       } catch {
-        // allowed to fail silently — notification delivery is best-effort
       }
 
       return {
