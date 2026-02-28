@@ -14,7 +14,7 @@ const formatNumber = (value: number, fractionDigits = 2) =>
 const formatPrice = (value: number) => formatNumber(value, value >= 1000 ? 2 : 4);
 
 export function OpenPositionsTable() {
-  const { positions } = usePositions();
+  const { positions, isLoading, error, fetchPositions } = usePositions();
   const listData = useMemo(() => positions, [positions]);
 
   const Row = ({ index, style, data }: ListChildComponentProps<Position[]>) => {
@@ -51,7 +51,19 @@ export function OpenPositionsTable() {
           <span key={header}>{header}</span>
         ))}
       </div>
-      {positions.length === 0 ? (
+      {isLoading ? (
+        <div className="px-3 py-8 text-xs text-muted-foreground">Loading positions…</div>
+      ) : error ? (
+        <div className="flex flex-col items-center gap-2 px-3 py-8">
+          <p className="text-xs text-rose-400">Failed to load positions</p>
+          <button
+            onClick={() => fetchPositions()}
+            className="rounded border border-border px-3 py-1 text-xs text-muted-foreground hover:text-foreground"
+          >
+            Retry
+          </button>
+        </div>
+      ) : positions.length === 0 ? (
         <div className="px-3 py-8 text-xs text-muted-foreground">No open positions.</div>
       ) : (
         <FixedSizeList

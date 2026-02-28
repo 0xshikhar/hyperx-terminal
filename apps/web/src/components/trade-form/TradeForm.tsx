@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useMarketStore } from "@/store/marketStore";
 import { cn } from "@/lib/utils";
 import { placeOrder } from "@/services/apiClient/orders.api";
+import { getAccountSummary } from "@/services/apiClient/account.api";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -11,6 +12,7 @@ import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { useOrdersStore } from "@/store/ordersStore";
 import { useWallet } from "@/components/wallet/useWallet";
 import { WalletConnectDialog } from "@/components/wallet/WalletConnectDialog";
+import { useQuery } from "@tanstack/react-query";
 
 export type TradeOrder = {
   market: string;
@@ -35,6 +37,13 @@ export function TradeForm({ onSubmit }: TradeFormProps) {
   const acknowledgeOrder = useOrdersStore((state) => state.acknowledgeOrder);
   const rejectOrder = useOrdersStore((state) => state.rejectOrder);
   const isWalletConnected = useWallet((state) => state.isConnected);
+  const { data: accountData } = useQuery({
+    queryKey: ["account-summary"],
+    queryFn: getAccountSummary,
+    enabled: isWalletConnected,
+    staleTime: 30_000,
+  });
+  const account = accountData ?? null;
   const { registerShortcut, unregisterShortcut } = useKeyboardShortcuts();
   const [side, setSide] = useState<"buy" | "sell">("buy");
   const [orderType, setOrderType] = useState<"market" | "limit" | "stop">("market");
@@ -277,13 +286,21 @@ export function TradeForm({ onSubmit }: TradeFormProps) {
           <div className="flex items-center justify-between">
             <span className="text-[#6b6b74]">Available to Trade</span>
             <span className="font-mono text-white">
-              {isWalletConnected ? "0.00 USDC" : "Wallet not connected"}
+              {isWalletConnected && account
+                ? `${account.available.toFixed(2)} USDC`
+                : isWalletConnected
+                  ? "Loading..."
+                  : "Wallet not connected"}
             </span>
           </div>
           <div className="flex items-center justify-between">
             <span className="text-[#6b6b74]">Current Position</span>
             <span className="font-mono text-white">
-              {isWalletConnected ? `0.00 ${activeMarket.split("-")[0]}` : "Wallet not connected"}
+              {isWalletConnected && account
+                ? `${(account.balance - account.available).toFixed(2)} USDC`
+                : isWalletConnected
+                  ? "Loading..."
+                  : "Wallet not connected"}
             </span>
           </div>
         </div>
@@ -302,7 +319,15 @@ export function TradeForm({ onSubmit }: TradeFormProps) {
               placeholder="0.00"
               className="flex-1 rounded bg-[#1a1a1e] px-3 py-2 text-sm text-white placeholder-[#4a4a52] outline-none ring-1 ring-[#2a2a2e] focus:ring-[#00d084]"
             />
-            <button className="rounded bg-[#1a1a1e] px-3 py-2 text-xs text-[#6b6b74] hover:bg-[#252529]">
+            <button
+              className="rounded bg-[#1a1a1e] px-3 py-2 text-xs text-[#6b6b74] hover:bg-[#252529]"
+              onClick={() => {
+                if (account && market?.lastPrice) {
+                  const maxSize = account.available / (market.lastPrice / leverage);
+                  setSize(maxSize.toFixed(4));
+                }
+              }}
+            >
               Max
             </button>
           </div>
