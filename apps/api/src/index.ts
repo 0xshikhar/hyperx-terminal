@@ -9,7 +9,7 @@ import type { MetricPayload } from "@hyperx/types/api";
 import { env } from "./config/env";
 import { prisma } from "./db/client";
 import { registerRateLimit } from "./middleware/rateLimit";
-import { requireAuth } from "./middleware/auth.js";
+import { requireAuth, type JWTPayload } from "./middleware/auth.js";
 import { authRoutes } from "./routes/auth.js";
 import { z } from "zod";
 import { createNotification, formatNotifAmount } from "./services/notifications.service.js";
@@ -114,15 +114,26 @@ app.get("/api/markets", async (req) => {
 
   try {
     const markets = await marketClient.getMarkets();
-    const mapped = markets.map((m) => ({
-      symbol: fromParadexMarketSymbol((m as unknown as Record<string, unknown>).symbol as string ?? (m as unknown as Record<string, unknown>).market as string ?? ""),
-      name: (m as unknown as Record<string, unknown>).name ?? (m as unknown as Record<string, unknown>).baseCurrency ?? "",
-      lastPrice: Number((m as unknown as Record<string, unknown>).lastPrice ?? (m as unknown as Record<string, unknown>).indexPrice ?? 0),
-      changePercent24h: Number((m as unknown as Record<string, unknown>).changePercent24h ?? (m as unknown as Record<string, unknown>).priceChangePercent24h ?? 0),
-      volume24h: Number((m as unknown as Record<string, unknown>).volume24h ?? 0),
-      openInterest: Number((m as unknown as Record<string, unknown>).openInterest ?? 0),
-      fundingRate: Number((m as unknown as Record<string, unknown>).fundingRate ?? 0),
-    }));
+    const raw = markets as unknown as Record<string, unknown>[];
+    const mapped = raw
+      .filter((m) => {
+        const rawMarket = (m.market ?? m.symbol ?? "") as string;
+        const symbol = fromParadexMarketSymbol(rawMarket);
+        return symbol && rawMarket.endsWith("-PERP") && !rawMarket.includes("-24JUN") && !rawMarket.includes("-202") && symbol.includes("-USD");
+      })
+      .map((m) => {
+        const rawMarket = (m.market ?? m.symbol ?? "") as string;
+        const symbol = fromParadexMarketSymbol(rawMarket);
+        return {
+          symbol,
+          name: (m.name ?? m.baseCurrency ?? symbol ?? "") as string,
+          lastPrice: Number(m.lastPrice ?? m.indexPrice ?? m.last_traded_price ?? 0),
+          changePercent24h: Number(m.changePercent24h ?? m.priceChangePercent24h ?? m.price_change_rate_24h ?? 0),
+          volume24h: Number(m.volume24h ?? m.volume_24h ?? 0),
+          openInterest: Number(m.openInterest ?? m.open_interest ?? 0),
+          fundingRate: Number(m.fundingRate ?? m.funding_rate ?? 0),
+        };
+      });
     return { markets: mapped };
   } catch (error) {
     console.error("Failed to fetch Paradex markets:", error);
@@ -189,7 +200,7 @@ app.get("/api/markets/:market/candles", async (req, reply) => {
         close: Number(candle.close),
       })),
     };
-  } catch (error) {
+  } catch {
     return {
       market: params.data.market,
       interval,
@@ -200,6 +211,14 @@ app.get("/api/markets/:market/candles", async (req, reply) => {
 });
 
 // Network-aware Paradex client helpers
+function extractToken(req: FastifyRequest): string | null {
+  const cookieToken = req.cookies?.token;
+  if (cookieToken) return cookieToken;
+  const authHeader = req.headers.authorization;
+  if (authHeader?.startsWith("Bearer ")) return authHeader.slice(7);
+  return null;
+}
+
 function getParadexNetwork(req: FastifyRequest): ParadexNetwork {
   const network = (req.headers as Record<string, string>)["x-paradex-network"];
   if (network === "mainnet") return "mainnet";
@@ -217,16 +236,32 @@ function getParadexMarketClient(network: ParadexNetwork): ParadexClient | null {
 // Helper to get authenticated user from JWT
 async function getAuthedUser(req: FastifyRequest, reply: FastifyReply) {
   try {
-    const authenticated = await requireAuth(req, reply);
-    if (!authenticated || !req.user) {
+    const token = extractToken(req);
+    if (!token) {
+      reply.status(401).send({ error: "Authentication required" });
       return null;
     }
 
-    return await prisma.user.findUnique({
-      where: { id: (req.user as { userId: string }).userId },
-      include: { preferences: true },
+    await req.jwtVerify();
+    const payload = req.user as { userId: string } | undefined;
+    if (!payload) {
+      reply.status(401).send({ error: "Invalid or expired token" });
+      return null;
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { id: payload.userId },
+      select: { tokenVersion: true, id: true, walletAddress: true, username: true, email: true, createdAt: true, preferences: true },
     });
+
+    if (!user) {
+      reply.status(401).send({ error: "User not found" });
+      return null;
+    }
+
+    return user;
   } catch {
+    reply.status(401).send({ error: "Invalid or expired token" });
     return null;
   }
 }
@@ -557,7 +592,6 @@ app.post("/api/orders", async (req, reply) => {
         });
       }
     } catch {
-      // allowed to fail silently — notification delivery is best-effort
     }
     return { id };
   } catch (error) {
@@ -821,7 +855,7 @@ app.get("/api/positions", async (req, _reply) => {
   return { positions };
 });
 
-app.get("/api/orders", async (req, reply) => {
+app.get("/api/orders", async (req, _reply) => {
   const market = (req.query as { market?: string }).market;
   const network = getParadexNetwork(req);
   const client = getParadexClient(network);
@@ -843,9 +877,9 @@ app.get("/api/orders", async (req, reply) => {
   return { orders: [] };
 });
 
-app.get("/api/trades", async (req, reply) => {
+app.get("/api/trades", async (req, _reply) => {
   const query = req.query as { page?: string; market?: string };
-  const page = Number(query.page) || 1;
+  const _page = Number(query.page) || 1;
   const market = query.market;
   const network = getParadexNetwork(req);
   const client = getParadexClient(network);
@@ -869,9 +903,9 @@ app.get("/api/trades", async (req, reply) => {
   return { items: [], total: 0 };
 });
 
-app.get("/api/funding", async (req, reply) => {
+app.get("/api/funding", async (req, _reply) => {
   const query = req.query as { page?: string; market?: string };
-  const page = Number(query.page) || 1;
+  const _page = Number(query.page) || 1;
   const market = query.market;
   const network = getParadexNetwork(req);
   const client = getParadexClient(network);
@@ -967,7 +1001,7 @@ if (env.EXTENDED_API_KEY && env.EXTENDED_API_SECRET) {
 }
 
 // DEX Market routes
-app.get("/api/dex/markets", async (req) => {
+app.get("/api/dex/markets", async (_req) => {
   const exchanges = orderRouter.getExchanges();
   const allMarkets = [];
 
@@ -1095,7 +1129,5 @@ app.get("/api/dex/health", async () => {
   const health = await orderRouter.healthCheck();
   return { exchanges: health };
 });
-
-await app.listen({ port: PORT, host: "0.0.0.0" });
 
 await app.listen({ port: PORT, host: "0.0.0.0" });
