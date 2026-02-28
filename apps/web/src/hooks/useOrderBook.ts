@@ -3,6 +3,7 @@ import { wsClient } from "@/services/wsClient";
 import { useOrderbookStore, type OrderbookLevel } from "@/store/orderbookStore";
 import { useOrdersStore } from "@/store/ordersStore";
 import { useNetworkStore } from "@/store/networkStore";
+import { useRuntimeHealthStore } from "@/store/runtimeHealthStore";
 import { normalizeMarketSymbol } from "@hyperx/types/common";
 
 type OrderBookRow = {
@@ -61,6 +62,8 @@ const aggregateLevels = (levels: OrderbookLevel[], aggregation: number, side: "b
 export function useOrderBook(market: string) {
   const normalizedMarket = useMemo(() => normalizeMarketSymbol(market), [market]);
   const network = useNetworkStore((s) => s.network);
+  const connectionState = useRuntimeHealthStore((s) => s.connectionState);
+  const getMarketFeedHealth = useRuntimeHealthStore((s) => s.getMarketFeedHealth);
   const aggregation = useOrderbookStore((state) => state.aggregation);
   const setAggregation = useOrderbookStore((state) => state.setAggregation);
   const bids = useOrderbookStore((state) => state.bids);
@@ -126,6 +129,12 @@ export function useOrderBook(market: string) {
     }));
   }, [aggregatedAsks, minePriceSet]);
 
+  const feedHealth = getMarketFeedHealth(normalizedMarket);
+  const isReference =
+    sourceBids.length === 0 &&
+    sourceAsks.length === 0 &&
+    (connectionState !== "connected" || !feedHealth.isFresh);
+
   return {
     aggregation,
     setAggregation,
@@ -133,6 +142,6 @@ export function useOrderBook(market: string) {
     askRows,
     aggregatedBids,
     aggregatedAsks,
-    isReference: false,
+    isReference,
   };
 }

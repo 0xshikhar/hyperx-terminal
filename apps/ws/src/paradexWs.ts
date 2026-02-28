@@ -135,10 +135,8 @@ export function initParadexWsBridge(options: InitOptions) {
     fallbackSide?: OrderbookSide
   ) => {
     for (const entry of entries) {
-      const sideRaw = (entry.side ?? fallbackSide) as string | undefined;
-      if (!sideRaw) continue;
-      const side =
-        String(sideRaw).toLowerCase() === "bid" ? "bid" : "ask";
+      const sideRaw = String(entry.side ?? fallbackSide ?? "").toLowerCase();
+      const side = sideRaw === "bid" || sideRaw === "buy" ? "bid" : "ask";
       const price = String(entry.price ?? entry.level ?? "");
       if (!price) continue;
       const size = toNumber(entry.size ?? entry.quantity ?? "0");

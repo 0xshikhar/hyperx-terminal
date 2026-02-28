@@ -11,6 +11,7 @@ import {
 } from "@/services/wsClient";
 import { normalizeMarketSymbol } from "@hyperx/types/common";
 import { useNetworkStore } from "@/store/networkStore";
+import { useRuntimeHealthStore } from "@/store/runtimeHealthStore";
 import { useQuery } from "@tanstack/react-query";
 
 const intervalSeconds: Record<CandleInterval, number> = {
@@ -50,6 +51,8 @@ export function useCandleStream(market: string, interval: CandleInterval) {
   const [candles, setCandles] = useState<Candle[]>([]);
   const normalizedMarket = useMemo(() => normalizeMarketSymbol(market), [market]);
   const network = useNetworkStore((s) => s.network);
+  const connectionState = useRuntimeHealthStore((s) => s.connectionState);
+  const getMarketFeedHealth = useRuntimeHealthStore((s) => s.getMarketFeedHealth);
   const { data: candleData } = useQuery({
     queryKey: ["market-candles", normalizedMarket, interval],
     queryFn: () => getMarketCandles(normalizedMarket, interval),
@@ -98,5 +101,8 @@ export function useCandleStream(market: string, interval: CandleInterval) {
   const series = candles.length > 0 ? candles : [];
   const latest = useMemo(() => series[series.length - 1] ?? null, [series]);
 
-  return { candles: series, latest, isReference: false };
+  const feedHealth = getMarketFeedHealth(normalizedMarket);
+  const isReference = series.length === 0 && (connectionState !== "connected" || !feedHealth.isFresh);
+
+  return { candles: series, latest, isReference };
 }
