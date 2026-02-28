@@ -116,11 +116,7 @@ app.get("/api/markets", async (req) => {
     const markets = await marketClient.getMarkets();
     const raw = markets as unknown as Record<string, unknown>[];
     const mapped = raw
-      .filter((m) => {
-        const rawMarket = (m.market ?? m.symbol ?? "") as string;
-        const symbol = fromParadexMarketSymbol(rawMarket);
-        return symbol && rawMarket.endsWith("-PERP") && !rawMarket.includes("-24JUN") && !rawMarket.includes("-202") && symbol.includes("-USD");
-      })
+      .filter((m) => isCorePerpMarket(m))
       .map((m) => {
         const rawMarket = (m.market ?? m.symbol ?? "") as string;
         const symbol = fromParadexMarketSymbol(rawMarket);
@@ -231,6 +227,20 @@ function getParadexClient(network: ParadexNetwork): ParadexClient | null {
 
 function getParadexMarketClient(network: ParadexNetwork): ParadexClient | null {
   return paradexMarketClients.get(network) ?? null;
+}
+
+// Core perpetual futures pairs we display — small curated set
+const CORE_PERP_BASES = new Set(["BTC", "ETH", "SOL", "STRK", "HYPE"]);
+
+function isCorePerpMarket(m: Record<string, unknown>): boolean {
+  const rawMarket = (m.market ?? m.symbol ?? "") as string;
+  if (!rawMarket.endsWith("-PERP")) return false;
+  const base = (m.base_currency ?? m.baseCurrency ?? "") as string;
+  if (!base) {
+    const symbol = fromParadexMarketSymbol(rawMarket);
+    return symbol ? CORE_PERP_BASES.has(symbol.split("-")[0] ?? "") : false;
+  }
+  return CORE_PERP_BASES.has(base);
 }
 
 // Helper to get authenticated user from JWT
@@ -1010,9 +1020,11 @@ app.get("/api/dex/markets", async (_req) => {
       const client = dexClients.get(exchangeName);
       if (client instanceof ParadexClient) {
         const markets = await client.getMarkets();
+        const raw = markets as unknown as Record<string, unknown>[];
+        const filtered = raw.filter((m) => isCorePerpMarket(m));
         allMarkets.push({
           exchange: exchangeName,
-          markets: markets.map((market) => normalizeDexMarket(exchangeName, market)),
+          markets: filtered.map((market) => normalizeDexMarket(exchangeName, market)),
         });
         continue;
       }
@@ -1033,15 +1045,16 @@ app.get("/api/dex/markets", async (_req) => {
     }
   }
 
-  // Also include market clients for networks not in the exchange registry
   for (const [network, marketClient] of paradexMarketClients.entries()) {
     const exchangeName = `paradex-${network}`;
     if (!exchanges.includes(exchangeName) && marketClient) {
       try {
         const markets = await marketClient.getMarkets();
+        const raw = markets as unknown as Record<string, unknown>[];
+        const filtered = raw.filter((m) => isCorePerpMarket(m));
         allMarkets.push({
           exchange: exchangeName,
-          markets: markets.map((market) => normalizeDexMarket(exchangeName, market)),
+          markets: filtered.map((market) => normalizeDexMarket(exchangeName, market)),
         });
       } catch (error) {
         console.error(`Failed to fetch public Paradex markets for ${network}:`, error);
