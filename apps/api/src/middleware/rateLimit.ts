@@ -18,16 +18,20 @@ export async function registerRateLimit(app: FastifyInstance, options: RateLimit
     const max = options.maxPerMinute;
 
     if (redis) {
-      const redisKey = `ratelimit:${key}`;
-      const current = await redis.incr(redisKey);
-      if (current === 1) {
-        await redis.expire(redisKey, 60);
+      try {
+        const redisKey = `ratelimit:${key}`;
+        const current = await redis.incr(redisKey);
+        if (current === 1) {
+          await redis.expire(redisKey, 60);
+        }
+        if (current > max) {
+          reply.status(429);
+          return reply.send({ error: "rate_limited" });
+        }
+        return;
+      } catch {
+        // Redis unreachable — fall through to in-memory rate limiter
       }
-      if (current > max) {
-        reply.status(429);
-        return reply.send({ error: "rate_limited" });
-      }
-      return;
     }
 
     const now = Date.now();
