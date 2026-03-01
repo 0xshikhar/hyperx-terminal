@@ -1,7 +1,29 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { updatePreferences } from "@/services/apiClient/preferences.api";
+import { useAuthStore } from "@/store/authStore";
+import { toast } from "sonner";
 
 export function OnboardPage() {
   const [username, setUsername] = useState("");
+  const [saving, setSaving] = useState(false);
+  const navigate = useNavigate();
+  const setSession = useAuthStore((s) => s.setSession);
+
+  async function handleSave() {
+    if (!username.trim()) return;
+    setSaving(true);
+    try {
+      await updatePreferences({});
+      setSession({ token: localStorage.getItem("hyperx-auth-token") ?? "" });
+      toast.success(`Welcome, ${username}`);
+      navigate("/terminal", { replace: true });
+    } catch {
+      toast.error("Failed to save preferences");
+    } finally {
+      setSaving(false);
+    }
+  }
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-6">
@@ -17,12 +39,17 @@ export function OnboardPage() {
           <input
             value={username}
             onChange={(event) => setUsername(event.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") handleSave(); }}
             className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
             placeholder="hyperx-trader"
           />
         </div>
-        <button className="w-full rounded-md bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground">
-          Save and continue
+        <button
+          onClick={handleSave}
+          disabled={saving || !username.trim()}
+          className="w-full rounded-md bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground disabled:opacity-50"
+        >
+          {saving ? "Saving..." : "Save and continue"}
         </button>
       </div>
     </div>
