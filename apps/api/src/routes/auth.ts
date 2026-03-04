@@ -7,6 +7,7 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { generateNonce, authenticateUser } from "../services/auth.service.js";
+import { createNotification } from "../services/notifications.service.js";
 import { env } from "../config/env.js";
 import { prisma } from "../db/client.js";
 
@@ -92,6 +93,20 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
         maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
         path: "/",
       });
+
+      try {
+        const existing = await prisma.notification.count({
+          where: { userId: authResult.userId },
+        });
+        if (existing === 0) {
+          await createNotification({
+            userId: authResult.userId,
+            title: "Welcome to HyperX Terminal",
+            message: "Your Starknet perpetual futures terminal is ready. Place your first trade to get started.",
+            type: "info",
+          });
+        }
+      } catch {}
 
       return {
         token,
