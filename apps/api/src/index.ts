@@ -12,6 +12,7 @@ import { registerRateLimit } from "./middleware/rateLimit";
 import { requireAuth, optionalAuth } from "./middleware/auth.js";
 import { authRoutes } from "./routes/auth.js";
 import { z } from "zod";
+import { createNotification, formatNotifAmount } from "./services/notifications.service.js";
 import {
   getOrderRouter,
   createExtendedClient,
@@ -25,6 +26,7 @@ import {
   normalizeMarketSymbol,
   toParadexMarketSymbol,
 } from "@hyperx/types/common";
+import type { ParadexNetwork } from "@hyperx/types/common";
 
 const PORT = Number(env.PORT ?? 3001);
 
@@ -105,37 +107,112 @@ app.get("/api/metrics", async () => ({
   metrics: metricsBuffer.slice(-50),
 }));
 
-const markets = [
-  {
-    symbol: "BTC-USD",
-    name: "Bitcoin",
-    lastPrice: 95432.25,
-    changePercent24h: 2.14,
-    volume24h: 1284500000,
-    openInterest: 482000000,
-    fundingRate: 0.0125,
-  },
-  {
-    symbol: "ETH-USD",
-    name: "Ethereum",
-    lastPrice: 4871.1,
-    changePercent24h: -1.02,
-    volume24h: 842000000,
-    openInterest: 246000000,
-    fundingRate: 0.0091,
-  },
-  {
-    symbol: "STRK-USD",
-    name: "StarkNet",
-    lastPrice: 2.41,
-    changePercent24h: 5.42,
-    volume24h: 112000000,
-    openInterest: 42000000,
-    fundingRate: 0.021,
-  },
-];
+app.get("/api/markets", async (req) => {
+  const network = getParadexNetwork(req);
+  const marketClient = getParadexMarketClient(network);
+  if (!marketClient) return { markets: [] };
 
-app.get("/api/markets", async () => ({ markets }));
+  try {
+    const markets = await marketClient.getMarkets();
+    const mapped = markets.map((m) => ({
+      symbol: fromParadexMarketSymbol((m as unknown as Record<string, unknown>).symbol as string ?? (m as unknown as Record<string, unknown>).market as string ?? ""),
+      name: (m as unknown as Record<string, unknown>).name ?? (m as unknown as Record<string, unknown>).baseCurrency ?? "",
+      lastPrice: Number((m as unknown as Record<string, unknown>).lastPrice ?? (m as unknown as Record<string, unknown>).indexPrice ?? 0),
+      changePercent24h: Number((m as unknown as Record<string, unknown>).changePercent24h ?? (m as unknown as Record<string, unknown>).priceChangePercent24h ?? 0),
+      volume24h: Number((m as unknown as Record<string, unknown>).volume24h ?? 0),
+      openInterest: Number((m as unknown as Record<string, unknown>).openInterest ?? 0),
+      fundingRate: Number((m as unknown as Record<string, unknown>).fundingRate ?? 0),
+    }));
+    return { markets: mapped };
+  } catch (error) {
+    console.error("Failed to fetch Paradex markets:", error);
+    return { markets: [] };
+  }
+});
+
+const candleIntervalSchema = z.enum(["1m", "5m", "15m", "1h", "4h", "1d"]);
+
+const candleIntervalSeconds: Record<z.infer<typeof candleIntervalSchema>, number> = {
+  "1m": 60,
+  "5m": 300,
+  "15m": 900,
+  "1h": 3600,
+  "4h": 14400,
+  "1d": 86400,
+};
+
+const marketCandlesQuerySchema = z.object({
+  interval: candleIntervalSchema.optional(),
+  limit: z.coerce.number().int().min(1).max(500).optional(),
+});
+
+app.get("/api/markets/:market/candles", async (req, reply) => {
+  const params = z.object({ market: z.string().min(1) }).safeParse(req.params);
+  if (!params.success) {
+    reply.status(400);
+    return { error: "invalid_market" };
+  }
+
+  const query = marketCandlesQuerySchema.safeParse(req.query);
+  if (!query.success) {
+    reply.status(400);
+    return { error: "invalid_candle_query" };
+  }
+
+  const interval = query.data.interval ?? "1m";
+  const limit = query.data.limit ?? 120;
+  const to = Math.floor(Date.now() / 1000);
+  const from = to - candleIntervalSeconds[interval] * limit;
+
+  const network = getParadexNetwork(req);
+  const candleClient = getParadexClient(network) ?? getParadexMarketClient(network);
+  if (!candleClient) {
+    return {
+      market: params.data.market,
+      interval,
+      candles: [],
+      isReference: true,
+    };
+  }
+
+  try {
+    const market = toParadexMarketSymbol(normalizeMarketSymbol(params.data.market));
+    const response = await candleClient.getCandles(market, interval, from, to);
+    return {
+      market: response.market,
+      interval: response.resolution,
+      candles: response.candles.map((candle) => ({
+        time: candle.time,
+        open: Number(candle.open),
+        high: Number(candle.high),
+        low: Number(candle.low),
+        close: Number(candle.close),
+      })),
+    };
+  } catch (error) {
+    return {
+      market: params.data.market,
+      interval,
+      candles: [],
+      isReference: true,
+    };
+  }
+});
+
+// Network-aware Paradex client helpers
+function getParadexNetwork(req: FastifyRequest): ParadexNetwork {
+  const network = (req.headers as Record<string, string>)["x-paradex-network"];
+  if (network === "mainnet") return "mainnet";
+  return "testnet";
+}
+
+function getParadexClient(network: ParadexNetwork): ParadexClient | null {
+  return paradexClients.get(network) ?? null;
+}
+
+function getParadexMarketClient(network: ParadexNetwork): ParadexClient | null {
+  return paradexMarketClients.get(network) ?? null;
+}
 
 // Helper to get authenticated user from JWT
 async function getAuthedUser(req: FastifyRequest, reply: FastifyReply) {
@@ -192,11 +269,18 @@ function deriveAccountSummary(positions: Array<{ entryPrice: number; size: numbe
   };
 }
 
-async function loadCurrentPositions() {
-  if (paradexClient) {
+app.get("/api/account", async (req, reply) => {
+  const user = await getAuthedUser(req, reply);
+  if (!user) return { error: "missing_wallet_address" };
+
+  const network = getParadexNetwork(req);
+  const client = getParadexClient(network);
+
+  let positions: Array<{ entryPrice: number; size: number; margin: number; pnl: number }> = [];
+  if (client) {
     try {
-      const raw = await paradexClient.getPositions();
-      return raw
+      const raw = await client.getPositions();
+      positions = raw
         .map((pos) => mapParadexPosition(pos as unknown as Record<string, unknown>))
         .sort((a, b) => b.openedAt.localeCompare(a.openedAt));
     } catch (error) {
@@ -204,17 +288,6 @@ async function loadCurrentPositions() {
     }
   }
 
-  return seedPositions.map((pos) => {
-    const { pnl, pnlPercent } = computePnl(pos);
-    return { ...pos, pnl, pnlPercent };
-  });
-}
-
-app.get("/api/account", async (req, reply) => {
-  const user = await getAuthedUser(req, reply);
-  if (!user) return { error: "missing_wallet_address" };
-
-  const positions = await loadCurrentPositions();
   return {
     account: deriveAccountSummary(positions),
   };
@@ -306,6 +379,16 @@ app.post("/api/alerts", async (req, reply) => {
       targetPrice: body.data.targetPrice,
     },
   });
+
+  try {
+    await createNotification({
+      userId: user.id,
+      title: "Alert Created",
+      message: `${body.data.market} ${body.data.condition === "ABOVE" ? ">" : "<"} $${formatNotifAmount(body.data.targetPrice)}`,
+      type: "alert",
+      amount: body.data.targetPrice,
+    });
+  } catch {}
 
   return {
     alert: {
@@ -435,35 +518,50 @@ app.post("/api/orders", async (req, reply) => {
     return { error: "invalid_order" };
   }
 
-  if (paradexClient) {
-    try {
-      const paradexType =
-        body.data.type === "stop"
-          ? body.data.price
-            ? "STOP_LIMIT"
-            : "STOP_MARKET"
-          : body.data.type === "limit"
-            ? "LIMIT"
-            : "MARKET";
-      const order = await paradexClient.createOrder({
-        market: toParadexMarketSymbol(body.data.market),
-        side: body.data.side === "buy" ? "BUY" : "SELL",
-        type: paradexType,
-        size: body.data.size,
-        price: body.data.price,
-        stopPrice: body.data.stopPrice,
-        timeInForce: "GTC",
-      });
-      const id = (order as { id?: string }).id ?? `${body.data.market}-${Date.now()}`;
-      return { id };
-    } catch (error) {
-      reply.status(500);
-      return { error: "order_failed", message: (error as Error).message };
-    }
+  const network = getParadexNetwork(req);
+  const client = getParadexClient(network);
+
+  if (!client) {
+    reply.status(503);
+    return { error: "order_failed", message: `Trading requires Paradex credentials for ${network}.` };
   }
 
-  const id = `${body.data.market}-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
-  return { id };
+  try {
+    const paradexType =
+      body.data.type === "stop"
+        ? body.data.price
+          ? "STOP_LIMIT"
+          : "STOP_MARKET"
+        : body.data.type === "limit"
+          ? "LIMIT"
+          : "MARKET";
+    const order = await client.createOrder({
+      market: toParadexMarketSymbol(body.data.market),
+      side: body.data.side === "buy" ? "BUY" : "SELL",
+      type: paradexType,
+      size: body.data.size,
+      price: body.data.price,
+      stopPrice: body.data.stopPrice,
+      timeInForce: "GTC",
+    });
+    const id = (order as { id?: string }).id ?? `${body.data.market}-${Date.now()}`;
+    try {
+      const user = await getAuthedUser(req, reply);
+      if (user) {
+        await createNotification({
+          userId: user.id,
+          title: "Order Placed",
+          message: `${body.data.side.toUpperCase()} ${formatNotifAmount(body.data.size)} ${body.data.market} @ ${body.data.price ? "$" + formatNotifAmount(body.data.price) : "Market"}`,
+          type: "order",
+          amount: body.data.size,
+        });
+      }
+    } catch {}
+    return { id };
+  } catch (error) {
+    reply.status(500);
+    return { error: "order_failed", message: (error as Error).message };
+  }
 });
 
 app.delete("/api/orders/:id", async (req, reply) => {
@@ -474,9 +572,12 @@ app.delete("/api/orders/:id", async (req, reply) => {
     return { error: "invalid_order_id" };
   }
 
-  if (paradexClient) {
+  const network = getParadexNetwork(req);
+  const client = getParadexClient(network);
+
+  if (client) {
     try {
-      await paradexClient.cancelOrder(params.data.id);
+      await client.cancelOrder(params.data.id);
       return { success: true };
     } catch (error) {
       reply.status(500);
@@ -489,10 +590,12 @@ app.delete("/api/orders/:id", async (req, reply) => {
 
 app.delete("/api/orders", async (req, reply) => {
   const market = (req.query as { market?: string }).market;
+  const network = getParadexNetwork(req);
+  const client = getParadexClient(network);
 
-  if (paradexClient) {
+  if (client) {
     try {
-      const result = await paradexClient.cancelAllOrders(
+      const result = await client.cancelAllOrders(
         market ? toParadexMarketSymbol(market) : undefined
       );
       return result;
@@ -506,42 +609,6 @@ app.delete("/api/orders", async (req, reply) => {
 });
 
 const PAGE_SIZE = 20;
-
-const seedPositions = [
-  { id: "pos-btc-1", market: "BTC-USD", side: "long" as const, size: 0.25, entryPrice: 94200, markPrice: 95410, leverage: 8, margin: 2943.75, openedAt: "2026-03-08T00:20:00Z" },
-  { id: "pos-eth-1", market: "ETH-USD", side: "short" as const, size: 3.1, entryPrice: 4810, markPrice: 4762, leverage: 6, margin: 2488.35, openedAt: "2026-03-08T00:10:00Z" },
-  { id: "pos-strk-1", market: "STRK-USD", side: "long" as const, size: 1200, entryPrice: 2.12, markPrice: 2.34, leverage: 4, margin: 636, openedAt: "2026-03-07T23:40:00Z" },
-];
-
-const seedOrders = [
-  { id: "ord-1", market: "BTC-USD", side: "buy" as const, type: "limit" as const, price: 94500, size: 0.1, status: "open" },
-  { id: "ord-2", market: "ETH-USD", side: "sell" as const, type: "stop" as const, price: 4700, size: 1.5, status: "open" },
-];
-
-const seedTrades = [
-  { id: "t-1", market: "BTC-USD", side: "buy", size: 0.05, price: 95120, fee: 2.38, pnl: 0, executedAt: "2026-03-08T00:15:00Z" },
-  { id: "t-2", market: "ETH-USD", side: "sell", size: 2.0, price: 4795, fee: 4.79, pnl: -30, executedAt: "2026-03-08T00:10:00Z" },
-  { id: "t-3", market: "BTC-USD", side: "buy", size: 0.1, price: 94800, fee: 4.74, pnl: 0, executedAt: "2026-03-07T23:45:00Z" },
-  { id: "t-4", market: "STRK-USD", side: "sell", size: 500, price: 2.28, fee: 0.57, pnl: 80, executedAt: "2026-03-07T23:30:00Z" },
-  { id: "t-5", market: "ETH-USD", side: "buy", size: 1.5, price: 4750, fee: 3.56, pnl: 0, executedAt: "2026-03-07T23:00:00Z" },
-];
-
-const seedFunding = [
-  { id: "f-1", market: "BTC-USD", rate: 0.0125, payment: 8.21, time: "2026-03-08T00:00:00Z" },
-  { id: "f-2", market: "ETH-USD", rate: -0.009, payment: -3.12, time: "2026-03-07T23:00:00Z" },
-  { id: "f-3", market: "STRK-USD", rate: 0.021, payment: 1.86, time: "2026-03-07T22:00:00Z" },
-  { id: "f-4", market: "BTC-USD", rate: 0.011, payment: 7.42, time: "2026-03-07T21:00:00Z" },
-  { id: "f-5", market: "ETH-USD", rate: -0.008, payment: -2.64, time: "2026-03-07T20:00:00Z" },
-  { id: "f-6", market: "STRK-USD", rate: 0.018, payment: 1.24, time: "2026-03-07T19:00:00Z" },
-  { id: "f-7", market: "BTC-USD", rate: 0.010, payment: 6.88, time: "2026-03-07T18:00:00Z" },
-];
-
-function computePnl(position: typeof seedPositions[0]) {
-  const direction = position.side === "long" ? 1 : -1;
-  const pnl = (position.markPrice - position.entryPrice) * position.size * direction;
-  const pnlPercent = (pnl / position.margin) * 100;
-  return { pnl, pnlPercent };
-}
 
 function normalizeDexMarket<T extends object>(exchange: string, market: T) {
   const marketData = market as Record<string, unknown>;
@@ -734,15 +801,32 @@ function mapParadexFunding(raw: Record<string, unknown>) {
 }
 
 app.get("/api/positions", async (req, reply) => {
-  const positions = await loadCurrentPositions();
+  const network = getParadexNetwork(req);
+  const client = getParadexClient(network);
+
+  let positions: ReturnType<typeof mapParadexPosition>[] = [];
+  if (client) {
+    try {
+      const raw = await client.getPositions();
+      positions = raw
+        .map((pos) => mapParadexPosition(pos as unknown as Record<string, unknown>))
+        .sort((a, b) => b.openedAt.localeCompare(a.openedAt));
+    } catch (error) {
+      console.error("Failed to fetch Paradex positions:", error);
+    }
+  }
+
   return { positions };
 });
 
 app.get("/api/orders", async (req, reply) => {
   const market = (req.query as { market?: string }).market;
-  if (paradexClient) {
+  const network = getParadexNetwork(req);
+  const client = getParadexClient(network);
+
+  if (client) {
     try {
-      const raw = await paradexClient.getOpenOrders(
+      const raw = await client.getOpenOrders(
         market ? toParadexMarketSymbol(market) : undefined
       );
       const orders = raw.map((order) =>
@@ -754,18 +838,20 @@ app.get("/api/orders", async (req, reply) => {
     }
   }
 
-  return { orders: seedOrders };
+  return { orders: [] };
 });
 
 app.get("/api/trades", async (req, reply) => {
   const query = req.query as { page?: string; market?: string };
   const page = Number(query.page) || 1;
   const market = query.market;
+  const network = getParadexNetwork(req);
+  const client = getParadexClient(network);
 
-  if (paradexClient) {
+  if (client) {
     try {
       const paradexMarket = toParadexMarketSymbol(market || "BTC-USD");
-      const tradesResponse = await paradexClient.getTrades(
+      const tradesResponse = await client.getTrades(
         paradexMarket,
         PAGE_SIZE
       );
@@ -778,20 +864,20 @@ app.get("/api/trades", async (req, reply) => {
     }
   }
 
-  const start = (page - 1) * PAGE_SIZE;
-  const items = seedTrades.slice(start, start + PAGE_SIZE);
-  return { items, total: seedTrades.length };
+  return { items: [], total: 0 };
 });
 
 app.get("/api/funding", async (req, reply) => {
   const query = req.query as { page?: string; market?: string };
   const page = Number(query.page) || 1;
   const market = query.market;
+  const network = getParadexNetwork(req);
+  const client = getParadexClient(network);
 
-  if (paradexClient) {
+  if (client) {
     try {
       const paradexMarket = market ? toParadexMarketSymbol(market) : undefined;
-      const fundingResponse = await paradexClient.getFundingPayments(
+      const fundingResponse = await client.getFundingPayments(
         paradexMarket,
         PAGE_SIZE
       );
@@ -804,9 +890,7 @@ app.get("/api/funding", async (req, reply) => {
     }
   }
 
-  const start = (page - 1) * PAGE_SIZE;
-  const items = seedFunding.slice(start, start + PAGE_SIZE);
-  return { items, total: seedFunding.length };
+  return { items: [], total: 0 };
 });
 
 // DEX Integration Routes
@@ -814,9 +898,57 @@ app.get("/api/funding", async (req, reply) => {
 const orderRouter = getOrderRouter();
 const dexClients = new Map<string, ExtendedClient | ParadexClient>();
 let extendedClient: ExtendedClient | null = null;
-let paradexClient: ParadexClient | null = null;
+const paradexClients = new Map<ParadexNetwork, ParadexClient | null>();
+const paradexMarketClients = new Map<ParadexNetwork, ParadexClient | null>();
 
-// Initialize DEX clients if credentials are available
+function resolveParadexUrl(network: ParadexNetwork): string {
+  if (network === "mainnet") {
+    return env.PARADEX_MAINNET_API_URL || env.PARADEX_REST_URL || "https://api.prod.paradex.trade";
+  }
+  return env.PARADEX_API_URL || env.PARADEX_REST_URL || "https://api.testnet.paradex.trade";
+}
+
+const hasParadexAuth = Boolean(
+  env.PARADEX_JWT_TOKEN ||
+  (env.PARADEX_STARKNET_ADDRESS && env.PARADEX_STARKNET_PRIVATE_KEY)
+);
+
+const paradexNetworks: ParadexNetwork[] = ["testnet", "mainnet"];
+
+for (const network of paradexNetworks) {
+  const baseUrl = resolveParadexUrl(network);
+  const isTestnet = network === "testnet";
+
+  // Unauthenticated market client (always created)
+  const marketClient = createParadexClient({
+    name: `paradex-market-${network}`,
+    baseUrl,
+    chainId: Number(env.PARADEX_CHAIN_ID ?? ""),
+    network: isTestnet ? "sepolia" : "mainnet",
+  });
+  paradexMarketClients.set(network, marketClient);
+
+  // Authenticated client (only if credentials exist)
+  if (hasParadexAuth) {
+    const client = createParadexClient({
+      name: `paradex-${network}`,
+      baseUrl,
+      chainId: Number(env.PARADEX_CHAIN_ID ?? ""),
+      network: isTestnet ? "sepolia" : "mainnet",
+      credentials: {
+        starknetAddress: env.PARADEX_STARKNET_ADDRESS,
+        starknetPrivateKey: env.PARADEX_STARKNET_PRIVATE_KEY,
+        jwtToken: env.PARADEX_JWT_TOKEN,
+      },
+    });
+    paradexClients.set(network, client);
+    orderRouter.registerExchange(`paradex-${network}`, client);
+    dexClients.set(`paradex-${network}`, client);
+  } else {
+    paradexClients.set(network, null);
+  }
+}
+
 if (env.EXTENDED_API_KEY && env.EXTENDED_API_SECRET) {
   extendedClient = createExtendedClient({
     name: "extended",
@@ -832,37 +964,8 @@ if (env.EXTENDED_API_KEY && env.EXTENDED_API_SECRET) {
   dexClients.set("extended", extendedClient);
 }
 
-const hasParadexAuth = Boolean(
-  env.PARADEX_JWT_TOKEN ||
-  (env.PARADEX_STARKNET_ADDRESS && env.PARADEX_STARKNET_PRIVATE_KEY)
-);
-
-if (hasParadexAuth) {
-  const defaultParadexUrl =
-    env.NODE_ENV === "production"
-      ? "https://api.prod.paradex.trade"
-      : "https://api.testnet.paradex.trade";
-  const paradexBaseUrl =
-    env.PARADEX_API_URL || env.PARADEX_REST_URL || defaultParadexUrl;
-  const isTestnet = paradexBaseUrl.toLowerCase().includes("testnet");
-
-  paradexClient = createParadexClient({
-    name: "paradex",
-    baseUrl: paradexBaseUrl,
-    chainId: Number(env.PARADEX_CHAIN_ID ?? ""),
-    network: isTestnet ? "sepolia" : "mainnet",
-    credentials: {
-      starknetAddress: env.PARADEX_STARKNET_ADDRESS,
-      starknetPrivateKey: env.PARADEX_STARKNET_PRIVATE_KEY,
-      jwtToken: env.PARADEX_JWT_TOKEN,
-    },
-  });
-  orderRouter.registerExchange("paradex", paradexClient);
-  dexClients.set("paradex", paradexClient);
-}
-
 // DEX Market routes
-app.get("/api/dex/markets", async () => {
+app.get("/api/dex/markets", async (req) => {
   const exchanges = orderRouter.getExchanges();
   const allMarkets = [];
 
@@ -894,17 +997,35 @@ app.get("/api/dex/markets", async () => {
     }
   }
 
+  // Also include market clients for networks not in the exchange registry
+  for (const [network, marketClient] of paradexMarketClients.entries()) {
+    const exchangeName = `paradex-${network}`;
+    if (!exchanges.includes(exchangeName) && marketClient) {
+      try {
+        const markets = await marketClient.getMarkets();
+        allMarkets.push({
+          exchange: exchangeName,
+          markets: markets.map((market) => normalizeDexMarket(exchangeName, market)),
+        });
+      } catch (error) {
+        console.error(`Failed to fetch public Paradex markets for ${network}:`, error);
+      }
+    }
+  }
+
   return { exchanges, markets: allMarkets };
 });
 
 app.get("/api/dex/paradex/account", async (req, reply) => {
-  if (!paradexClient) {
+  const network = getParadexNetwork(req);
+  const client = getParadexClient(network);
+  if (!client) {
     reply.status(400);
     return { error: "paradex_not_configured" };
   }
 
   try {
-    const account = await paradexClient.getAccount();
+    const account = await client.getAccount();
     return { account };
   } catch (error) {
     reply.status(500);
@@ -913,13 +1034,15 @@ app.get("/api/dex/paradex/account", async (req, reply) => {
 });
 
 app.get("/api/dex/paradex/balances", async (req, reply) => {
-  if (!paradexClient) {
+  const network = getParadexNetwork(req);
+  const client = getParadexClient(network);
+  if (!client) {
     reply.status(400);
     return { error: "paradex_not_configured" };
   }
 
   try {
-    const balances = await paradexClient.getBalances();
+    const balances = await client.getBalances();
     return { balances };
   } catch (error) {
     reply.status(500);
