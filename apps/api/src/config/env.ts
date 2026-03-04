@@ -43,6 +43,8 @@ const envSchema = z.object({
   PARADEX_REST_URL: z.string().optional(),
   PARADEX_WS_URL: z.string().optional(),
   PARADEX_CHAIN_ID: z.string().optional(),
+  PARADEX_MAINNET_API_URL: z.string().optional(),
+  PARADEX_MAINNET_WS_URL: z.string().optional(),
 });
 
 const parsed = envSchema.parse(process.env);

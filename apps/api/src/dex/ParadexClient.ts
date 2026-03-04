@@ -384,6 +384,19 @@ export class ParadexClient {
     return this.request(`/v1/ticker/${market}`);
   }
 
+  private resolutionMap: Record<string, string> = {
+    "1m": "1",
+    "3m": "3",
+    "5m": "5",
+    "15m": "15",
+    "30m": "30",
+    "1h": "60",
+  };
+
+  private toParadexResolution(resolution: string): string {
+    return this.resolutionMap[resolution] ?? resolution.replace(/[^0-9]/g, "");
+  }
+
   async getCandles(
     market: string,
     resolution: string,
@@ -401,9 +414,22 @@ export class ParadexClient {
       volume: string;
     }>;
   }> {
-    return this.request(
-      `/v1/candles/${market}?resolution=${resolution}&from=${from}&to=${to}`
+    const resolutionMinutes = this.toParadexResolution(resolution);
+    const startAt = from * 1000;
+    const endAt = to * 1000;
+    const data = await this.request<{ results?: Array<[number, number, number, number, number, number]> }>(
+      `/v1/markets/klines?symbol=${market}&resolution=${resolutionMinutes}&start_at=${startAt}&end_at=${endAt}&price_kind=last`
     );
+    const rawCandles = Array.isArray(data?.results) ? data.results : (Array.isArray(data) ? data as Array<[number, number, number, number, number, number]> : []);
+    const candles = rawCandles.map((k) => ({
+      time: Math.floor(k[0] / 1000),
+      open: String(k[1]),
+      high: String(k[2]),
+      low: String(k[3]),
+      close: String(k[4]),
+      volume: String(k[5]),
+    }));
+    return { market, resolution, candles };
   }
 
   // Trading APIs (require authentication)
