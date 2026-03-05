@@ -11,8 +11,42 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
+import { useTradingModeStore } from "@/store/tradingModeStore";
 
 const PAGE_SIZE = 20;
+
+const demoItems: TradeHistoryDto[] = [
+  {
+    id: "demo-trade-1",
+    market: "BTC-USD",
+    side: "buy",
+    size: 0.18,
+    price: 94580,
+    fee: 3.42,
+    pnl: 128.55,
+    executedAt: "2026-05-24T01:15:00Z",
+  },
+  {
+    id: "demo-trade-2",
+    market: "ETH-USD",
+    side: "sell",
+    size: 1.75,
+    price: 4878.4,
+    fee: 2.1,
+    pnl: -34.2,
+    executedAt: "2026-05-24T01:03:00Z",
+  },
+  {
+    id: "demo-trade-3",
+    market: "STRK-USD",
+    side: "buy",
+    size: 900,
+    price: 2.31,
+    fee: 0.84,
+    pnl: 19.75,
+    executedAt: "2026-05-24T00:44:00Z",
+  },
+];
 
 const formatNumber = (value: number, fractionDigits = 2) =>
   value.toLocaleString(undefined, { maximumFractionDigits: fractionDigits });
@@ -21,16 +55,18 @@ const formatTime = (value: string) => new Date(value).toLocaleTimeString();
 
 export function TradeHistoryTable() {
   const [page, setPage] = useState(1);
-
+  const tradingMode = useTradingModeStore((s) => s.mode);
+  const shouldFetch = tradingMode === "real";
   const { data, isLoading } = useQuery<{ items: TradeHistoryDto[]; total: number }>({
-    queryKey: ["trade-history", page],
+    queryKey: ["trade-history", page, tradingMode],
     queryFn: () => listTradeHistory(page),
     staleTime: 60_000,
     placeholderData: keepPreviousData,
     retry: false,
+    enabled: shouldFetch,
   });
 
-  const items = data?.items ?? [];
+  const items = shouldFetch ? (data?.items ?? []) : demoItems;
   const totalPages = Math.max(1, Math.ceil((data?.total ?? 0) / PAGE_SIZE));
 
   return (

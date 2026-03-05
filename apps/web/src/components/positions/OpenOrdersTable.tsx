@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { useOrdersStore } from "@/store/ordersStore";
 import { Button } from "@/components/ui/button";
+import { useWallet } from "@/components/wallet/useWallet";
 import {
   Table,
   TableBody,
@@ -19,10 +20,12 @@ export function OpenOrdersTable() {
   const fetchOrders = useOrdersStore((state) => state.fetchOrders);
   const isLoading = useOrdersStore((state) => state.isLoading);
   const error = useOrdersStore((state) => state.error);
+  const isWalletConnected = useWallet((state) => state.isConnected);
 
   useEffect(() => {
+    if (!isWalletConnected) return;
     void fetchOrders();
-  }, [fetchOrders]);
+  }, [fetchOrders, isWalletConnected]);
 
   const counts = orders.reduce(
     (acc, order) => {

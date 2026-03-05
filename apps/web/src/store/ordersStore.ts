@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { listOpenOrders } from "@/services/apiClient/positions.api";
+import { useTradingModeStore } from "@/store/tradingModeStore";
 import type { TradeOrder } from "@/components/trade-form/TradeForm";
 
 export type OrderSide = "buy" | "sell";
@@ -135,7 +136,7 @@ function canFill(order: Order) {
 }
 
 export const useOrdersStore = create<OrdersState>()((set) => ({
-  openOrders: seedOrders,
+  openOrders: useTradingModeStore.getState().mode === "real" ? [] : seedOrders,
   isLoading: false,
   error: null,
 
@@ -245,8 +246,9 @@ export const useOrdersStore = create<OrdersState>()((set) => ({
         updatedAt: now(),
         source: "api",
       }));
+      const mode = useTradingModeStore.getState().mode;
       set({
-        openOrders: mapped.length > 0 ? mapped : seedOrders,
+        openOrders: mapped.length > 0 ? mapped : (mode === "real" ? [] : seedOrders),
         isLoading: false,
       });
     } catch (error) {

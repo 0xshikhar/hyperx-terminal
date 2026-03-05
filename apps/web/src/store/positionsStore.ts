@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { listOpenPositions } from "@/services/apiClient/positions.api";
+import { useTradingModeStore } from "@/store/tradingModeStore";
 
 export type PositionSide = "long" | "short";
 
@@ -104,9 +105,13 @@ const canHydrate = (delta: PositionDelta): delta is Position =>
   typeof delta.leverage === "number" &&
   typeof delta.openedAt === "string";
 
+function getInitialPositions(): Position[] {
+  return useTradingModeStore.getState().mode === "real" ? [] : [...seedPositions];
+}
+
 export const usePositionsStore = create<PositionsState>()((set) => ({
-  positions: [...seedPositions].sort((a, b) => b.openedAt.localeCompare(a.openedAt)),
-  pnlById: buildPnlById(seedPositions),
+  positions: getInitialPositions().sort((a, b) => b.openedAt.localeCompare(a.openedAt)),
+  pnlById: buildPnlById(getInitialPositions()),
   isLoading: false,
   error: null,
   setSnapshot: (positions) => {
