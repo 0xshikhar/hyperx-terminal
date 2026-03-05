@@ -21,18 +21,18 @@ export function TerminalLayout() {
             {/* Top navigation bar */}
             <Navbar />
             
-            <main
-              className={`relative flex-1 min-h-0 overflow-y-auto overflow-x-hidden ${
-                isTerminalRoute ? "bg-[#081214]" : "grid-lines"
-              }`}
-            >
-              <div className={`relative z-10 min-h-full ${isTerminalRoute ? "" : "p-4"}`}>
-                <Outlet />
-              </div>
-            </main>
-            
-            {/* Bottom status bar */}
-            <StatusBar />
+        <main
+          className={`relative flex-1 min-h-0 overflow-y-auto overflow-x-hidden pb-[36px] ${
+            isTerminalRoute ? "bg-[#081214]" : "grid-lines"
+          }`}
+        >
+          <div className={`relative z-10 min-h-full ${isTerminalRoute ? "" : "p-4"}`}>
+            <Outlet />
+          </div>
+        </main>
+        
+        {/* Bottom status bar — fixed on screen at all times */}
+        <StatusBar className="fixed bottom-0 left-0 right-0 z-50" />
           </div>
         </div>
         

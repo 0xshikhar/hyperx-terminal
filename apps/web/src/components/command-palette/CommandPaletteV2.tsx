@@ -228,7 +228,10 @@ export function CommandPaletteV2({ open, onOpenChange }: CommandPaletteV2Props) 
         label: "Open Notifications",
         icon: <Bell className="h-4 w-4" />,
         shortcut: "⌘ N",
-        action: () => toast.info("Notifications panel coming soon!"),
+        action: () => {
+          onOpenChange(false);
+          toast.info("Click the bell icon in the top bar to view notifications");
+        },
         keywords: ["notifications", "alerts", "bell"],
         category: "Actions",
       },
