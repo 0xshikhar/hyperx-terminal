@@ -15,6 +15,7 @@ export function NotificationBell() {
     queryFn: listNotifications,
     retry: false,
     enabled: Boolean(address) && authed,
+    refetchInterval: 30000,
   });
   const count = notifications.filter((item) => item.status === "unread").length;
 

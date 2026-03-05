@@ -19,6 +19,7 @@ export function NotificationCenter() {
     queryFn: listNotifications,
     retry: false,
     enabled: Boolean(address) && authed,
+    refetchInterval: 30000,
   });
 
   const markRead = useMutation({
@@ -48,7 +49,7 @@ export function NotificationCenter() {
   if (isError) {
     return (
       <div className="px-3 py-3 text-xs text-muted-foreground">
-        Connect wallet to view notifications.
+        Failed to load notifications.
       </div>
     );
   }
