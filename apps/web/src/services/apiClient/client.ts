@@ -1,6 +1,7 @@
 import axios, { type InternalAxiosRequestConfig, type AxiosResponse, type AxiosError } from "axios";
 import { useWallet } from "@/components/wallet/useWallet";
 import { useLatencyStore } from "@/store/latencyStore";
+import { useTradingModeStore } from "@/store/tradingModeStore";
 import { getToken, removeToken } from "../auth.service";
 
 const API_BASE_URL = import.meta.env.VITE_API_URL ?? "/api";
@@ -32,6 +33,11 @@ apiClient.interceptors.request.use((config: CustomConfig) => {
     config.headers = config.headers ?? {};
     config.headers["x-wallet-address"] = address;
   }
+  
+  // Add trading mode header
+  const mode = useTradingModeStore.getState().mode;
+  config.headers = config.headers ?? {};
+  config.headers["x-trading-mode"] = mode;
   
   config.metadata = { startTime: Date.now() };
   return config;

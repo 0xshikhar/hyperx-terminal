@@ -6,3 +6,5 @@ export { useTradeStore } from "./tradeStore";
 export type { Trade } from "./tradeStore";
 export { useUIStore } from "./uiStore";
 export type { PanelLayout } from "./uiStore";
+export { useTradingModeStore } from "./tradingModeStore";
+export type { TradingMode } from "./tradingModeStore";
