@@ -244,7 +244,7 @@ export function TradingChart({ interval }: TradingChartProps) {
 
   return (
     <div
-      className="relative h-full min-h-[420px] overflow-hidden rounded-[18px] border border-[#213136] bg-[#091416]"
+      className="relative h-full min-h-[300px] overflow-hidden rounded-[18px] border border-[#213136] bg-[#091416]"
       onMouseDown={(event) => {
         const point = mapClientPoint(event);
         if (point) startDrawing(point.price, point.time);

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { createReferenceCandles } from "@/lib/mockMarketData";
 import { useMarketStore } from "@/store/marketStore";
+import { getMarketCandles } from "@/services/apiClient/markets.api";
 import {
   candleIntervals,
   makeCandlesChannel,
@@ -11,6 +12,7 @@ import {
   type TickerMessage,
 } from "@/services/wsClient";
 import { normalizeMarketSymbol } from "@hyperx/types/common";
+import { useQuery } from "@tanstack/react-query";
 
 const intervalSeconds: Record<CandleInterval, number> = {
   "1m": 60,
@@ -51,6 +53,26 @@ export function useCandleStream(market: string, interval: CandleInterval) {
   const marketSnapshot = useMarketStore((state) =>
     state.markets.find((entry) => entry.symbol === normalizedMarket)
   );
+  const { data: candleData } = useQuery({
+    queryKey: ["market-candles", normalizedMarket, interval],
+    queryFn: () => getMarketCandles(normalizedMarket, interval),
+    enabled: Boolean(normalizedMarket),
+    staleTime: 30_000,
+    refetchOnWindowFocus: false,
+  });
+
+  const historicalCandles = candleData?.candles ?? [];
+  const backendIsReference = candleData?.isReference ?? false;
+
+  useEffect(() => {
+    setCandles([]);
+  }, [normalizedMarket, interval]);
+
+  useEffect(() => {
+    if (historicalCandles.length > 0) {
+      setCandles(historicalCandles);
+    }
+  }, [historicalCandles]);
 
   useEffect(() => {
     const channel = makeCandlesChannel(normalizedMarket, interval);
@@ -84,5 +106,5 @@ export function useCandleStream(market: string, interval: CandleInterval) {
   const series = candles.length > 0 ? candles : referenceCandles;
   const latest = useMemo(() => series[series.length - 1] ?? null, [series]);
 
-  return { candles: series, latest, isReference: candles.length === 0 };
+  return { candles: series, latest, isReference: candles.length === 0 || backendIsReference };
 }

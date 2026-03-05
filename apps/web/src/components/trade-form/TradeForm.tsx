@@ -9,6 +9,8 @@ import { useTradeForm } from "@/hooks/useTradeForm";
 import { addTerminalActionListener } from "@/lib/terminalActions";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { useOrdersStore } from "@/store/ordersStore";
+import { useWallet } from "@/components/wallet/useWallet";
+import { WalletConnectDialog } from "@/components/wallet/WalletConnectDialog";
 
 export type TradeOrder = {
   market: string;
@@ -32,6 +34,7 @@ export function TradeForm({ onSubmit }: TradeFormProps) {
   const createOptimisticOrder = useOrdersStore((state) => state.createOptimisticOrder);
   const acknowledgeOrder = useOrdersStore((state) => state.acknowledgeOrder);
   const rejectOrder = useOrdersStore((state) => state.rejectOrder);
+  const isWalletConnected = useWallet((state) => state.isConnected);
   const { registerShortcut, unregisterShortcut } = useKeyboardShortcuts();
   const [side, setSide] = useState<"buy" | "sell">("buy");
   const [orderType, setOrderType] = useState<"market" | "limit" | "stop">("market");
@@ -46,6 +49,7 @@ export function TradeForm({ onSubmit }: TradeFormProps) {
   const [bracketEnabled, setBracketEnabled] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [walletPromptOpen, setWalletPromptOpen] = useState(false);
   const sizeInputRef = useRef<HTMLInputElement | null>(null);
   const priceInputRef = useRef<HTMLInputElement | null>(null);
   const stopPriceInputRef = useRef<HTMLInputElement | null>(null);
@@ -118,6 +122,8 @@ export function TradeForm({ onSubmit }: TradeFormProps) {
   }, [activeMarket]);
 
   useEffect(() => {
+    if (!isWalletConnected) return;
+
     return addTerminalActionListener((action) => {
       if (action.type === "focus-trade-form" || action.type === "focus-size-input") {
         sizeInputRef.current?.focus();
@@ -149,9 +155,11 @@ export function TradeForm({ onSubmit }: TradeFormProps) {
         window.setTimeout(() => targetRef.current?.focus(), 0);
       }
     });
-  }, []);
+  }, [isWalletConnected]);
 
   useEffect(() => {
+    if (!isWalletConnected) return;
+
     const shortcuts = [
       {
         key: "b",
@@ -199,7 +207,7 @@ export function TradeForm({ onSubmit }: TradeFormProps) {
     return () => {
       shortcuts.forEach((shortcut) => unregisterShortcut(shortcut.key));
     };
-  }, [registerShortcut, unregisterShortcut]);
+  }, [isWalletConnected, registerShortcut, unregisterShortcut]);
 
   return (
     <div id="terminal-trade-form" className="flex h-full flex-col bg-[#0d0d0f]">
@@ -268,11 +276,15 @@ export function TradeForm({ onSubmit }: TradeFormProps) {
         <div className="space-y-2 border-b border-[#1a2a2f] pb-3 text-xs">
           <div className="flex items-center justify-between">
             <span className="text-[#6b6b74]">Available to Trade</span>
-            <span className="font-mono text-white">0.00 USDC</span>
+            <span className="font-mono text-white">
+              {isWalletConnected ? "0.00 USDC" : "Wallet not connected"}
+            </span>
           </div>
           <div className="flex items-center justify-between">
             <span className="text-[#6b6b74]">Current Position</span>
-            <span className="font-mono text-white">0.00 {activeMarket.split("-")[0]}</span>
+            <span className="font-mono text-white">
+              {isWalletConnected ? `0.00 ${activeMarket.split("-")[0]}` : "Wallet not connected"}
+            </span>
           </div>
         </div>
 
@@ -350,15 +362,15 @@ export function TradeForm({ onSubmit }: TradeFormProps) {
           <InfoRow label="Est. Entry Price" value={market?.lastPrice ? `$${market.lastPrice.toFixed(2)}` : "--"} />
           <InfoRow 
             label="Liq. Price" 
-            value={liquidationEstimate ? `$${liquidationEstimate.toFixed(2)}` : "--"} 
+            value={isWalletConnected && liquidationEstimate ? `$${liquidationEstimate.toFixed(2)}` : "Wallet not connected"} 
           />
           <InfoRow 
             label="Margin Used" 
-            value={margin ? `$${margin.toFixed(2)}` : "--"}
+            value={isWalletConnected && margin ? `$${margin.toFixed(2)}` : "Wallet not connected"}
           />
           <InfoRow 
             label="Notional" 
-            value={notional ? `$${notional.toFixed(2)}` : "--"}
+            value={isWalletConnected && notional ? `$${notional.toFixed(2)}` : "Wallet not connected"}
           />
           <InfoRow 
             label="Slippage" 
@@ -395,20 +407,28 @@ export function TradeForm({ onSubmit }: TradeFormProps) {
         <div className="grid grid-cols-2 gap-2 pt-2">
           <button
             onClick={() => {
+              if (!isWalletConnected) {
+                setWalletPromptOpen(true);
+                return;
+              }
               setSide("buy");
               setConfirmOpen(true);
             }}
-            disabled={isSubmitting || !isValid}
+            disabled={isSubmitting || (isWalletConnected ? !isValid : false)}
             className="rounded bg-[#00d084] px-4 py-3 text-sm font-semibold text-black transition-colors hover:bg-[#00e090] disabled:opacity-50"
           >
             Buy / Long
           </button>
           <button
             onClick={() => {
+              if (!isWalletConnected) {
+                setWalletPromptOpen(true);
+                return;
+              }
               setSide("sell");
               setConfirmOpen(true);
             }}
-            disabled={isSubmitting || !isValid}
+            disabled={isSubmitting || (isWalletConnected ? !isValid : false)}
             className="rounded bg-[#ff4757] px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-[#ff5e6c] disabled:opacity-50"
           >
             Sell / Short
@@ -488,6 +508,13 @@ export function TradeForm({ onSubmit }: TradeFormProps) {
           </div>
         </DialogContent>
       </Dialog>
+
+      <WalletConnectDialog
+        open={walletPromptOpen}
+        onOpenChange={setWalletPromptOpen}
+        title="Connect to trade"
+        description="Trading actions are disabled until you connect a Starknet wallet."
+      />
     </div>
   );
 }

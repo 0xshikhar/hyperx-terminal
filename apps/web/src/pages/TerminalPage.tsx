@@ -20,8 +20,6 @@ import { OrderBook } from "@/components/orderbook/OrderBook";
 import { RecentTrades } from "@/components/recent-trades/RecentTrades";
 import { TradeForm } from "@/components/trade-form/TradeForm";
 import { PositionsTabs } from "@/components/positions/PositionsTabs";
-import { ConnectWalletButton } from "@/components/wallet/ConnectWalletButton";
-import { useWallet } from "@/components/wallet/useWallet";
 import { useVimNavigation } from "@/hooks/useVimNavigation";
 import type { CandleInterval } from "@/services/wsClient";
 
@@ -32,7 +30,6 @@ export function TerminalPage() {
   const { activeMarket, markets, setActiveMarket } = useMarketStore();
   const connectionState = useRuntimeHealthStore((state) => state.connectionState);
   const getMarketFeedHealth = useRuntimeHealthStore((state) => state.getMarketFeedHealth);
-  const isWalletConnected = useWallet((state) => state.isConnected);
   const [selectedInterval, setSelectedInterval] = useState<CandleInterval>("1m");
   const [rightPanelTab, setRightPanelTab] = useState<"orderbook" | "trades">("orderbook");
 
@@ -46,7 +43,7 @@ export function TerminalPage() {
   return (
     <div className="flex h-full min-h-0 flex-col bg-[#081214] text-[#d8dfe1]">
       <div className="grid flex-1 min-h-0 xl:grid-cols-[minmax(0,1fr)_360px]">
-        <div className="grid min-h-0 xl:grid-rows-[auto_minmax(0,1fr)_250px]">
+        <div className="grid min-h-0 xl:grid-rows-[auto_minmax(320px,1.5fr)_minmax(180px,1fr)]">
           <header className="border-b border-[#162326] bg-[#0a1518]">
             <div className="flex flex-col gap-4 px-5 py-4">
               <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
@@ -192,76 +189,51 @@ export function TerminalPage() {
             </div>
           </section>
 
-          {isWalletConnected ? (
-            <div className="min-h-0 bg-[#091416]">
-              <PositionsTabs />
-            </div>
-          ) : (
-            <WalletRequiredPanel />
-          )}
+          <div className="min-h-0 bg-[#091416]">
+            <PositionsTabs />
+          </div>
         </div>
 
-        {isWalletConnected ? (
-          <aside className="grid min-h-0 border-t border-[#162326] bg-[#091416] xl:border-l xl:border-t-0 xl:grid-rows-[minmax(0,1fr)_minmax(360px,0.9fr)]">
-            <div className="flex min-h-0 flex-col">
-              <div className="flex border-b border-[#162326]">
-                {(
-                  [
-                    { id: "orderbook", label: "Order Book" },
-                    { id: "trades", label: "Trades" },
-                  ] as const
-                ).map((tab) => (
-                  <button
-                    key={tab.id}
-                    onClick={() => setRightPanelTab(tab.id)}
-                    className={cn(
-                      "flex-1 border-b px-4 py-3 text-sm font-medium transition-colors",
-                      rightPanelTab === tab.id
-                        ? "border-[#53d8c8] text-white"
-                        : "border-transparent text-[#7f8c90] hover:text-[#d4dbdd]"
-                    )}
-                  >
-                    {tab.label}
-                  </button>
-                ))}
-                <div className="flex items-center px-3">
-                  <IconButton icon={Settings2} label="Book Settings" />
-                </div>
-              </div>
-
-              <div className="min-h-0 flex-1">
-                {rightPanelTab === "orderbook" ? (
-                  <OrderBook embedded />
-                ) : (
-                  <RecentTrades embedded />
-                )}
+        <aside className="grid min-h-0 border-t border-[#162326] bg-[#091416] xl:border-l xl:border-t-0 xl:grid-rows-[minmax(0,1fr)_minmax(280px,0.8fr)]">
+          <div className="flex min-h-0 flex-col">
+            <div className="flex border-b border-[#162326]">
+              {(
+                [
+                  { id: "orderbook", label: "Order Book" },
+                  { id: "trades", label: "Trades" },
+                ] as const
+              ).map((tab) => (
+                <button
+                  key={tab.id}
+                  onClick={() => setRightPanelTab(tab.id)}
+                  className={cn(
+                    "flex-1 border-b px-4 py-3 text-sm font-medium transition-colors",
+                    rightPanelTab === tab.id
+                      ? "border-[#53d8c8] text-white"
+                      : "border-transparent text-[#7f8c90] hover:text-[#d4dbdd]"
+                  )}
+                >
+                  {tab.label}
+                </button>
+              ))}
+              <div className="flex items-center px-3">
+                <IconButton icon={Settings2} label="Book Settings" />
               </div>
             </div>
 
-            <div className="min-h-0 border-t border-[#162326]">
-              <TradeForm />
+            <div className="min-h-0 flex-1">
+              {rightPanelTab === "orderbook" ? (
+                <OrderBook embedded />
+              ) : (
+                <RecentTrades embedded />
+              )}
             </div>
-          </aside>
-        ) : null}
-      </div>
-    </div>
-  );
-}
+          </div>
 
-function WalletRequiredPanel() {
-  return (
-    <div className="flex min-h-60 items-center justify-center border-t border-[#162326] bg-[#091416] px-6 py-10 text-center xl:border-t-0">
-      <div className="max-w-md space-y-4 rounded-2xl border border-[#183034] bg-[#0b1518] px-6 py-8 shadow-[0_0_0_1px_rgba(83,216,200,0.04)]">
-        <div className="space-y-2">
-          <p className="text-xs uppercase tracking-[0.18em] text-[#53d8c8]">Wallet required</p>
-          <h2 className="text-xl font-semibold text-white">Connect to see balances, positions, and order history</h2>
-          <p className="text-sm leading-6 text-[#8a9a9d]">
-            Trading data, account history, and the order ticket stay hidden until a Starknet wallet is connected.
-          </p>
-        </div>
-        <div className="flex justify-center">
-          <ConnectWalletButton />
-        </div>
+          <div className="min-h-0 border-t border-[#162326]">
+            <TradeForm />
+          </div>
+        </aside>
       </div>
     </div>
   );

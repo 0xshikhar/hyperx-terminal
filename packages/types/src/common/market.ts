@@ -53,7 +53,7 @@ export function fromParadexMarketSymbol(symbol: string): string {
 
 export function toParadexMarketSymbol(symbol: string): string {
   const { base, quote } = splitMarketSymbol(symbol);
-  return `${base}-${normalizeQuoteForVenue(normalizeQuoteForInternal(quote))}-PERP`;
+  return `${base}-${normalizeQuoteForInternal(quote)}-PERP`;
 }
 
 export function toMarketDisplaySymbol(symbol: string): string {

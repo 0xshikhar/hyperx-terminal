@@ -42,7 +42,7 @@ export function useTradeForm(input: TradeFormInput) {
   const errors = useMemo<TradeFormErrors>(() => {
     const next: TradeFormErrors = {};
 
-    if (!input.size || numericSize <= 0) {
+    if (input.size && numericSize <= 0) {
       next.size = "Enter a valid size";
     }
 
@@ -80,7 +80,10 @@ export function useTradeForm(input: TradeFormInput) {
     numericStopLoss,
   ]);
 
-  const isValid = useMemo(() => Object.keys(errors).length === 0, [errors]);
+  const isValid = useMemo(
+    () => Boolean(input.size) && Object.keys(errors).length === 0,
+    [errors, input.size]
+  );
 
   const notional = useMemo(
     () => numericSize * entryPrice,

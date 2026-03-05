@@ -3,6 +3,7 @@ import {
   normalizeMarketSymbol,
   toMarketDisplaySymbol,
 } from "@hyperx/types/common";
+import type { Candle, CandleInterval } from "@/services/wsClient";
 
 export type MarketSummary = {
   symbol: string;
@@ -61,4 +62,27 @@ export async function listMarkets(): Promise<MarketSummary[]> {
 
   const response = await apiClient.get<{ markets: MarketSummary[] }>("/markets");
   return response.data.markets;
+}
+
+export async function getMarketCandles(
+  market: string,
+  interval: CandleInterval,
+  limit = 120
+): Promise<{ candles: Candle[]; isReference: boolean }> {
+  const response = await apiClient.get<{
+    market: string;
+    interval: string;
+    candles: Candle[];
+    isReference?: boolean;
+  }>(`/markets/${encodeURIComponent(market)}/candles`, {
+    params: {
+      interval,
+      limit,
+    },
+  });
+
+  return {
+    candles: response.data.candles,
+    isReference: response.data.isReference ?? false,
+  };
 }
