@@ -1,11 +1,15 @@
 import { useQuery } from "@tanstack/react-query";
 import { useMarketStore } from "@/store/marketStore";
+import { useTradingModeStore } from "@/store/tradingModeStore";
 import { useStarkzapBalance } from "@/hooks/useStarkzapBalance";
 import { getAccountSummary } from "@/services/apiClient/account.api";
 
 export function AccountSummary() {
   const { activeMarket } = useMarketStore();
+  const mode = useTradingModeStore((s) => s.mode);
   const strkBalance = useStarkzapBalance();
+  const modeLabel = mode === "real" ? "LIVE" : mode === "paper" ? "PAPER" : "DEMO";
+  const modeColor = mode === "real" ? "text-emerald-400 border-emerald-400/30" : mode === "paper" ? "text-amber-400 border-amber-400/30" : "text-rose-400 border-rose-400/30";
   const { data: account, isLoading, isError } = useQuery({
     queryKey: ["account-summary"],
     queryFn: getAccountSummary,
@@ -20,7 +24,14 @@ export function AccountSummary() {
   return (
     <div className="rounded-[18px] border border-[#213136] bg-[#091416]">
       <div className="flex items-center justify-between border-b border-[#152327] px-4 py-3">
-        <h3 className="text-sm font-semibold text-[#dde5e7]">Account Summary</h3>
+        <div className="flex items-center gap-2">
+          <h3 className="text-sm font-semibold text-[#dde5e7]">Account Summary</h3>
+          {mode !== "real" && (
+            <span className={`font-mono text-[10px] uppercase tracking-wider border rounded px-1.5 py-0.5 ${modeColor}`}>
+              {modeLabel}
+            </span>
+          )}
+        </div>
         <span className="text-xs text-[#7e8c91]">{activeMarket}</span>
       </div>
       <div className="grid grid-cols-2 gap-3 p-4 text-xs text-[#7e8c91]">
