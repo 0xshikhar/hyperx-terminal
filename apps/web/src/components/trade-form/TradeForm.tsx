@@ -1,10 +1,11 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { useMarketStore } from "@/store/marketStore";
 import { cn } from "@/lib/utils";
 import { placeOrder } from "@/services/apiClient/orders.api";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { useTradeForm } from "@/hooks/useTradeForm";
 
 export type TradeOrder = {
   market: string;
@@ -36,21 +37,24 @@ export function TradeForm({ onSubmit }: TradeFormProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
 
-  const numericSize = Number(size) || 0;
-  const entryPrice = useMemo(() => {
-    if (orderType === "market") return market?.lastPrice ?? 0;
-    if (orderType === "stop") return Number(stopPrice) || 0;
-    return Number(price) || 0;
-  }, [orderType, price, stopPrice, market?.lastPrice]);
-
-  const notional = numericSize * entryPrice;
-  const margin = leverage > 0 ? notional / leverage : 0;
-  const liquidationEstimate =
-    leverage > 0
-      ? side === "buy"
-        ? entryPrice * (1 - 1 / leverage)
-        : entryPrice * (1 + 1 / leverage)
-      : 0;
+  const {
+    errors,
+    isValid,
+    notional,
+    margin,
+    liquidationEstimate,
+  } = useTradeForm({
+    market: activeMarket,
+    side,
+    type: orderType,
+    size,
+    price,
+    stopPrice,
+    takeProfit,
+    stopLoss,
+    leverage,
+    lastPrice: market?.lastPrice,
+  });
 
   const submit = async () => {
     if (isSubmitting) return;
@@ -130,6 +134,9 @@ export function TradeForm({ onSubmit }: TradeFormProps) {
               placeholder="0.00"
               className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
             />
+            {errors.price && (
+              <p className="mt-1 text-xs text-rose-500">{errors.price}</p>
+            )}
           </div>
         )}
         {orderType === "stop" && (
@@ -141,6 +148,9 @@ export function TradeForm({ onSubmit }: TradeFormProps) {
               placeholder="0.00"
               className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
             />
+            {errors.stopPrice && (
+              <p className="mt-1 text-xs text-rose-500">{errors.stopPrice}</p>
+            )}
           </div>
         )}
         <div>
@@ -151,6 +161,9 @@ export function TradeForm({ onSubmit }: TradeFormProps) {
             placeholder="0.00"
             className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
           />
+          {errors.size && (
+            <p className="mt-1 text-xs text-rose-500">{errors.size}</p>
+          )}
         </div>
         <div className="grid grid-cols-2 gap-3">
           <div>
@@ -161,6 +174,11 @@ export function TradeForm({ onSubmit }: TradeFormProps) {
               placeholder="0.00"
               className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
             />
+            {errors.takeProfit && (
+              <p className="mt-1 text-xs text-rose-500">
+                {errors.takeProfit}
+              </p>
+            )}
           </div>
           <div>
             <label className="text-xs text-muted-foreground">Stop Loss</label>
@@ -170,6 +188,9 @@ export function TradeForm({ onSubmit }: TradeFormProps) {
               placeholder="0.00"
               className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
             />
+            {errors.stopLoss && (
+              <p className="mt-1 text-xs text-rose-500">{errors.stopLoss}</p>
+            )}
           </div>
         </div>
         <div>
@@ -192,6 +213,9 @@ export function TradeForm({ onSubmit }: TradeFormProps) {
               className="w-16 rounded-md border border-border bg-background px-2 py-1 text-xs"
             />
           </div>
+          {errors.leverage && (
+            <p className="mt-1 text-xs text-rose-500">{errors.leverage}</p>
+          )}
         </div>
         <div className="rounded-md border border-border bg-background px-3 py-2 text-xs text-muted-foreground">
           <div className="flex items-center justify-between">
@@ -217,12 +241,7 @@ export function TradeForm({ onSubmit }: TradeFormProps) {
 
       <button
         onClick={() => setConfirmOpen(true)}
-        disabled={
-          isSubmitting ||
-          !size ||
-          (orderType === "limit" && !price) ||
-          (orderType === "stop" && !stopPrice)
-        }
+        disabled={isSubmitting || !isValid}
         className={cn(
           "mt-5 w-full rounded-md px-3 py-2 text-sm font-semibold",
           side === "buy"

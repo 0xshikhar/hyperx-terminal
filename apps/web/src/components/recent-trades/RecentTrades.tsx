@@ -1,23 +1,11 @@
-import { useEffect, useMemo } from "react";
 import { FixedSizeList, type ListChildComponentProps } from "react-window";
 import { useMarketStore } from "@/store/marketStore";
-import { useTradeStore } from "@/store/tradeStore";
-import { wsClient } from "@/services/wsClient";
 import { RecentTradeRow } from "@/components/recent-trades/RecentTradeRow";
-import type { Trade } from "@/store/tradeStore";
-
-const EMPTY_TRADES: Trade[] = [];
+import { useRecentTrades } from "@/hooks/useRecentTrades";
 
 export function RecentTrades() {
   const activeMarket = useMarketStore((s) => s.activeMarket);
-  const trades = useTradeStore((s) => s.tradesByMarket[activeMarket] ?? EMPTY_TRADES);
-
-  useEffect(() => {
-    wsClient.subscribe("trades", activeMarket);
-    return () => wsClient.unsubscribe("trades", activeMarket);
-  }, [activeMarket]);
-
-  const listData = useMemo(() => trades, [trades]);
+  const { trades, listData } = useRecentTrades(activeMarket);
 
   const Row = ({ index, style, data }: ListChildComponentProps<typeof listData>) => {
     const trade = data[index];
