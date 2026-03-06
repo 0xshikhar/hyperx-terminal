@@ -7,6 +7,7 @@ export type WalletState = {
   isConnected: boolean;
   address: string | null;
   walletName: string | null;
+  account: WalletAccount | null;
   connectWallet: () => Promise<void>;
   disconnectWallet: () => Promise<void>;
 };
@@ -35,6 +36,7 @@ export const useWallet = create<WalletState>()((set, get) => {
     isConnected: initial.isConnected,
     address: initial.address,
     walletName: initial.walletName,
+    account: null,
 
     connectWallet: async () => {
       const state = get();
@@ -63,6 +65,7 @@ export const useWallet = create<WalletState>()((set, get) => {
           walletName,
           isConnected: Boolean(address),
           isConnecting: false,
+          account: walletAccount,
         });
       } finally {
         set({ isConnecting: false });
@@ -82,6 +85,7 @@ export const useWallet = create<WalletState>()((set, get) => {
           walletName: null,
           isConnected: false,
           isConnecting: false,
+          account: null,
         });
       }
     },

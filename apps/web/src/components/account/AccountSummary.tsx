@@ -1,7 +1,9 @@
 import { useMarketStore } from "@/store/marketStore";
+import { useStarkzapBalance } from "@/hooks/useStarkzapBalance";
 
 export function AccountSummary() {
   const { activeMarket } = useMarketStore();
+  const strkBalance = useStarkzapBalance();
 
   return (
     <div className="rounded-lg border border-border bg-card p-4">
@@ -25,6 +27,12 @@ export function AccountSummary() {
         <div>
           <p className="text-[10px] uppercase">Unrealized PnL</p>
           <p className="text-sm font-mono text-emerald-500">+$1,218.33</p>
+        </div>
+        <div>
+          <p className="text-[10px] uppercase">STRK Balance</p>
+          <p className="text-sm font-mono text-foreground">
+            {strkBalance ?? "--"}
+          </p>
         </div>
       </div>
     </div>
