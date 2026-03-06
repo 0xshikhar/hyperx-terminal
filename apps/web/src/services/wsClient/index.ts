@@ -21,5 +21,6 @@ export type {
   TradesMessage,
   StatusMessage,
   ChannelPayloadMap,
+  SubscribableChannel,
 } from "./channelTypes";
 export { candleIntervals, makeCandlesChannel } from "./channelTypes";

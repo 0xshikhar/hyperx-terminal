@@ -11,6 +11,30 @@ type OrderBookRow = {
   isMine: boolean;
 };
 
+function getTickSize(price: number): number {
+  if (price >= 10000) return 5;
+  if (price >= 1000) return 1;
+  if (price >= 100) return 0.5;
+  if (price >= 10) return 0.1;
+  if (price >= 1) return 0.01;
+  if (price >= 0.1) return 0.001;
+  return 0.0001;
+}
+
+function getPrecision(price: number): number {
+  if (price >= 10000) return 0;
+  if (price >= 1000) return 1;
+  if (price >= 100) return 2;
+  if (price >= 10) return 3;
+  if (price >= 1) return 4;
+  if (price >= 0.1) return 5;
+  return 6;
+}
+
+function roundToTick(price: number, tickSize: number): number {
+  return Math.round(price / tickSize) * tickSize;
+}
+
 const aggregateLevels = (levels: OrderbookLevel[], aggregation: number, side: "bid" | "ask") => {
   if (aggregation <= 1) {
     const sorted = [...levels].sort((a, b) => (side === "bid" ? b.price - a.price : a.price - b.price));
@@ -19,10 +43,15 @@ const aggregateLevels = (levels: OrderbookLevel[], aggregation: number, side: "b
 
   const map = new Map<number, number>();
   for (const level of levels) {
-    const bucket = Math.floor(level.price / aggregation) * aggregation;
+    const tickSize = getTickSize(level.price);
+    const bucket = roundToTick(level.price, tickSize * aggregation);
     map.set(bucket, (map.get(bucket) ?? 0) + level.size);
   }
-  const rows = Array.from(map.entries()).map(([price, size]) => ({ price, size }));
+  
+  const rows: { price: number; size: number }[] = Array.from(map.entries()).map(([price, size]) => ({
+    price: Number(price.toFixed(getPrecision(price))),
+    size,
+  }));
   rows.sort((a, b) => (side === "bid" ? b.price - a.price : a.price - b.price));
   return rows;
 };
@@ -46,8 +75,9 @@ export function useOrderBook(market: string) {
     const prices = openOrders.filter((order) => order.market === market).map((order) => order.price);
     const set = new Set<number>();
     for (const price of prices) {
-      const bucket = aggregation <= 1 ? price : Math.floor(price / aggregation) * aggregation;
-      set.add(bucket);
+      const tickSize = getTickSize(price);
+      const bucket = aggregation <= 1 ? price : roundToTick(price, tickSize * aggregation);
+      set.add(Number(bucket.toFixed(getPrecision(price))));
     }
     return set;
   }, [openOrders, market, aggregation]);

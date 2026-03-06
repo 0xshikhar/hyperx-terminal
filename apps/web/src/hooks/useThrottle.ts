@@ -10,8 +10,13 @@ export function useThrottle<T>(value: T, delayMs: number) {
     const elapsed = now - lastUpdatedRef.current;
 
     if (elapsed >= delayMs) {
-      lastUpdatedRef.current = now;
-      setThrottled(value);
+      if (timeoutRef.current) {
+        window.clearTimeout(timeoutRef.current);
+      }
+      timeoutRef.current = window.setTimeout(() => {
+        lastUpdatedRef.current = Date.now();
+        setThrottled(value);
+      }, 0);
       return;
     }
 

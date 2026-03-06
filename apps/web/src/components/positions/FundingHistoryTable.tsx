@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, keepPreviousData } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import {
   Table,
@@ -39,7 +39,7 @@ const formatTime = (value: string) => new Date(value).toLocaleTimeString();
 export function FundingHistoryTable() {
   const [page, setPage] = useState(1);
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading } = useQuery<{ items: FundingRow[]; total: number }>({
     queryKey: ["funding-history", page],
     queryFn: async () => {
       const start = (page - 1) * PAGE_SIZE;
@@ -47,7 +47,7 @@ export function FundingHistoryTable() {
       return { items, total: fundingSeed.length };
     },
     staleTime: 60_000,
-    keepPreviousData: true,
+    placeholderData: keepPreviousData,
   });
 
   const items = data?.items ?? [];
@@ -71,7 +71,7 @@ export function FundingHistoryTable() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {items.map((row) => (
+              {items.map((row: FundingRow) => (
                 <TableRow key={row.id}>
                   <TableCell className="font-semibold">{row.market}</TableCell>
                   <TableCell className={row.rate >= 0 ? "text-emerald-500" : "text-rose-500"}>

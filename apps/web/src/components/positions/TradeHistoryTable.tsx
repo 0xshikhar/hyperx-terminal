@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, keepPreviousData } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import {
   Table,
@@ -105,7 +105,7 @@ const formatTime = (value: string) => new Date(value).toLocaleTimeString();
 export function TradeHistoryTable() {
   const [page, setPage] = useState(1);
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading } = useQuery<{ items: TradeHistoryRow[]; total: number }>({
     queryKey: ["trade-history", page],
     queryFn: async () => {
       const start = (page - 1) * PAGE_SIZE;
@@ -113,7 +113,7 @@ export function TradeHistoryTable() {
       return { items, total: historySeed.length };
     },
     staleTime: 60_000,
-    keepPreviousData: true,
+    placeholderData: keepPreviousData,
   });
 
   const items = data?.items ?? [];
@@ -140,7 +140,7 @@ export function TradeHistoryTable() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {items.map((row) => (
+              {items.map((row: TradeHistoryRow) => (
                 <TableRow key={row.id}>
                   <TableCell className="font-semibold">{row.market}</TableCell>
                   <TableCell
