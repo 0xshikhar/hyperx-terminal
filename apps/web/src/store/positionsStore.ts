@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { listOpenPositions } from "@/services/apiClient/positions.api";
 
 export type PositionSide = "long" | "short";
 
@@ -24,8 +25,11 @@ export type PositionDelta = {
 type PositionsState = {
   positions: Position[];
   pnlById: Record<string, { pnl: number; pnlPercent: number }>;
+  isLoading: boolean;
+  error: string | null;
   setSnapshot: (positions: Position[]) => void;
   applyDelta: (deltas: PositionDelta[]) => void;
+  fetchPositions: () => Promise<void>;
 };
 
 const computeMargin = (position: Pick<Position, "entryPrice" | "size" | "leverage">) =>
@@ -53,7 +57,7 @@ const seedPositions: Position[] = [
   {
     id: "pos-btc-1",
     market: "BTC-USD",
-    side: "long",
+    side: "long" as PositionSide,
     size: 0.25,
     entryPrice: 94200,
     markPrice: 95410,
@@ -66,7 +70,7 @@ const seedPositions: Position[] = [
   {
     id: "pos-eth-1",
     market: "ETH-USD",
-    side: "short",
+    side: "short" as PositionSide,
     size: 3.1,
     entryPrice: 4810,
     markPrice: 4762,
@@ -79,7 +83,7 @@ const seedPositions: Position[] = [
   {
     id: "pos-strk-1",
     market: "STRK-USD",
-    side: "long",
+    side: "long" as PositionSide,
     size: 1200,
     entryPrice: 2.12,
     markPrice: 2.34,
@@ -103,6 +107,8 @@ const canHydrate = (delta: PositionDelta): delta is Position =>
 export const usePositionsStore = create<PositionsState>()((set) => ({
   positions: [...seedPositions].sort((a, b) => b.openedAt.localeCompare(a.openedAt)),
   pnlById: buildPnlById(seedPositions),
+  isLoading: false,
+  error: null,
   setSnapshot: (positions) => {
     const normalized = positions.map(normalizePosition).sort((a, b) => b.openedAt.localeCompare(a.openedAt));
     set({ positions: normalized, pnlById: buildPnlById(normalized) });
@@ -125,4 +131,17 @@ export const usePositionsStore = create<PositionsState>()((set) => ({
       const next = Array.from(byId.values()).sort((a, b) => b.openedAt.localeCompare(a.openedAt));
       return { positions: next, pnlById: buildPnlById(next) };
     }),
+  fetchPositions: async () => {
+    set({ isLoading: true, error: null });
+    try {
+      const positions = await listOpenPositions();
+      const normalized = (positions as Position[]).map(normalizePosition).sort((a, b) => b.openedAt.localeCompare(a.openedAt));
+      set({ positions: normalized, pnlById: buildPnlById(normalized), isLoading: false });
+    } catch (error) {
+      set({ 
+        isLoading: false, 
+        error: error instanceof Error ? error.message : "Failed to fetch positions" 
+      });
+    }
+  },
 }));

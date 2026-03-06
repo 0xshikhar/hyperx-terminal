@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { listOpenOrders } from "@/services/apiClient/positions.api";
 
 export type OrderSide = "buy" | "sell";
 export type OrderType = "limit" | "market" | "stop";
@@ -16,9 +17,12 @@ export type Order = {
 
 type OrdersState = {
   openOrders: Order[];
+  isLoading: boolean;
+  error: string | null;
   setOpenOrders: (orders: Order[]) => void;
   upsertOrder: (order: Order) => void;
   removeOrder: (id: string) => void;
+  fetchOrders: () => Promise<void>;
 };
 
 const seedOrders: Order[] = [
@@ -53,6 +57,8 @@ const seedOrders: Order[] = [
 
 export const useOrdersStore = create<OrdersState>()((set) => ({
   openOrders: seedOrders,
+  isLoading: false,
+  error: null,
   setOpenOrders: (orders) => set({ openOrders: orders }),
   upsertOrder: (order) =>
     set((state) => {
@@ -66,4 +72,25 @@ export const useOrdersStore = create<OrdersState>()((set) => ({
     }),
   removeOrder: (id) =>
     set((state) => ({ openOrders: state.openOrders.filter((order) => order.id !== id) })),
+  fetchOrders: async () => {
+    set({ isLoading: true, error: null });
+    try {
+      const orders = await listOpenOrders();
+      const mapped: Order[] = orders.map((o) => ({
+        id: o.id,
+        market: o.market,
+        side: o.side,
+        type: o.type,
+        price: Number(o.price),
+        size: Number(o.size),
+        status: o.status as OrderStatus,
+      }));
+      set({ openOrders: mapped, isLoading: false });
+    } catch (error) {
+      set({ 
+        isLoading: false, 
+        error: error instanceof Error ? error.message : "Failed to fetch orders" 
+      });
+    }
+  },
 }));
