@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Blocks, Clock, Zap } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { LatencyDisplay } from "@/components/monitoring/LatencyDisplay";
+import { useWebSocket } from "@/hooks/useWebSocket";
 
 type StatusData = {
   blockHeight?: number;
@@ -20,6 +21,8 @@ export function StatusBar({ className, showDetails = true }: StatusBarProps) {
     connected: true,
   });
   const [timeAgo, setTimeAgo] = useState<number | null>(null);
+  
+  useWebSocket(true);
 
   useEffect(() => {
     const ws = (window as Window & { __ws?: WebSocket }).__ws;

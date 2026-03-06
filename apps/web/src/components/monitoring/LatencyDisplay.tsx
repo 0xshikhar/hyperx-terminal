@@ -1,8 +1,10 @@
 import { useMemo } from "react";
 import { Wifi, WifiOff } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useLatencyStore } from "@/store/latencyStore";
+import { useWSClient, useWebSocket } from "@/hooks/useWebSocket";
 
-export type LatencyData = {
+type LatencyDisplayData = {
   wsPing?: number;
   apiLatency?: number;
   lastUpdate?: number;
@@ -17,11 +19,18 @@ export function LatencyDisplay({
   showDetails = false,
   className,
 }: LatencyDisplayProps) {
-  const isConnected = true;
-  const latency = useMemo<LatencyData>(
-    () => ({ wsPing: 28, apiLatency: 120 }),
-    []
-  );
+  useWebSocket(true);
+  const wsClient = useWSClient();
+  const storeLatency = useLatencyStore((s) => s.latency);
+  const isConnected = wsClient?.connectionState === "connected";
+  
+  const latency = useMemo<LatencyDisplayData>(() => {
+    const wsPing = wsClient ? storeLatency.wsPing ?? undefined : undefined;
+    return {
+      wsPing,
+      apiLatency: storeLatency.apiLatency ?? undefined,
+    };
+  }, [wsClient, storeLatency.apiLatency, storeLatency.wsPing]);
 
   const getLatencyColor = (ms?: number) => {
     if (ms === undefined) return "text-muted-foreground";
