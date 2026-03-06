@@ -2,13 +2,21 @@ import { useMemo } from "react";
 import { Star, TrendingUp } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useMarketStore } from "@/store/marketStore";
+import { useUIStore } from "@/store/uiStore";
 
 export function Sidebar() {
   const { activeMarket, markets, setActiveMarket } = useMarketStore();
+  const favoriteMarkets = useUIStore((s) => s.favoriteMarkets);
   const sortedMarkets = useMemo(
     () =>
-      [...markets].sort((a, b) => b.changePercent24h - a.changePercent24h),
-    [markets]
+      [...markets].sort((a, b) => {
+        const aFav = favoriteMarkets.includes(a.symbol);
+        const bFav = favoriteMarkets.includes(b.symbol);
+        if (aFav && !bFav) return -1;
+        if (!aFav && bFav) return 1;
+        return b.changePercent24h - a.changePercent24h;
+      }),
+    [markets, favoriteMarkets]
   );
 
   return (
@@ -23,6 +31,7 @@ export function Sidebar() {
       <div className="flex-1 overflow-auto">
         {sortedMarkets.map((market) => {
           const isActive = market.symbol === activeMarket;
+          const isFavorite = favoriteMarkets.includes(market.symbol);
           return (
             <button
               key={market.symbol}
@@ -34,7 +43,10 @@ export function Sidebar() {
                   : "text-muted-foreground hover:text-foreground"
               )}
             >
-              <span className="font-medium">{market.symbol}</span>
+              <span className="flex items-center gap-2 font-medium">
+                {market.symbol}
+                {isFavorite && <Star className="h-3 w-3 text-primary" />}
+              </span>
               <span
                 className={cn(
                   "text-xs font-mono",

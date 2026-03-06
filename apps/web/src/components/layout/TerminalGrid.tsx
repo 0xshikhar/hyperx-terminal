@@ -1,4 +1,6 @@
 import type { ReactNode } from "react";
+import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
+import { useUIStore } from "@/store/uiStore";
 
 type TerminalGridProps = {
   marketSelector: ReactNode;
@@ -17,14 +19,56 @@ export function TerminalGrid({
   recentTrades,
   positions,
 }: TerminalGridProps) {
+  const panelLayout = useUIStore((s) => s.panelLayout);
+  const setPanelLayout = useUIStore((s) => s.setPanelLayout);
+
+  const mainLayout = panelLayout.main ?? [75, 25];
+  const leftLayout = panelLayout.left ?? [10, 50, 40];
+  const rightLayout = panelLayout.right ?? [60, 20, 20];
+
   return (
-    <div className="grid h-full grid-cols-1 gap-4 p-4 lg:grid-cols-12">
-      <div className="lg:col-span-9">{marketSelector}</div>
-      <div className="lg:col-span-3 lg:row-span-2">{orderBook}</div>
-      <div className="lg:col-span-6 lg:row-span-2">{chart}</div>
-      <div className="lg:col-span-3">{tradeForm}</div>
-      <div className="lg:col-span-3">{recentTrades}</div>
-      <div className="lg:col-span-9">{positions}</div>
-    </div>
+    <PanelGroup
+      direction="horizontal"
+      className="h-full p-4"
+      onLayout={(sizes) => setPanelLayout({ main: sizes })}
+    >
+      <Panel defaultSize={mainLayout[0]} minSize={30}>
+        <PanelGroup
+          direction="vertical"
+          onLayout={(sizes) => setPanelLayout({ left: sizes })}
+        >
+          <Panel defaultSize={leftLayout[0]} minSize={5}>
+            {marketSelector}
+          </Panel>
+          <PanelResizeHandle className="h-1 bg-transparent hover:bg-border transition-colors" />
+          <Panel defaultSize={leftLayout[1]} minSize={20}>
+            {chart}
+          </Panel>
+          <PanelResizeHandle className="h-1 bg-transparent hover:bg-border transition-colors" />
+          <Panel defaultSize={leftLayout[2]} minSize={15}>
+            {positions}
+          </Panel>
+        </PanelGroup>
+      </Panel>
+      <PanelResizeHandle className="w-1 bg-transparent hover:bg-border transition-colors" />
+      <Panel defaultSize={mainLayout[1]} minSize={15}>
+        <PanelGroup
+          direction="vertical"
+          onLayout={(sizes) => setPanelLayout({ right: sizes })}
+        >
+          <Panel defaultSize={rightLayout[0]} minSize={20}>
+            {orderBook}
+          </Panel>
+          <PanelResizeHandle className="h-1 bg-transparent hover:bg-border transition-colors" />
+          <Panel defaultSize={rightLayout[1]} minSize={10}>
+            {tradeForm}
+          </Panel>
+          <PanelResizeHandle className="h-1 bg-transparent hover:bg-border transition-colors" />
+          <Panel defaultSize={rightLayout[2]} minSize={10}>
+            {recentTrades}
+          </Panel>
+        </PanelGroup>
+      </Panel>
+    </PanelGroup>
   );
 }

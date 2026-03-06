@@ -1,18 +1,36 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { useMarketStore } from "@/store/marketStore";
 import { getMe } from "@/services/apiClient/me.api";
 import { updatePreferences } from "@/services/apiClient/preferences.api";
+import { useUIStore } from "@/store/uiStore";
 
 export function PreferencesCard() {
   const markets = useMarketStore((s) => s.markets);
+  const setTheme = useUIStore((s) => s.setTheme);
+  const setDefaultMarket = useUIStore((s) => s.setDefaultMarket);
+  const setFavoriteMarkets = useUIStore((s) => s.setFavoriteMarkets);
   const queryClient = useQueryClient();
   const { data, isLoading, isError } = useQuery({
     queryKey: ["me"],
     queryFn: getMe,
     retry: false,
   });
+
+  useEffect(() => {
+    if (!data) return;
+    const prefs = data.user.preferences;
+    if (prefs?.theme) {
+      setTheme(prefs.theme === "light" ? "light" : "dark");
+    }
+    if (prefs?.defaultMarket) {
+      setDefaultMarket(prefs.defaultMarket);
+    }
+    if (prefs?.favoriteMarkets) {
+      setFavoriteMarkets(prefs.favoriteMarkets);
+    }
+  }, [data, setDefaultMarket, setFavoriteMarkets, setTheme]);
 
   if (isLoading) {
     return (
@@ -47,9 +65,13 @@ export function PreferencesCard() {
         data.user.preferences?.defaultMarket ?? markets[0]?.symbol ?? "BTC-USD"
       }
       initialDefaultLeverage={data.user.preferences?.defaultLeverage ?? 10}
+      initialTheme={data.user.preferences?.theme === "light" ? "light" : "dark"}
       markets={markets.map((m) => m.symbol)}
       onSave={async (next) => {
         await updatePreferences(next);
+        setTheme(next.theme);
+        setDefaultMarket(next.defaultMarket);
+        setFavoriteMarkets(next.favoriteMarkets);
         await queryClient.invalidateQueries({ queryKey: ["me"] });
       }}
     />
@@ -61,11 +83,13 @@ function PreferencesCardContent(props: {
   initialFavorites: string[];
   initialDefaultMarket: string;
   initialDefaultLeverage: number;
+  initialTheme: "dark" | "light";
   markets: string[];
   onSave: (input: {
     favoriteMarkets: string[];
     defaultMarket: string;
     defaultLeverage: number;
+    theme: "dark" | "light";
   }) => Promise<void>;
 }) {
   const [favorites, setFavorites] = useState<string[]>(props.initialFavorites);
@@ -75,6 +99,7 @@ function PreferencesCardContent(props: {
   const [defaultLeverage, setDefaultLeverage] = useState<number>(
     props.initialDefaultLeverage
   );
+  const [theme, setTheme] = useState<"dark" | "light">(props.initialTheme);
 
   const favoriteSet = useMemo(() => new Set(favorites), [favorites]);
 
@@ -84,6 +109,7 @@ function PreferencesCardContent(props: {
         favoriteMarkets: favorites,
         defaultMarket,
         defaultLeverage,
+        theme,
       }),
     onSuccess: () => {
       toast.success("Preferences saved");
@@ -147,6 +173,17 @@ function PreferencesCardContent(props: {
             max={100}
             className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
           />
+        </div>
+        <div>
+          <p className="text-[10px] uppercase text-muted-foreground">Theme</p>
+          <select
+            value={theme}
+            onChange={(event) => setTheme(event.target.value as "dark" | "light")}
+            className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
+          >
+            <option value="dark">Dark</option>
+            <option value="light">Light</option>
+          </select>
         </div>
       </div>
 
