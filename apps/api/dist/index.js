@@ -10,6 +10,8 @@ const PORT = Number(env.PORT ?? 3001);
 const app = Fastify({
     logger: false,
 });
+const metricsBuffer = [];
+const MAX_METRICS = 200;
 await app.register(cors, {
     origin: true,
     credentials: true,
@@ -18,6 +20,29 @@ await app.register(helmet);
 await registerRateLimit(app, { maxPerMinute: 120 });
 app.get("/health", async () => ({ ok: true }));
 app.get("/api/health", async () => ({ ok: true }));
+const metricsSchema = z.object({
+    metrics: z.array(z.object({
+        name: z.string(),
+        value: z.number(),
+        timestamp: z.number(),
+        meta: z.record(z.unknown()).optional(),
+    })),
+});
+app.post("/api/metrics", async (req, reply) => {
+    const parsed = metricsSchema.safeParse(req.body);
+    if (!parsed.success) {
+        reply.status(400);
+        return { error: "invalid_metrics" };
+    }
+    metricsBuffer.push(...parsed.data.metrics);
+    if (metricsBuffer.length > MAX_METRICS) {
+        metricsBuffer.splice(0, metricsBuffer.length - MAX_METRICS);
+    }
+    return { accepted: parsed.data.metrics.length };
+});
+app.get("/api/metrics", async () => ({
+    metrics: metricsBuffer.slice(-50),
+}));
 const markets = [
     {
         symbol: "BTC-USD",
@@ -266,5 +291,59 @@ app.post("/api/orders", async (req, reply) => {
     }
     const id = `${body.data.market}-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
     return { id };
+});
+const PAGE_SIZE = 20;
+const seedPositions = [
+    { id: "pos-btc-1", market: "BTC-USD", side: "long", size: 0.25, entryPrice: 94200, markPrice: 95410, leverage: 8, margin: 2943.75, openedAt: "2026-03-08T00:20:00Z" },
+    { id: "pos-eth-1", market: "ETH-USD", side: "short", size: 3.1, entryPrice: 4810, markPrice: 4762, leverage: 6, margin: 2488.35, openedAt: "2026-03-08T00:10:00Z" },
+    { id: "pos-strk-1", market: "STRK-USD", side: "long", size: 1200, entryPrice: 2.12, markPrice: 2.34, leverage: 4, margin: 636, openedAt: "2026-03-07T23:40:00Z" },
+];
+const seedOrders = [
+    { id: "ord-1", market: "BTC-USD", side: "buy", type: "limit", price: 94500, size: 0.1, status: "open" },
+    { id: "ord-2", market: "ETH-USD", side: "sell", type: "stop", price: 4700, size: 1.5, status: "open" },
+];
+const seedTrades = [
+    { id: "t-1", market: "BTC-USD", side: "buy", size: 0.05, price: 95120, fee: 2.38, pnl: 0, executedAt: "2026-03-08T00:15:00Z" },
+    { id: "t-2", market: "ETH-USD", side: "sell", size: 2.0, price: 4795, fee: 4.79, pnl: -30, executedAt: "2026-03-08T00:10:00Z" },
+    { id: "t-3", market: "BTC-USD", side: "buy", size: 0.1, price: 94800, fee: 4.74, pnl: 0, executedAt: "2026-03-07T23:45:00Z" },
+    { id: "t-4", market: "STRK-USD", side: "sell", size: 500, price: 2.28, fee: 0.57, pnl: 80, executedAt: "2026-03-07T23:30:00Z" },
+    { id: "t-5", market: "ETH-USD", side: "buy", size: 1.5, price: 4750, fee: 3.56, pnl: 0, executedAt: "2026-03-07T23:00:00Z" },
+];
+const seedFunding = [
+    { id: "f-1", market: "BTC-USD", rate: 0.0125, payment: 8.21, time: "2026-03-08T00:00:00Z" },
+    { id: "f-2", market: "ETH-USD", rate: -0.009, payment: -3.12, time: "2026-03-07T23:00:00Z" },
+    { id: "f-3", market: "STRK-USD", rate: 0.021, payment: 1.86, time: "2026-03-07T22:00:00Z" },
+    { id: "f-4", market: "BTC-USD", rate: 0.011, payment: 7.42, time: "2026-03-07T21:00:00Z" },
+    { id: "f-5", market: "ETH-USD", rate: -0.008, payment: -2.64, time: "2026-03-07T20:00:00Z" },
+    { id: "f-6", market: "STRK-USD", rate: 0.018, payment: 1.24, time: "2026-03-07T19:00:00Z" },
+    { id: "f-7", market: "BTC-USD", rate: 0.010, payment: 6.88, time: "2026-03-07T18:00:00Z" },
+];
+function computePnl(position) {
+    const direction = position.side === "long" ? 1 : -1;
+    const pnl = (position.markPrice - position.entryPrice) * position.size * direction;
+    const pnlPercent = (pnl / position.margin) * 100;
+    return { pnl, pnlPercent };
+}
+app.get("/api/positions", async (req, reply) => {
+    const positions = seedPositions.map((pos) => {
+        const { pnl, pnlPercent } = computePnl(pos);
+        return { ...pos, pnl, pnlPercent };
+    });
+    return { positions };
+});
+app.get("/api/orders", async (req, reply) => {
+    return { orders: seedOrders };
+});
+app.get("/api/trades", async (req, reply) => {
+    const page = Number(req.query.page) || 1;
+    const start = (page - 1) * PAGE_SIZE;
+    const items = seedTrades.slice(start, start + PAGE_SIZE);
+    return { items, total: seedTrades.length };
+});
+app.get("/api/funding", async (req, reply) => {
+    const page = Number(req.query.page) || 1;
+    const start = (page - 1) * PAGE_SIZE;
+    const items = seedFunding.slice(start, start + PAGE_SIZE);
+    return { items, total: seedFunding.length };
 });
 await app.listen({ port: PORT, host: "0.0.0.0" });
