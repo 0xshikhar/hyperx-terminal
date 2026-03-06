@@ -1,15 +1,21 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useMarketStore } from "@/store/marketStore";
 import { cn } from "@/lib/utils";
 import { placeOrder } from "@/services/apiClient/orders.api";
 import { toast } from "sonner";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
 
 export type TradeOrder = {
   market: string;
   side: "buy" | "sell";
-  type: "market" | "limit";
+  type: "market" | "limit" | "stop";
   size: string;
   price?: string;
+  stopPrice?: string;
+  takeProfit?: string;
+  stopLoss?: string;
+  leverage?: number;
 };
 
 type TradeFormProps = {
@@ -17,12 +23,34 @@ type TradeFormProps = {
 };
 
 export function TradeForm({ onSubmit }: TradeFormProps) {
-  const { activeMarket } = useMarketStore();
+  const activeMarket = useMarketStore((s) => s.activeMarket);
+  const market = useMarketStore((s) => s.markets.find((item) => item.symbol === s.activeMarket));
   const [side, setSide] = useState<"buy" | "sell">("buy");
-  const [orderType, setOrderType] = useState<"market" | "limit">("market");
+  const [orderType, setOrderType] = useState<"market" | "limit" | "stop">("market");
   const [size, setSize] = useState("");
   const [price, setPrice] = useState("");
+  const [stopPrice, setStopPrice] = useState("");
+  const [takeProfit, setTakeProfit] = useState("");
+  const [stopLoss, setStopLoss] = useState("");
+  const [leverage, setLeverage] = useState(10);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+
+  const numericSize = Number(size) || 0;
+  const entryPrice = useMemo(() => {
+    if (orderType === "market") return market?.lastPrice ?? 0;
+    if (orderType === "stop") return Number(stopPrice) || 0;
+    return Number(price) || 0;
+  }, [orderType, price, stopPrice, market?.lastPrice]);
+
+  const notional = numericSize * entryPrice;
+  const margin = leverage > 0 ? notional / leverage : 0;
+  const liquidationEstimate =
+    leverage > 0
+      ? side === "buy"
+        ? entryPrice * (1 - 1 / leverage)
+        : entryPrice * (1 + 1 / leverage)
+      : 0;
 
   const submit = async () => {
     if (isSubmitting) return;
@@ -32,6 +60,10 @@ export function TradeForm({ onSubmit }: TradeFormProps) {
       type: orderType,
       size,
       price: orderType === "limit" ? price : undefined,
+      stopPrice: orderType === "stop" ? stopPrice : undefined,
+      takeProfit: takeProfit || undefined,
+      stopLoss: stopLoss || undefined,
+      leverage,
     };
     setIsSubmitting(true);
     try {
@@ -72,7 +104,7 @@ export function TradeForm({ onSubmit }: TradeFormProps) {
       </div>
 
       <div className="mt-4 flex items-center gap-2">
-        {(["market", "limit"] as const).map((value) => (
+        {(["market", "limit", "stop"] as const).map((value) => (
           <button
             key={value}
             onClick={() => setOrderType(value)}
@@ -100,6 +132,17 @@ export function TradeForm({ onSubmit }: TradeFormProps) {
             />
           </div>
         )}
+        {orderType === "stop" && (
+          <div>
+            <label className="text-xs text-muted-foreground">Stop Price</label>
+            <input
+              value={stopPrice}
+              onChange={(event) => setStopPrice(event.target.value)}
+              placeholder="0.00"
+              className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
+            />
+          </div>
+        )}
         <div>
           <label className="text-xs text-muted-foreground">Size</label>
           <input
@@ -109,11 +152,77 @@ export function TradeForm({ onSubmit }: TradeFormProps) {
             className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
           />
         </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="text-xs text-muted-foreground">Take Profit</label>
+            <input
+              value={takeProfit}
+              onChange={(event) => setTakeProfit(event.target.value)}
+              placeholder="0.00"
+              className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
+            />
+          </div>
+          <div>
+            <label className="text-xs text-muted-foreground">Stop Loss</label>
+            <input
+              value={stopLoss}
+              onChange={(event) => setStopLoss(event.target.value)}
+              placeholder="0.00"
+              className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
+            />
+          </div>
+        </div>
+        <div>
+          <label className="text-xs text-muted-foreground">Leverage</label>
+          <div className="mt-2 flex items-center gap-3">
+            <input
+              type="range"
+              min={1}
+              max={50}
+              value={leverage}
+              onChange={(event) => setLeverage(Number(event.target.value))}
+              className="w-full"
+            />
+            <input
+              type="number"
+              min={1}
+              max={50}
+              value={leverage}
+              onChange={(event) => setLeverage(Number(event.target.value))}
+              className="w-16 rounded-md border border-border bg-background px-2 py-1 text-xs"
+            />
+          </div>
+        </div>
+        <div className="rounded-md border border-border bg-background px-3 py-2 text-xs text-muted-foreground">
+          <div className="flex items-center justify-between">
+            <span>Notional</span>
+            <span className="font-mono text-foreground">
+              {notional ? `$${notional.toFixed(2)}` : "--"}
+            </span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span>Margin</span>
+            <span className="font-mono text-foreground">
+              {margin ? `$${margin.toFixed(2)}` : "--"}
+            </span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span>Est. Liq</span>
+            <span className="font-mono text-foreground">
+              {liquidationEstimate ? liquidationEstimate.toFixed(2) : "--"}
+            </span>
+          </div>
+        </div>
       </div>
 
       <button
-        onClick={submit}
-        disabled={isSubmitting || !size || (orderType === "limit" && !price)}
+        onClick={() => setConfirmOpen(true)}
+        disabled={
+          isSubmitting ||
+          !size ||
+          (orderType === "limit" && !price) ||
+          (orderType === "stop" && !stopPrice)
+        }
         className={cn(
           "mt-5 w-full rounded-md px-3 py-2 text-sm font-semibold",
           side === "buy"
@@ -124,9 +233,81 @@ export function TradeForm({ onSubmit }: TradeFormProps) {
         {isSubmitting
           ? "Submitting..."
           : side === "buy"
-            ? "Place Buy"
-            : "Place Sell"}
+            ? "Review Buy"
+            : "Review Sell"}
       </button>
+
+      <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Confirm Order</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2 text-sm">
+            <div className="flex items-center justify-between">
+              <span className="text-muted-foreground">Market</span>
+              <span className="font-semibold">{activeMarket}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-muted-foreground">Side</span>
+              <span className={side === "buy" ? "text-emerald-500" : "text-rose-500"}>
+                {side.toUpperCase()}
+              </span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-muted-foreground">Type</span>
+              <span className="font-semibold">{orderType.toUpperCase()}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-muted-foreground">Size</span>
+              <span className="font-mono">{size}</span>
+            </div>
+            {orderType !== "market" && (
+              <div className="flex items-center justify-between">
+                <span className="text-muted-foreground">
+                  {orderType === "limit" ? "Limit Price" : "Stop Price"}
+                </span>
+                <span className="font-mono">{orderType === "limit" ? price : stopPrice}</span>
+              </div>
+            )}
+            {takeProfit && (
+              <div className="flex items-center justify-between">
+                <span className="text-muted-foreground">Take Profit</span>
+                <span className="font-mono">{takeProfit}</span>
+              </div>
+            )}
+            {stopLoss && (
+              <div className="flex items-center justify-between">
+                <span className="text-muted-foreground">Stop Loss</span>
+                <span className="font-mono">{stopLoss}</span>
+              </div>
+            )}
+            <div className="flex items-center justify-between">
+              <span className="text-muted-foreground">Leverage</span>
+              <span className="font-semibold">{leverage}x</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-muted-foreground">Margin</span>
+              <span className="font-mono">
+                {margin ? `$${margin.toFixed(2)}` : "--"}
+              </span>
+            </div>
+          </div>
+          <div className="flex items-center justify-end gap-2">
+            <Button variant="outline" onClick={() => setConfirmOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={async () => {
+                setConfirmOpen(false);
+                await submit();
+              }}
+              disabled={isSubmitting}
+            >
+              Confirm
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
