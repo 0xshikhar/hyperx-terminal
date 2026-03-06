@@ -8,6 +8,7 @@
     "start": "node dist/index.js"
   },
   "dependencies": {
+    "@upstash/redis": "^1.35.3",
     "ws": "^8.18.0",
     "zod": "^3.25.76"
   },

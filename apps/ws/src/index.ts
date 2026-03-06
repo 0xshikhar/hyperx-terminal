@@ -1,14 +1,22 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { WebSocketServer, type WebSocket } from "ws";
 import { z } from "zod";
+import { initRedisPubSub, publishMessage, onPubSubMessage, isPubSubEnabled, startRedisSubscriber } from "./pubsub";
 
 const PORT = Number(process.env.PORT ?? 3002);
+
+const result = initRedisPubSub();
+if (result.enabled) {
+  startRedisSubscriber();
+}
 
 type ChannelKey = string;
 
 type ClientState = {
   id: string;
   subscriptions: Set<ChannelKey>;
+  lastPing: number;
+  isAlive: boolean;
 };
 
 const subscribeSchema = z.object({
@@ -20,6 +28,7 @@ const subscribeSchema = z.object({
         z.literal("orderbook"),
         z.literal("trades"),
         z.literal("status"),
+        z.literal("candles"),
       ]),
       market: z.string().optional(),
     })
@@ -58,6 +67,11 @@ function broadcast(key: ChannelKey, payload: unknown) {
     if (!state.subscriptions.has(key)) continue;
     if (ws.readyState !== ws.OPEN) continue;
     ws.send(message);
+  }
+  
+  if (isPubSubEnabled()) {
+    const [channel, market] = key.includes(":") ? key.split(":") : [key, undefined];
+    publishMessage({ channel, market, data: payload });
   }
 }
 
@@ -130,7 +144,12 @@ function publishStatus() {
 
 wss.on("connection", (ws: WebSocket) => {
   const id = `${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
-  const state: ClientState = { id, subscriptions: new Set() };
+  const state: ClientState = { 
+    id, 
+    subscriptions: new Set(),
+    lastPing: Date.now(),
+    isAlive: true,
+  };
   clients.set(id, { ws, state });
 
   ws.on("message", (data: Buffer) => {
@@ -144,7 +163,9 @@ wss.on("connection", (ws: WebSocket) => {
 
     const ping = pingSchema.safeParse(parsed);
     if (ping.success) {
-      ws.send(JSON.stringify({ type: "pong", timestamp: ping.data.timestamp }));
+      state.lastPing = Date.now();
+      state.isAlive = true;
+      ws.send(JSON.stringify({ type: "pong", timestamp: ping.data.timestamp, serverTime: Date.now() }));
       return;
     }
 
@@ -164,9 +185,42 @@ wss.on("connection", (ws: WebSocket) => {
   ws.on("close", () => {
     clients.delete(id);
   });
+
+  ws.on("error", () => {
+    clients.delete(id);
+  });
 });
 
-httpServer.listen(PORT);
+if (isPubSubEnabled()) {
+  onPubSubMessage((message) => {
+    const key = message.market 
+      ? `${message.channel}:${message.market}`
+      : message.channel;
+    const messageStr = JSON.stringify(message.data);
+    for (const { ws, state } of clients.values()) {
+      if (!state.subscriptions.has(key)) continue;
+      if (ws.readyState !== ws.OPEN) continue;
+      ws.send(messageStr);
+    }
+  });
+}
+
+const HEARTBEAT_INTERVAL = 30000;
+const PING_INTERVAL = 15000;
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [id, { ws, state }] of clients) {
+    if (now - state.lastPing > HEARTBEAT_INTERVAL) {
+      ws.terminate();
+      clients.delete(id);
+      continue;
+    }
+    if (ws.readyState === ws.OPEN) {
+      ws.send(JSON.stringify({ type: "ping", timestamp: now }));
+    }
+  }
+}, PING_INTERVAL);
 
 const markets = ["BTC-USD", "ETH-USD", "STRK-USD"] as const;
 setInterval(() => {
@@ -177,3 +231,7 @@ setInterval(() => {
   }
   publishStatus();
 }, 500);
+
+httpServer.listen(PORT, () => {
+  console.log(`WS server running on port ${PORT}`);
+});
