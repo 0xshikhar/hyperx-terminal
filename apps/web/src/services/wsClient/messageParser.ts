@@ -41,6 +41,22 @@ const statusSchema = z.object({
   timestamp: z.number(),
 });
 
+const candleSchema = z.object({
+  time: z.number(),
+  open: z.number(),
+  high: z.number(),
+  low: z.number(),
+  close: z.number(),
+});
+
+const candlesSchema = z.object({
+  type: z.literal("candles"),
+  market: z.string(),
+  interval: z.string(),
+  candles: z.array(candleSchema),
+  timestamp: z.number(),
+});
+
 const pongSchema = z.object({
   type: z.literal("pong"),
   timestamp: z.number(),
@@ -51,6 +67,7 @@ export const serverMessageSchema = z.discriminatedUnion("type", [
   orderbookSchema,
   tradesSchema,
   statusSchema,
+  candlesSchema,
   pongSchema,
 ]);
 

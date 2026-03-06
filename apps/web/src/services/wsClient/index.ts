@@ -7,7 +7,12 @@ export const wsClient = new WSClient({
 });
 
 export { WSClient } from "./WSClient";
+export type { ConnectionState } from "./WSClient";
 export type {
+  Candle,
+  CandleInterval,
+  CandlesMessage,
+  CandlesChannel,
   WSChannel,
   ServerMessage,
   ClientMessage,
@@ -15,4 +20,6 @@ export type {
   OrderbookMessage,
   TradesMessage,
   StatusMessage,
+  ChannelPayloadMap,
 } from "./channelTypes";
+export { candleIntervals, makeCandlesChannel } from "./channelTypes";

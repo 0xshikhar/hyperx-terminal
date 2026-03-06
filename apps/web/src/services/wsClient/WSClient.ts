@@ -1,5 +1,7 @@
 import type {
+  CandlesChannel,
   ClientMessage,
+  ChannelPayloadMap,
   ServerMessage,
   SubscribableChannel,
   WSChannel,
@@ -90,17 +92,19 @@ export class WSClient {
     this.ws.send(JSON.stringify(message));
   }
 
-  subscribe(channel: SubscribableChannel, market?: string) {
+  subscribe(channel: SubscribableChannel | CandlesChannel, market?: string) {
+    const usesRawChannel = typeof channel === "string" && channel.startsWith("candles:");
     this.send({
       type: "subscribe",
-      channels: [{ channel, market }],
+      channels: [usesRawChannel ? { channel } : { channel, market }],
     });
   }
 
-  unsubscribe(channel: SubscribableChannel, market?: string) {
+  unsubscribe(channel: SubscribableChannel | CandlesChannel, market?: string) {
+    const usesRawChannel = typeof channel === "string" && channel.startsWith("candles:");
     this.send({
       type: "unsubscribe",
-      channels: [{ channel, market }],
+      channels: [usesRawChannel ? { channel } : { channel, market }],
     });
   }
 
@@ -109,10 +113,7 @@ export class WSClient {
     return () => this.stateListeners.delete(listener);
   }
 
-  on<T extends ServerMessage["type"]>(
-    channel: T,
-    listener: Listener<Extract<ServerMessage, { type: T }>>
-  ) {
+  on<T extends WSChannel>(channel: T, listener: Listener<ChannelPayloadMap[T]>) {
     const set = this.channelListeners.get(channel as WSChannel) ?? new Set();
     set.add(listener as Listener<ServerMessage>);
     this.channelListeners.set(channel as WSChannel, set);
