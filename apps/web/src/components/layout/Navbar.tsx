@@ -3,6 +3,7 @@ import { BarChart3, BookOpen, Trophy, User } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ConnectWalletButton } from "@/components/wallet/ConnectWalletButton";
 import { AlertBell } from "@/components/alerts/AlertBell";
+import { NotificationBell } from "@/components/notifications/NotificationBell";
 
 const navItems = [
   { href: "/terminal", label: "Trade", icon: BarChart3 },
@@ -46,6 +47,7 @@ export function Navbar() {
         </nav>
       </div>
       <div className="flex items-center gap-2">
+        <NotificationBell />
         <AlertBell />
         <ConnectWalletButton />
       </div>
