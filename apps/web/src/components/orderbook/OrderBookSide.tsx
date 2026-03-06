@@ -23,6 +23,7 @@ export function OrderBookSide({ rows, height }: OrderBookSideProps) {
       itemCount={rows.length}
       itemSize={32}
       itemData={rows}
+      itemKey={(index, data) => `${data[index]?.price ?? index}-${data[index]?.side ?? ""}`}
     >
       {RowRenderer}
     </FixedSizeList>

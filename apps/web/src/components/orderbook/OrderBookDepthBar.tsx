@@ -10,7 +10,7 @@ export function OrderBookDepthBar({ percent, side }: OrderBookDepthBarProps) {
     <div className="absolute inset-0 overflow-hidden rounded-sm">
       <div
         className={cn(
-          "h-full opacity-15",
+          "h-full opacity-15 transition-[width] duration-200 ease-out",
           side === "bid" ? "bg-emerald-500" : "bg-rose-500"
         )}
         style={{
