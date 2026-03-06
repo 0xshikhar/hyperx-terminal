@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   createChart,
   type CandlestickData,
@@ -7,10 +7,15 @@ import {
   type UTCTimestamp,
 } from "lightweight-charts";
 import { useMarketStore } from "@/store/marketStore";
-import { wsClient } from "@/services/wsClient";
+import { ChartToolbar } from "@/components/chart/ChartToolbar";
+import { ChartPositionOverlay } from "@/components/chart/ChartPositionOverlay";
+import { useCandleStream } from "@/hooks/useCandleStream";
+import type { CandleInterval } from "@/services/wsClient";
 
 export function TradingChart() {
   const activeMarket = useMarketStore((s) => s.activeMarket);
+  const [interval, setInterval] = useState<CandleInterval>("1m");
+  const { candles } = useCandleStream(activeMarket, interval);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
@@ -41,23 +46,8 @@ export function TradingChart() {
       wickDownColor: "#EF5350",
     });
 
-    const now = Math.floor(Date.now() / 1000) as UTCTimestamp;
-    const seed: CandlestickData[] = Array.from({ length: 60 }).map((_, i) => {
-      const time = (now - ((60 - i) * 60) as UTCTimestamp) as UTCTimestamp;
-      const base = activeMarket === "ETH-USD" ? 4800 : activeMarket === "STRK-USD" ? 2.2 : 95000;
-      const open = base + (Math.random() - 0.5) * (activeMarket === "STRK-USD" ? 0.02 : 80);
-      const close = open + (Math.random() - 0.5) * (activeMarket === "STRK-USD" ? 0.01 : 40);
-      const high = Math.max(open, close) + Math.random() * (activeMarket === "STRK-USD" ? 0.01 : 30);
-      const low = Math.min(open, close) - Math.random() * (activeMarket === "STRK-USD" ? 0.01 : 30);
-      return { time, open, high, low, close };
-    });
-
-    series.setData(seed);
-    chart.timeScale().fitContent();
-
     chartRef.current = chart;
     seriesRef.current = series;
-    lastTimeRef.current = (seed[seed.length - 1]?.time as UTCTimestamp | undefined) ?? null;
 
     const resize = () => {
       if (!containerRef.current) return;
@@ -76,43 +66,40 @@ export function TradingChart() {
       seriesRef.current = null;
       lastTimeRef.current = null;
     };
-  }, [activeMarket]);
+  }, []);
 
   useEffect(() => {
-    wsClient.subscribe("ticker", activeMarket);
-    const unsubscribe = wsClient.on("ticker", (message) => {
-      if (message.market !== activeMarket) return;
-      const series = seriesRef.current;
-      if (!series) return;
-
-      const nextTime = Math.floor(message.timestamp / 1000) as UTCTimestamp;
-      const currentTime = lastTimeRef.current;
-      const time =
-        currentTime && nextTime <= currentTime
-          ? ((currentTime + 60) as UTCTimestamp)
-          : nextTime;
-      lastTimeRef.current = time;
-
-      const close = message.lastPrice;
-      const open = close;
-      const high = close;
-      const low = close;
-      series.update({ time, open, high, low, close });
-    });
-
-    return () => {
-      wsClient.unsubscribe("ticker", activeMarket);
-      unsubscribe();
-    };
-  }, [activeMarket]);
+    const series = seriesRef.current;
+    if (!series || candles.length === 0) return;
+    series.setData(
+      candles.map(
+        (candle) =>
+          ({
+            time: candle.time as UTCTimestamp,
+            open: candle.open,
+            high: candle.high,
+            low: candle.low,
+            close: candle.close,
+          }) as CandlestickData
+      )
+    );
+    lastTimeRef.current = candles[candles.length - 1]?.time as UTCTimestamp;
+    chartRef.current?.timeScale().fitContent();
+  }, [candles]);
 
   return (
     <div className="h-full rounded-lg border border-border bg-card p-4">
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-semibold">Chart</h3>
-        <span className="text-xs text-muted-foreground">{activeMarket}</span>
+        <div className="flex items-center gap-3">
+          <span className="text-xs text-muted-foreground">{activeMarket}</span>
+          <ChartToolbar interval={interval} onIntervalChange={setInterval} />
+        </div>
       </div>
-      <div className="mt-4 h-64 rounded-md border border-border" ref={containerRef} />
+      <div className="relative mt-4 h-64 rounded-md border border-border">
+        <div ref={containerRef} className="h-full w-full" />
+        <ChartPositionOverlay market={activeMarket} />
+      </div>
     </div>
   );
 }
