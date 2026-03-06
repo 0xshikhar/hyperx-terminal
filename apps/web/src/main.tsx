@@ -5,6 +5,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import App from "./App.tsx";
 import { Toaster } from "@/components/ui/sonner";
 import { startClientServices } from "@/services/startup";
+import { NotificationsToastBridge } from "@/components/notifications/NotificationsToastBridge";
+import { PerformanceMonitor } from "@/components/monitoring/PerformanceMonitor";
 import "~/styles/globals.css";
 
 const queryClient = new QueryClient();
@@ -20,6 +22,8 @@ export function AppRoot() {
       <BrowserRouter>
         <App />
       </BrowserRouter>
+      <NotificationsToastBridge />
+      <PerformanceMonitor />
       <Toaster />
     </QueryClientProvider>
   );

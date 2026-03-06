@@ -4,10 +4,13 @@ import { useMarketStore } from "@/store/marketStore";
 import { useTradeStore } from "@/store/tradeStore";
 import { wsClient } from "@/services/wsClient";
 import { RecentTradeRow } from "@/components/recent-trades/RecentTradeRow";
+import type { Trade } from "@/store/tradeStore";
+
+const EMPTY_TRADES: Trade[] = [];
 
 export function RecentTrades() {
   const activeMarket = useMarketStore((s) => s.activeMarket);
-  const trades = useTradeStore((s) => s.tradesByMarket[activeMarket] ?? []);
+  const trades = useTradeStore((s) => s.tradesByMarket[activeMarket] ?? EMPTY_TRADES);
 
   useEffect(() => {
     wsClient.subscribe("trades", activeMarket);
