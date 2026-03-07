@@ -23,6 +23,16 @@ const envSchema = z.object({
   DATABASE_URL: z.string().min(1),
   UPSTASH_REDIS_REST_URL: z.string().optional(),
   UPSTASH_REDIS_REST_TOKEN: z.string().optional(),
+  // Extended DEX
+  EXTENDED_API_KEY: z.string().optional(),
+  EXTENDED_API_SECRET: z.string().optional(),
+  EXTENDED_API_URL: z.string().optional(),
+  EXTENDED_CHAIN_ID: z.string().optional(),
+  // Paradex DEX
+  PARADEX_API_KEY: z.string().optional(),
+  PARADEX_API_SECRET: z.string().optional(),
+  PARADEX_API_URL: z.string().optional(),
+  PARADEX_CHAIN_ID: z.string().optional(),
 });
 
 export const env = envSchema.parse(process.env);
