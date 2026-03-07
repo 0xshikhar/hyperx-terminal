@@ -1,6 +1,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { WebSocketServer, type WebSocket } from "ws";
 import { z } from "zod";
+import type { ClientMessage, ServerMessage } from "@hyperx/types/websocket";
 import { initRedisPubSub, publishMessage, onPubSubMessage, isPubSubEnabled, startRedisSubscriber } from "./pubsub";
 
 const PORT = Number(process.env.PORT ?? 3002);
