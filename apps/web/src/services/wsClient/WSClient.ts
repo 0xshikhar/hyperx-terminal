@@ -7,6 +7,7 @@ import type {
   WSChannel,
 } from "./channelTypes";
 import { serverMessageSchema } from "./messageParser";
+import { getToken } from "../auth.service";
 
 export type ConnectionState = "connecting" | "connected" | "disconnected" | "error";
 
@@ -47,7 +48,12 @@ export class WSClient {
     if (this.ws?.readyState === WebSocket.OPEN) return;
 
     this.setState("connecting");
-    const ws = new WebSocket(this.url);
+    
+    // Append JWT token to URL for authentication
+    const token = getToken();
+    const url = token ? `${this.url}?token=${token}` : this.url;
+    
+    const ws = new WebSocket(url);
 
     ws.onopen = () => {
       this.reconnectAttempts = 0;

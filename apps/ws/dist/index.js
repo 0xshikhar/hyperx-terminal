@@ -1,12 +1,20 @@
 import { createServer } from "node:http";
 import { WebSocketServer } from "ws";
 import { z } from "zod";
-import { initRedisPubSub, publishMessage, onPubSubMessage, isPubSubEnabled, startRedisSubscriber } from "./pubsub";
+import { getSubscriptionManager } from "./SubscriptionManager.js";
+import { getMessageDispatcher } from "./MessageDispatcher.js";
+import { authenticateConnection, requiresAuth, validateAccountChannel } from "./auth.js";
+import { initRedisPubSub, onPubSubMessage, isPubSubEnabled, startRedisSubscriber } from "./pubsub";
 const PORT = Number(process.env.PORT ?? 3002);
+// Initialize Redis Pub/Sub
 const result = initRedisPubSub();
 if (result.enabled) {
     startRedisSubscriber();
 }
+// Initialize subscription manager and message dispatcher
+const subscriptionManager = getSubscriptionManager();
+const messageDispatcher = getMessageDispatcher();
+// Message schemas
 const subscribeSchema = z.object({
     type: z.union([z.literal("subscribe"), z.literal("unsubscribe")]),
     channels: z.array(z.object({
@@ -16,6 +24,7 @@ const subscribeSchema = z.object({
             z.literal("trades"),
             z.literal("status"),
             z.literal("candles"),
+            z.string().regex(/^account:.+/), // account:{userId} format
         ]),
         market: z.string().optional(),
     })),
@@ -24,49 +33,180 @@ const pingSchema = z.object({
     type: z.literal("ping"),
     timestamp: z.number(),
 });
+const authSchema = z.object({
+    type: z.literal("auth"),
+    token: z.string(),
+});
+// Helper functions
 function channelKey(channel, market) {
     return market ? `${channel}:${market}` : channel;
 }
 function randomBetween(min, max) {
     return min + Math.random() * (max - min);
 }
+// HTTP health check server
 const httpServer = createServer((req, res) => {
     if (req.url === "/health") {
+        const metrics = subscriptionManager.getMetrics();
         res.writeHead(200, { "content-type": "application/json" });
-        res.end(JSON.stringify({ ok: true }));
+        res.end(JSON.stringify({
+            ok: true,
+            clients: metrics.totalClients,
+            subscriptions: metrics.totalSubscriptions
+        }));
         return;
     }
     res.writeHead(404);
     res.end();
 });
+// WebSocket server
 const wss = new WebSocketServer({ server: httpServer });
-const clients = new Map();
-function broadcast(key, payload) {
-    const message = JSON.stringify(payload);
-    for (const { ws, state } of clients.values()) {
-        if (!state.subscriptions.has(key))
-            continue;
-        if (ws.readyState !== ws.OPEN)
-            continue;
-        ws.send(message);
-    }
-    if (isPubSubEnabled()) {
-        const [channel, market] = key.includes(":") ? key.split(":") : [key, undefined];
-        publishMessage({ channel, market, data: payload });
-    }
+// Handle Redis pub/sub messages
+if (isPubSubEnabled()) {
+    onPubSubMessage((message) => {
+        messageDispatcher.handlePubSubMessage(message);
+    });
 }
+// WebSocket connection handler
+wss.on("connection", (ws, req) => {
+    const id = `${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+    // Try to authenticate on connection
+    const authResult = authenticateConnection(req.url, req.headers.cookie);
+    const userId = authResult?.userId;
+    // Register client with subscription manager
+    const client = subscriptionManager.registerClient(id, ws, userId);
+    // Send welcome message
+    ws.send(JSON.stringify({
+        type: "connected",
+        clientId: id,
+        authenticated: !!userId,
+        userId: userId || undefined,
+        timestamp: Date.now(),
+    }));
+    // Handle messages
+    ws.on("message", (data) => {
+        const raw = data.toString();
+        let parsed;
+        try {
+            parsed = JSON.parse(raw);
+        }
+        catch {
+            ws.send(JSON.stringify({ type: "error", message: "Invalid JSON" }));
+            return;
+        }
+        // Handle ping
+        const ping = pingSchema.safeParse(parsed);
+        if (ping.success) {
+            subscriptionManager.updatePing(id);
+            ws.send(JSON.stringify({
+                type: "pong",
+                timestamp: ping.data.timestamp,
+                serverTime: Date.now()
+            }));
+            return;
+        }
+        // Handle auth message
+        const auth = authSchema.safeParse(parsed);
+        if (auth.success) {
+            const authResult = authenticateConnection(undefined, `token=${auth.data.token}`);
+            if (authResult) {
+                subscriptionManager.setClientAuth(id, authResult.userId);
+                ws.send(JSON.stringify({
+                    type: "auth_success",
+                    userId: authResult.userId
+                }));
+            }
+            else {
+                ws.send(JSON.stringify({
+                    type: "auth_error",
+                    message: "Invalid token"
+                }));
+            }
+            return;
+        }
+        // Handle subscribe/unsubscribe
+        const sub = subscribeSchema.safeParse(parsed);
+        if (!sub.success) {
+            ws.send(JSON.stringify({ type: "error", message: "Invalid message format" }));
+            return;
+        }
+        for (const channelInfo of sub.data.channels) {
+            const key = channelKey(channelInfo.channel, channelInfo.market);
+            // Check if channel requires authentication
+            if (requiresAuth(key)) {
+                if (!client.userId) {
+                    ws.send(JSON.stringify({
+                        type: "error",
+                        message: `Authentication required for channel: ${key}`
+                    }));
+                    continue;
+                }
+                // Validate account channel access
+                if (!validateAccountChannel(key, client.userId)) {
+                    ws.send(JSON.stringify({
+                        type: "error",
+                        message: "Access denied to this account channel"
+                    }));
+                    continue;
+                }
+            }
+            if (sub.data.type === "subscribe") {
+                const success = subscriptionManager.subscribe(id, key, requiresAuth(key));
+                if (success) {
+                    ws.send(JSON.stringify({
+                        type: "subscribed",
+                        channel: key
+                    }));
+                }
+                else {
+                    ws.send(JSON.stringify({
+                        type: "error",
+                        message: `Failed to subscribe to ${key}`
+                    }));
+                }
+            }
+            else {
+                subscriptionManager.unsubscribe(id, key);
+                ws.send(JSON.stringify({
+                    type: "unsubscribed",
+                    channel: key
+                }));
+            }
+        }
+    });
+    ws.on("close", () => {
+        subscriptionManager.removeClient(id);
+    });
+    ws.on("error", () => {
+        subscriptionManager.removeClient(id);
+    });
+});
+// Heartbeat and cleanup intervals
+const HEARTBEAT_INTERVAL = 30000;
+const PING_INTERVAL = 15000;
+setInterval(() => {
+    const stale = subscriptionManager.cleanupStaleClients(HEARTBEAT_INTERVAL);
+    if (stale.length > 0) {
+        console.log(`Cleaned up ${stale.length} stale clients`);
+    }
+}, PING_INTERVAL);
+// Data publishers
 function publishTicker(market) {
     const base = market === "ETH-USD" ? 4800 : market === "STRK-USD" ? 2.2 : 95000;
     const lastPrice = base + randomBetween(-1, 1) * (market === "STRK-USD" ? 0.02 : 120);
-    broadcast(channelKey("ticker", market), {
-        type: "ticker",
+    messageDispatcher.dispatch({
+        channel: "ticker",
         market,
-        lastPrice,
-        changePercent24h: randomBetween(-5, 5),
-        volume24h: randomBetween(10_000_000, 1_200_000_000),
-        openInterest: randomBetween(1_000_000, 800_000_000),
-        fundingRate: randomBetween(-0.03, 0.03),
-        timestamp: Date.now(),
+        data: {
+            type: "ticker",
+            market,
+            lastPrice,
+            changePercent24h: randomBetween(-5, 5),
+            volume24h: randomBetween(10_000_000, 1_200_000_000),
+            openInterest: randomBetween(1_000_000, 800_000_000),
+            fundingRate: randomBetween(-0.03, 0.03),
+            timestamp: Date.now(),
+        },
     });
 }
 function publishOrderbook(market) {
@@ -81,115 +221,70 @@ function publishOrderbook(market) {
         price: Math.round((mid + i * tick) / tick) * tick,
         size: randomBetween(0.01, 5) * (1 + i / 10),
     }));
-    broadcast(channelKey("orderbook", market), {
-        type: "orderbook",
+    messageDispatcher.dispatch({
+        channel: "orderbook",
         market,
-        bids,
-        asks,
-        timestamp: Date.now(),
+        data: {
+            type: "orderbook",
+            market,
+            bids,
+            asks,
+            timestamp: Date.now(),
+        },
     });
 }
 function publishTrades(market) {
     const base = market === "ETH-USD" ? 4800 : market === "STRK-USD" ? 2.2 : 95000;
     const price = base + randomBetween(-1, 1) * (market === "STRK-USD" ? 0.02 : 80);
-    broadcast(channelKey("trades", market), {
-        type: "trades",
+    messageDispatcher.dispatch({
+        channel: "trades",
         market,
-        trades: [
-            {
-                id: `${market}-${Date.now()}-${Math.floor(Math.random() * 1e6)}`,
-                side: Math.random() > 0.5 ? "buy" : "sell",
-                price,
-                size: randomBetween(0.01, 2),
-                timestamp: Date.now(),
-            },
-        ],
-        timestamp: Date.now(),
+        data: {
+            type: "trades",
+            market,
+            trades: [
+                {
+                    id: `${market}-${Date.now()}-${Math.floor(Math.random() * 1e6)}`,
+                    side: Math.random() > 0.5 ? "buy" : "sell",
+                    price,
+                    size: randomBetween(0.01, 2),
+                    timestamp: Date.now(),
+                },
+            ],
+            timestamp: Date.now(),
+        },
     });
 }
 function publishStatus() {
-    broadcast("status", {
-        type: "status",
-        blockHeight: Math.floor(randomBetween(1_200_000, 2_100_000)),
-        gasPrice: randomBetween(5, 80).toFixed(2),
-        timestamp: Date.now(),
+    messageDispatcher.dispatch({
+        channel: "status",
+        data: {
+            type: "status",
+            blockHeight: Math.floor(randomBetween(1_200_000, 2_100_000)),
+            gasPrice: randomBetween(5, 80).toFixed(2),
+            timestamp: Date.now(),
+        },
     });
 }
-wss.on("connection", (ws) => {
-    const id = `${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
-    const state = {
-        id,
-        subscriptions: new Set(),
-        lastPing: Date.now(),
-        isAlive: true,
-    };
-    clients.set(id, { ws, state });
-    ws.on("message", (data) => {
-        const raw = data.toString();
-        let parsed;
-        try {
-            parsed = JSON.parse(raw);
-        }
-        catch {
-            return;
-        }
-        const ping = pingSchema.safeParse(parsed);
-        if (ping.success) {
-            state.lastPing = Date.now();
-            state.isAlive = true;
-            ws.send(JSON.stringify({ type: "pong", timestamp: ping.data.timestamp, serverTime: Date.now() }));
-            return;
-        }
-        const sub = subscribeSchema.safeParse(parsed);
-        if (!sub.success)
-            return;
-        for (const channel of sub.data.channels) {
-            const key = channelKey(channel.channel, channel.market);
-            if (sub.data.type === "subscribe") {
-                state.subscriptions.add(key);
-            }
-            else {
-                state.subscriptions.delete(key);
-            }
-        }
-    });
-    ws.on("close", () => {
-        clients.delete(id);
-    });
-    ws.on("error", () => {
-        clients.delete(id);
-    });
-});
-if (isPubSubEnabled()) {
-    onPubSubMessage((message) => {
-        const key = message.market
-            ? `${message.channel}:${message.market}`
-            : message.channel;
-        const messageStr = JSON.stringify(message.data);
-        for (const { ws, state } of clients.values()) {
-            if (!state.subscriptions.has(key))
-                continue;
-            if (ws.readyState !== ws.OPEN)
-                continue;
-            ws.send(messageStr);
-        }
-    });
-}
-const HEARTBEAT_INTERVAL = 30000;
-const PING_INTERVAL = 15000;
-setInterval(() => {
-    const now = Date.now();
-    for (const [id, { ws, state }] of clients) {
-        if (now - state.lastPing > HEARTBEAT_INTERVAL) {
-            ws.terminate();
-            clients.delete(id);
-            continue;
-        }
-        if (ws.readyState === ws.OPEN) {
-            ws.send(JSON.stringify({ type: "ping", timestamp: now }));
+// Mock account data publisher (for auth-gated channels)
+function publishAccountUpdates() {
+    const metrics = subscriptionManager.getMetrics();
+    // Publish to each authenticated user's account channel
+    for (const [channel, count] of metrics.channels.entries()) {
+        if (channel.startsWith("account:")) {
+            const userId = channel.split(":")[1];
+            messageDispatcher.dispatchToUser(userId, {
+                type: "account",
+                userId,
+                balance: 10000 + randomBetween(-1000, 1000),
+                marginUsed: randomBetween(1000, 5000),
+                unrealizedPnl: randomBetween(-500, 500),
+                timestamp: Date.now(),
+            });
         }
     }
-}, PING_INTERVAL);
+}
+// Publish market data
 const markets = ["BTC-USD", "ETH-USD", "STRK-USD"];
 setInterval(() => {
     for (const market of markets) {
@@ -199,6 +294,10 @@ setInterval(() => {
     }
     publishStatus();
 }, 500);
+// Publish account updates (every 2 seconds)
+setInterval(() => {
+    publishAccountUpdates();
+}, 2000);
 httpServer.listen(PORT, () => {
     console.log(`WS server running on port ${PORT}`);
 });
