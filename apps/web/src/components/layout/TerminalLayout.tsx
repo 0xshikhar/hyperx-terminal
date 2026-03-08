@@ -8,16 +8,49 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 export function TerminalLayout() {
   return (
     <ErrorBoundary>
-      <div className="flex h-screen flex-col bg-background">
-        <Navbar />
+      <div className="flex h-screen flex-col bg-background scanlines">
+        {/* Top border accent */}
+        <div className="h-[2px] bg-gradient-to-r from-transparent via-primary/50 to-transparent" />
+        
+        {/* Main layout */}
         <div className="flex flex-1 overflow-hidden">
+          {/* Left sidebar */}
           <Sidebar />
-          <main className="flex-1 overflow-auto pb-16 md:pb-0">
-            <Outlet />
-          </main>
+          
+          {/* Main content area */}
+          <div className="flex flex-col flex-1 min-w-0">
+            {/* Top navigation bar */}
+            <Navbar />
+            
+            {/* Content with grid lines background */}
+            <main className="relative flex-1 overflow-hidden grid-lines">
+              {/* Corner accent */}
+              <div className="absolute top-0 left-0 w-20 h-20 pointer-events-none">
+                <div className="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-primary/30 to-transparent" />
+                <div className="absolute top-0 left-0 w-[1px] h-full bg-gradient-to-b from-primary/30 to-transparent" />
+              </div>
+              
+              {/* Content */}
+              <div className="relative z-10 h-full p-4">
+                <Outlet />
+              </div>
+            </main>
+            
+            {/* Bottom status bar */}
+            <StatusBar />
+          </div>
         </div>
-        <StatusBar />
+        
+        {/* Mobile navigation */}
         <MobileBottomNav />
+        
+        {/* Subtle vignette overlay */}
+        <div 
+          className="pointer-events-none fixed inset-0 z-50"
+          style={{
+            background: 'radial-gradient(circle at center, transparent 0%, rgba(10, 10, 15, 0.4) 100%)',
+          }}
+        />
       </div>
     </ErrorBoundary>
   );

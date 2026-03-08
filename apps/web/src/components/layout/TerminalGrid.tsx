@@ -11,6 +11,23 @@ type TerminalGridProps = {
   positions: ReactNode;
 };
 
+const clamp = (value: number, min: number, max: number) =>
+  Math.min(max, Math.max(min, value));
+
+function sanitizeSizes(
+  sizes: number[] | undefined,
+  fallback: number[],
+  min: number
+): number[] {
+  if (!sizes || sizes.length !== fallback.length) return fallback;
+  const numeric = sizes.map((value) =>
+    Number.isFinite(value) ? clamp(value, min, 100) : min
+  );
+  const total = numeric.reduce((sum, value) => sum + value, 0);
+  if (total <= 0) return fallback;
+  return numeric.map((value) => Number(((value / total) * 100).toFixed(2)));
+}
+
 export function TerminalGrid({
   marketSelector,
   orderBook,
@@ -22,14 +39,14 @@ export function TerminalGrid({
   const panelLayout = useUIStore((s) => s.panelLayout);
   const setPanelLayout = useUIStore((s) => s.setPanelLayout);
 
-  const mainLayout = panelLayout.main ?? [75, 25];
-  const leftLayout = panelLayout.left ?? [10, 50, 40];
-  const rightLayout = panelLayout.right ?? [60, 20, 20];
+  const mainLayout = sanitizeSizes(panelLayout.main, [75, 25], 5);
+  const leftLayout = sanitizeSizes(panelLayout.left, [10, 50, 40], 5);
+  const rightLayout = sanitizeSizes(panelLayout.right, [60, 20, 20], 5);
 
   return (
     <PanelGroup
       direction="horizontal"
-      className="h-full p-4"
+      className="h-full min-h-0"
       onLayout={(sizes) => setPanelLayout({ main: sizes })}
     >
       <Panel defaultSize={mainLayout[0]} minSize={30}>
@@ -38,15 +55,15 @@ export function TerminalGrid({
           onLayout={(sizes) => setPanelLayout({ left: sizes })}
         >
           <Panel defaultSize={leftLayout[0]} minSize={5}>
-            {marketSelector}
+            <div className="h-full min-h-0">{marketSelector}</div>
           </Panel>
           <PanelResizeHandle className="h-1 bg-transparent hover:bg-border transition-colors" />
           <Panel defaultSize={leftLayout[1]} minSize={20}>
-            {chart}
+            <div className="h-full min-h-0">{chart}</div>
           </Panel>
           <PanelResizeHandle className="h-1 bg-transparent hover:bg-border transition-colors" />
           <Panel defaultSize={leftLayout[2]} minSize={15}>
-            {positions}
+            <div className="h-full min-h-0">{positions}</div>
           </Panel>
         </PanelGroup>
       </Panel>
@@ -57,15 +74,15 @@ export function TerminalGrid({
           onLayout={(sizes) => setPanelLayout({ right: sizes })}
         >
           <Panel defaultSize={rightLayout[0]} minSize={20}>
-            {orderBook}
+            <div className="h-full min-h-0">{orderBook}</div>
           </Panel>
           <PanelResizeHandle className="h-1 bg-transparent hover:bg-border transition-colors" />
           <Panel defaultSize={rightLayout[1]} minSize={10}>
-            {tradeForm}
+            <div className="h-full min-h-0">{tradeForm}</div>
           </Panel>
           <PanelResizeHandle className="h-1 bg-transparent hover:bg-border transition-colors" />
           <Panel defaultSize={rightLayout[2]} minSize={10}>
-            {recentTrades}
+            <div className="h-full min-h-0">{recentTrades}</div>
           </Panel>
         </PanelGroup>
       </Panel>
