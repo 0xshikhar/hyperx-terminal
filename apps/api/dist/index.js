@@ -1,14 +1,32 @@
 import Fastify from "fastify";
 import cors from "@fastify/cors";
 import helmet from "@fastify/helmet";
+import jwt from "@fastify/jwt";
+import cookie from "@fastify/cookie";
 import { AlertCondition } from "@prisma/client";
 import { env } from "./config/env";
 import { prisma } from "./db/client";
 import { registerRateLimit } from "./middleware/rateLimit";
+import { requireAuth } from "./middleware/auth.js";
+import { authRoutes } from "./routes/auth.js";
 import { z } from "zod";
+import { getOrderRouter, createExtendedClient, createParadexClient } from "./dex/index.js";
 const PORT = Number(env.PORT ?? 3001);
 const app = Fastify({
     logger: false,
+});
+// Register JWT plugin
+await app.register(jwt, {
+    secret: env.JWT_SECRET,
+    cookie: {
+        cookieName: "token",
+        signed: false,
+    },
+});
+// Register cookie plugin
+await app.register(cookie, {
+    secret: env.COOKIE_SECRET || env.JWT_SECRET,
+    parseOptions: {},
 });
 const metricsBuffer = [];
 const MAX_METRICS = 200;
@@ -18,6 +36,11 @@ await app.register(cors, {
 });
 await app.register(helmet);
 await registerRateLimit(app, { maxPerMinute: 120 });
+// Auth routes (public)
+await authRoutes(app);
+await app.register(async (instance) => {
+    await authRoutes(instance);
+}, { prefix: "/api" });
 app.get("/health", async () => ({ ok: true }));
 app.get("/api/health", async () => ({ ok: true }));
 const metricsSchema = z.object({
@@ -58,24 +81,18 @@ const markets = [
     },
 ];
 app.get("/api/markets", async () => ({ markets }));
-const walletHeaderSchema = z
-    .string()
-    .min(1)
-    .transform((value) => value.toLowerCase());
+// Helper to get authenticated user from JWT
 async function getAuthedUser(req, reply) {
-    const header = walletHeaderSchema.safeParse(req.headers["x-wallet-address"]);
-    if (!header.success) {
-        reply.status(401);
+    try {
+        await requireAuth(req, reply);
+        return req.user ? await prisma.user.findUnique({
+            where: { id: req.user.userId },
+            include: { preferences: true },
+        }) : null;
+    }
+    catch {
         return null;
     }
-    const walletAddress = header.data;
-    const user = await prisma.user.upsert({
-        where: { walletAddress },
-        update: {},
-        create: { walletAddress },
-        include: { preferences: true },
-    });
-    return user;
 }
 app.get("/api/me", async (req, reply) => {
     const user = await getAuthedUser(req, reply);
@@ -345,5 +362,92 @@ app.get("/api/funding", async (req, reply) => {
     const start = (page - 1) * PAGE_SIZE;
     const items = seedFunding.slice(start, start + PAGE_SIZE);
     return { items, total: seedFunding.length };
+});
+// DEX Integration Routes
+const orderRouter = getOrderRouter();
+// Initialize DEX clients if credentials are available
+if (env.EXTENDED_API_KEY && env.EXTENDED_API_SECRET) {
+    const extendedClient = createExtendedClient({
+        name: "extended",
+        baseUrl: env.EXTENDED_API_URL || "https://api.extended.exchange",
+        chainId: Number(env.EXTENDED_CHAIN_ID) || 1,
+        network: "mainnet",
+        credentials: {
+            apiKey: env.EXTENDED_API_KEY,
+            apiSecret: env.EXTENDED_API_SECRET,
+        },
+    });
+    orderRouter.registerExchange("extended", extendedClient);
+}
+if (env.PARADEX_API_KEY && env.PARADEX_API_SECRET) {
+    const paradexClient = createParadexClient({
+        name: "paradex",
+        baseUrl: env.PARADEX_API_URL || "https://api.prod.paradex.trade",
+        chainId: Number(env.PARADEX_CHAIN_ID) || 1,
+        network: "mainnet",
+        credentials: {
+            apiKey: env.PARADEX_API_KEY,
+            apiSecret: env.PARADEX_API_SECRET,
+        },
+    });
+    orderRouter.registerExchange("paradex", paradexClient);
+}
+// DEX Market routes
+app.get("/api/dex/markets", async () => {
+    const exchanges = orderRouter.getExchanges();
+    const allMarkets = [];
+    for (const exchangeName of exchanges) {
+        try {
+            // This would fetch real markets in production
+            allMarkets.push({
+                exchange: exchangeName,
+                markets: [],
+            });
+        }
+        catch (error) {
+            console.error(`Failed to fetch markets from ${exchangeName}:`, error);
+        }
+    }
+    return { exchanges, markets: allMarkets };
+});
+// DEX Order routes
+const dexOrderSchema = z.object({
+    market: z.string(),
+    side: z.enum(["buy", "sell"]),
+    type: z.enum(["market", "limit", "stop", "stop_limit"]),
+    size: z.number().positive(),
+    price: z.number().optional(),
+    preferredExchange: z.string().optional(),
+});
+app.post("/api/dex/orders/route", async (req, reply) => {
+    const user = await getAuthedUser(req, reply);
+    if (!user)
+        return { error: "missing_wallet_address" };
+    const body = dexOrderSchema.safeParse(req.body);
+    if (!body.success) {
+        reply.status(400);
+        return { error: "invalid_order" };
+    }
+    try {
+        const routeRequest = {
+            market: body.data.market,
+            side: body.data.side,
+            type: body.data.type,
+            size: body.data.size,
+            price: body.data.price,
+            preferredExchange: body.data.preferredExchange,
+            allowSplit: true,
+        };
+        const route = await orderRouter.getRouteDecision(routeRequest);
+        return { route };
+    }
+    catch (error) {
+        reply.status(500);
+        return { error: "routing_failed", message: error.message };
+    }
+});
+app.get("/api/dex/health", async () => {
+    const health = await orderRouter.healthCheck();
+    return { exchanges: health };
 });
 await app.listen({ port: PORT, host: "0.0.0.0" });

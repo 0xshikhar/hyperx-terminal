@@ -12,13 +12,19 @@
     "prisma:studio": "set -a; [ -f ../../.env ] && . ../../.env; set +a; prisma studio"
   },
   "dependencies": {
+    "@fastify/cookie": "^11.0.2",
     "@fastify/cors": "^11.0.1",
     "@fastify/helmet": "^13.0.1",
+<<<<<<< Updated upstream
+=======
+    "@fastify/jwt": "^10.0.0",
+>>>>>>> Stashed changes
     "@hyperx/types": "workspace:*",
     "@prisma/client": "^6.19.0",
     "@upstash/redis": "^1.35.3",
     "dotenv": "^17.0.0",
     "fastify": "^5.6.0",
+    "starknet": "^6.24.1",
     "zod": "^3.25.76"
   },
   "devDependencies": {

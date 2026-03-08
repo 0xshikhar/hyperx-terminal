@@ -5,6 +5,8 @@ import tailwindcss from "@tailwindcss/vite";
 
 // https://vite.dev/config/
 export default defineConfig({
+  // Load env vars from the monorepo root (new-terminal-hyperx/.env)
+  envDir: resolve(__dirname, "../.."),
   plugins: [
     react(),
     tailwindcss(),
