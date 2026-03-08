@@ -7,16 +7,18 @@ import {
   type NotificationItem,
 } from "@/services/apiClient/notifications.api";
 import { useWallet } from "@/components/wallet/useWallet";
+import { isAuthenticated } from "@/services/auth.service";
 
 export function NotificationCenter() {
   const queryClient = useQueryClient();
   const address = useWallet((state) => state.address);
+  const authed = isAuthenticated();
 
   const { data: notifications = [], isError, isLoading } = useQuery({
     queryKey: ["notifications"],
     queryFn: listNotifications,
     retry: false,
-    enabled: Boolean(address),
+    enabled: Boolean(address) && authed,
   });
 
   const markRead = useMutation({
@@ -31,7 +33,7 @@ export function NotificationCenter() {
     [notifications]
   );
 
-  if (!address) {
+  if (!address || !authed) {
     return (
       <div className="px-3 py-3 text-xs text-muted-foreground">
         Connect wallet to view notifications.

@@ -3,16 +3,18 @@ import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { listNotifications } from "@/services/apiClient/notifications.api";
 import { useWallet } from "@/components/wallet/useWallet";
+import { isAuthenticated } from "@/services/auth.service";
 
 export function NotificationsToastBridge() {
   const address = useWallet((state) => state.address);
+  const authed = isAuthenticated();
   const seenRef = useRef<Set<string>>(new Set());
 
   const { data: notifications = [] } = useQuery({
     queryKey: ["notifications", "toast-bridge"],
     queryFn: listNotifications,
     retry: false,
-    enabled: Boolean(address),
+    enabled: Boolean(address) && authed,
     refetchInterval: 30000,
   });
 
