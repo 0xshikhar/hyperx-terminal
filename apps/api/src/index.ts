@@ -1,11 +1,16 @@
 import Fastify from "fastify";
+import type { FastifyRequest, FastifyReply } from "fastify";
 import cors from "@fastify/cors";
 import helmet from "@fastify/helmet";
+import jwt from "@fastify/jwt";
+import cookie from "@fastify/cookie";
 import { AlertCondition } from "@prisma/client";
 import type { MetricPayload } from "@hyperx/types/api";
 import { env } from "./config/env";
 import { prisma } from "./db/client";
 import { registerRateLimit } from "./middleware/rateLimit";
+import { requireAuth, optionalAuth } from "./middleware/auth.js";
+import { authRoutes } from "./routes/auth.js";
 import { z } from "zod";
 import { getOrderRouter, createExtendedClient, createParadexClient } from "./dex/index.js";
 import type { RouteRequest } from "@hyperx/types/dex";
@@ -14,6 +19,21 @@ const PORT = Number(env.PORT ?? 3001);
 
 const app = Fastify({
   logger: false,
+});
+
+// Register JWT plugin
+await app.register(jwt, {
+  secret: env.JWT_SECRET,
+  cookie: {
+    cookieName: "token",
+    signed: false,
+  },
+});
+
+// Register cookie plugin
+await app.register(cookie, {
+  secret: env.COOKIE_SECRET || env.JWT_SECRET,
+  parseOptions: {},
 });
 
 const metricsBuffer: MetricPayload[] = [];
@@ -25,6 +45,12 @@ await app.register(cors, {
 });
 await app.register(helmet);
 await registerRateLimit(app, { maxPerMinute: 120 });
+
+// Auth routes (public)
+await authRoutes(app);
+await app.register(async (instance) => {
+  await authRoutes(instance);
+}, { prefix: "/api" });
 
 app.get("/health", async () => ({ ok: true }));
 
@@ -63,39 +89,45 @@ const markets = [
   {
     symbol: "BTC-USD",
     name: "Bitcoin",
+    lastPrice: 95432.25,
+    changePercent24h: 2.14,
+    volume24h: 1284500000,
+    openInterest: 482000000,
+    fundingRate: 0.0125,
   },
   {
     symbol: "ETH-USD",
     name: "Ethereum",
+    lastPrice: 4871.1,
+    changePercent24h: -1.02,
+    volume24h: 842000000,
+    openInterest: 246000000,
+    fundingRate: 0.0091,
   },
   {
     symbol: "STRK-USD",
     name: "StarkNet",
+    lastPrice: 2.41,
+    changePercent24h: 5.42,
+    volume24h: 112000000,
+    openInterest: 42000000,
+    fundingRate: 0.021,
   },
 ];
 
 app.get("/api/markets", async () => ({ markets }));
 
-const walletHeaderSchema = z
-  .string()
-  .min(1)
-  .transform((value) => value.toLowerCase());
-
-async function getAuthedUser(req: { headers: Record<string, unknown> }, reply: { status: (code: number) => void }) {
-  const header = walletHeaderSchema.safeParse(req.headers["x-wallet-address"]);
-  if (!header.success) {
-    reply.status(401);
+// Helper to get authenticated user from JWT
+async function getAuthedUser(req: FastifyRequest, reply: FastifyReply) {
+  try {
+    await requireAuth(req, reply);
+    return req.user ? await prisma.user.findUnique({
+      where: { id: (req.user as { userId: string }).userId },
+      include: { preferences: true },
+    }) : null;
+  } catch {
     return null;
   }
-
-  const walletAddress = header.data;
-  const user = await prisma.user.upsert({
-    where: { walletAddress },
-    update: {},
-    create: { walletAddress },
-    include: { preferences: true },
-  });
-  return user;
 }
 
 app.get("/api/me", async (req, reply) => {
@@ -111,11 +143,11 @@ app.get("/api/me", async (req, reply) => {
       createdAt: user.createdAt.toISOString(),
       preferences: user.preferences
         ? {
-            theme: user.preferences.theme,
-            defaultLeverage: user.preferences.defaultLeverage,
-            defaultMarket: user.preferences.defaultMarket,
-            favoriteMarkets: user.preferences.favoriteMarkets,
-          }
+          theme: user.preferences.theme,
+          defaultLeverage: user.preferences.defaultLeverage,
+          defaultMarket: user.preferences.defaultMarket,
+          favoriteMarkets: user.preferences.favoriteMarkets,
+        }
         : null,
     },
   };
@@ -440,7 +472,7 @@ if (env.PARADEX_API_KEY && env.PARADEX_API_SECRET) {
 app.get("/api/dex/markets", async () => {
   const exchanges = orderRouter.getExchanges();
   const allMarkets = [];
-  
+
   for (const exchangeName of exchanges) {
     try {
       // This would fetch real markets in production
@@ -452,7 +484,7 @@ app.get("/api/dex/markets", async () => {
       console.error(`Failed to fetch markets from ${exchangeName}:`, error);
     }
   }
-  
+
   return { exchanges, markets: allMarkets };
 });
 
