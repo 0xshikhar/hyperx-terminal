@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { useOrdersStore } from "@/store/ordersStore";
 import {
@@ -14,9 +15,18 @@ const formatNumber = (value: number, fractionDigits = 2) =>
 
 export function OpenOrdersTable() {
   const orders = useOrdersStore((state) => state.openOrders);
+  const fetchOrders = useOrdersStore((state) => state.fetchOrders);
+  const isLoading = useOrdersStore((state) => state.isLoading);
+
+  useEffect(() => {
+    void fetchOrders();
+  }, [fetchOrders]);
+
   return (
     <div className="rounded-md border border-border bg-background">
-      {orders.length === 0 ? (
+      {isLoading ? (
+        <div className="px-3 py-8 text-xs text-muted-foreground">Loading open orders…</div>
+      ) : orders.length === 0 ? (
         <div className="px-3 py-8 text-xs text-muted-foreground">No open orders.</div>
       ) : (
         <Table className="text-xs">

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, keepPreviousData } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
+import { listFundingHistory, type FundingHistoryDto } from "@/services/apiClient/positions.api";
 import {
   Table,
   TableBody,
@@ -11,25 +12,7 @@ import {
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 
-type FundingRow = {
-  id: string;
-  market: string;
-  rate: number;
-  payment: number;
-  time: string;
-};
-
-const PAGE_SIZE = 6;
-
-const fundingSeed: FundingRow[] = [
-  { id: "fund-1", market: "BTC-USD", rate: 0.0125, payment: 8.21, time: "2026-03-08T00:00:00Z" },
-  { id: "fund-2", market: "ETH-USD", rate: -0.009, payment: -3.12, time: "2026-03-07T23:00:00Z" },
-  { id: "fund-3", market: "STRK-USD", rate: 0.021, payment: 1.86, time: "2026-03-07T22:00:00Z" },
-  { id: "fund-4", market: "BTC-USD", rate: 0.011, payment: 7.42, time: "2026-03-07T21:00:00Z" },
-  { id: "fund-5", market: "ETH-USD", rate: -0.008, payment: -2.64, time: "2026-03-07T20:00:00Z" },
-  { id: "fund-6", market: "STRK-USD", rate: 0.018, payment: 1.24, time: "2026-03-07T19:00:00Z" },
-  { id: "fund-7", market: "BTC-USD", rate: 0.010, payment: 6.88, time: "2026-03-07T18:00:00Z" },
-];
+const PAGE_SIZE = 20;
 
 const formatNumber = (value: number, fractionDigits = 4) =>
   value.toLocaleString(undefined, { maximumFractionDigits: fractionDigits });
@@ -39,15 +22,12 @@ const formatTime = (value: string) => new Date(value).toLocaleTimeString();
 export function FundingHistoryTable() {
   const [page, setPage] = useState(1);
 
-  const { data, isLoading } = useQuery<{ items: FundingRow[]; total: number }>({
+  const { data, isLoading } = useQuery<{ items: FundingHistoryDto[]; total: number }>({
     queryKey: ["funding-history", page],
-    queryFn: async () => {
-      const start = (page - 1) * PAGE_SIZE;
-      const items = fundingSeed.slice(start, start + PAGE_SIZE);
-      return { items, total: fundingSeed.length };
-    },
+    queryFn: () => listFundingHistory(page),
     staleTime: 60_000,
     placeholderData: keepPreviousData,
+    retry: false,
   });
 
   const items = data?.items ?? [];
@@ -71,7 +51,7 @@ export function FundingHistoryTable() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {items.map((row: FundingRow) => (
+              {items.map((row: FundingHistoryDto) => (
                 <TableRow key={row.id}>
                   <TableCell className="font-semibold">{row.market}</TableCell>
                   <TableCell className={row.rate >= 0 ? "text-emerald-500" : "text-rose-500"}>

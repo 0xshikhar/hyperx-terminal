@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, keepPreviousData } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
+import { listTradeHistory, type TradeHistoryDto } from "@/services/apiClient/positions.api";
 import {
   Table,
   TableBody,
@@ -11,91 +12,7 @@ import {
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 
-type TradeHistoryRow = {
-  id: string;
-  market: string;
-  side: "buy" | "sell";
-  size: number;
-  price: number;
-  fee: number;
-  pnl: number;
-  executedAt: string;
-};
-
-const PAGE_SIZE = 6;
-
-const historySeed: TradeHistoryRow[] = [
-  {
-    id: "trade-1",
-    market: "BTC-USD",
-    side: "buy",
-    size: 0.15,
-    price: 94520,
-    fee: 4.12,
-    pnl: 82.4,
-    executedAt: "2026-03-08T00:12:00Z",
-  },
-  {
-    id: "trade-2",
-    market: "ETH-USD",
-    side: "sell",
-    size: 1.2,
-    price: 4840,
-    fee: 2.01,
-    pnl: -41.9,
-    executedAt: "2026-03-08T00:03:00Z",
-  },
-  {
-    id: "trade-3",
-    market: "STRK-USD",
-    side: "buy",
-    size: 800,
-    price: 2.26,
-    fee: 0.38,
-    pnl: 18.2,
-    executedAt: "2026-03-07T23:55:00Z",
-  },
-  {
-    id: "trade-4",
-    market: "BTC-USD",
-    side: "sell",
-    size: 0.08,
-    price: 95320,
-    fee: 2.4,
-    pnl: 36.8,
-    executedAt: "2026-03-07T23:42:00Z",
-  },
-  {
-    id: "trade-5",
-    market: "ETH-USD",
-    side: "buy",
-    size: 2.6,
-    price: 4772,
-    fee: 3.11,
-    pnl: 55.2,
-    executedAt: "2026-03-07T23:30:00Z",
-  },
-  {
-    id: "trade-6",
-    market: "BTC-USD",
-    side: "buy",
-    size: 0.1,
-    price: 93980,
-    fee: 1.6,
-    pnl: -12.6,
-    executedAt: "2026-03-07T23:22:00Z",
-  },
-  {
-    id: "trade-7",
-    market: "STRK-USD",
-    side: "sell",
-    size: 600,
-    price: 2.18,
-    fee: 0.28,
-    pnl: -9.6,
-    executedAt: "2026-03-07T23:10:00Z",
-  },
-];
+const PAGE_SIZE = 20;
 
 const formatNumber = (value: number, fractionDigits = 2) =>
   value.toLocaleString(undefined, { maximumFractionDigits: fractionDigits });
@@ -105,15 +22,12 @@ const formatTime = (value: string) => new Date(value).toLocaleTimeString();
 export function TradeHistoryTable() {
   const [page, setPage] = useState(1);
 
-  const { data, isLoading } = useQuery<{ items: TradeHistoryRow[]; total: number }>({
+  const { data, isLoading } = useQuery<{ items: TradeHistoryDto[]; total: number }>({
     queryKey: ["trade-history", page],
-    queryFn: async () => {
-      const start = (page - 1) * PAGE_SIZE;
-      const items = historySeed.slice(start, start + PAGE_SIZE);
-      return { items, total: historySeed.length };
-    },
+    queryFn: () => listTradeHistory(page),
     staleTime: 60_000,
     placeholderData: keepPreviousData,
+    retry: false,
   });
 
   const items = data?.items ?? [];
@@ -140,7 +54,7 @@ export function TradeHistoryTable() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {items.map((row: TradeHistoryRow) => (
+              {items.map((row: TradeHistoryDto) => (
                 <TableRow key={row.id}>
                   <TableCell className="font-semibold">{row.market}</TableCell>
                   <TableCell
