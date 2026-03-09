@@ -147,12 +147,23 @@ export class WSClient {
     }
   }
 
+  /**
+   * Schedule reconnect with exponential backoff + full jitter
+   * Prevents thundering herd when services recover.
+   * See docs/phase1/index.md for implementation details.
+   */
   private scheduleReconnect() {
-    const delay = Math.min(
+    const exponentialDelay = Math.min(
       this.reconnectDelayMs * Math.pow(2, this.reconnectAttempts),
       this.maxReconnectDelayMs
     );
+    
+    const jitter = Math.random() * exponentialDelay;
+    const delay = Math.floor(jitter);
+    
     this.reconnectAttempts += 1;
+    console.log(`[WSClient] Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts}, base ${exponentialDelay}ms)`);
+    
     this.reconnectTimeout = window.setTimeout(() => {
       this.connect();
     }, delay);
