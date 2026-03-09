@@ -34,9 +34,12 @@ const envSchema = z.object({
   EXTENDED_API_URL: z.string().optional(),
   EXTENDED_CHAIN_ID: z.string().optional(),
   // Paradex DEX
-  PARADEX_API_KEY: z.string().optional(),
-  PARADEX_API_SECRET: z.string().optional(),
+  PARADEX_STARKNET_ADDRESS: z.string().optional(),
+  PARADEX_STARKNET_PRIVATE_KEY: z.string().optional(),
+  PARADEX_JWT_TOKEN: z.string().optional(),
   PARADEX_API_URL: z.string().optional(),
+  PARADEX_REST_URL: z.string().optional(),
+  PARADEX_WS_URL: z.string().optional(),
   PARADEX_CHAIN_ID: z.string().optional(),
 });
 

@@ -18,27 +18,44 @@ import type {
   OrderType,
 } from "@hyperx/types/dex";
 
+import { ec, typedData } from "starknet";
+import type { TypedData } from "starknet";
+
 export interface ParadexClientOptions extends DEXConfig {
   credentials?: {
-    apiKey: string;
-    apiSecret: string;
+    starknetAddress?: string;
+    starknetPrivateKey?: string;
+    jwtToken?: string;
   };
-  starknetAddress?: string;
+  jwtToken?: string;
 }
 
 export class ParadexClient {
   private baseUrl: string;
-  private apiKey?: string;
-  private apiSecret?: string;
   private starknetAddress?: string;
+  private starknetPrivateKey?: string;
+  private jwtToken?: string;
+  private jwtExpiresAt: number = 0;
+  private chainId?: string;
   private timeout: number;
 
   constructor(options: ParadexClientOptions) {
-    this.baseUrl = options.baseUrl;
-    this.apiKey = options.credentials?.apiKey;
-    this.apiSecret = options.credentials?.apiSecret;
-    this.starknetAddress = options.starknetAddress;
+    this.baseUrl = this.normalizeBaseUrl(options.baseUrl);
+    this.starknetAddress = options.credentials?.starknetAddress;
+    this.starknetPrivateKey = options.credentials?.starknetPrivateKey;
+    this.jwtToken = options.credentials?.jwtToken || options.jwtToken;
+    if (this.jwtToken) {
+      this.jwtExpiresAt = Number.POSITIVE_INFINITY;
+    }
+    if (Number.isFinite(options.chainId) && options.chainId > 0) {
+      this.chainId = String(options.chainId);
+    }
     this.timeout = options.timeout || 30000;
+  }
+
+  private normalizeBaseUrl(baseUrl: string): string {
+    const trimmed = baseUrl.replace(/\/+$/, "");
+    return trimmed.endsWith("/v1") ? trimmed.slice(0, -3) : trimmed;
   }
 
   private async request<T>(
@@ -52,12 +69,9 @@ export class ParadexClient {
       ...((options.headers as Record<string, string>) || {}),
     };
 
-    if (this.apiKey) {
-      headers["PARADEX-API-KEY"] = this.apiKey;
-    }
-
-    if (this.starknetAddress) {
-      headers["PARADEX-STARKNET-ADDRESS"] = this.starknetAddress;
+    if (this.jwtToken || (this.starknetAddress && this.starknetPrivateKey)) {
+      const jwt = await this.getValidJwt();
+      headers["Authorization"] = `Bearer ${jwt}`;
     }
 
     const controller = new AbortController();
@@ -78,6 +92,166 @@ export class ParadexClient {
       }
 
       return (await response.json()) as T;
+    } catch (error) {
+      clearTimeout(timeoutId);
+      throw error;
+    }
+  }
+
+  private async getValidJwt(): Promise<string> {
+    if (this.jwtToken && Date.now() < this.jwtExpiresAt) {
+      return this.jwtToken;
+    }
+
+    if (!this.starknetAddress || !this.starknetPrivateKey) {
+      throw new Error("Starknet credentials required to generate Paradex JWT");
+    }
+
+    const timestamp = Math.floor(Date.now() / 1000).toString();
+    const expiration = (Math.floor(Date.now() / 1000) + 1800).toString(); // 30 min signature expiry
+    const chainId = await this.resolveChainId();
+
+    // EIP-712-like TypedData for Paradex
+    const typedDataPayload: TypedData = {
+      domain: {
+        name: "Paradex",
+        chainId,
+        version: "1",
+      },
+      primaryType: "Request",
+      types: {
+        StarkNetDomain: [
+          { name: "name", type: "felt" },
+          { name: "chainId", type: "felt" },
+          { name: "version", type: "felt" },
+        ],
+        Request: [
+          { name: "method", type: "felt" },
+          { name: "path", type: "felt" },
+          { name: "body", type: "felt" },
+          { name: "timestamp", type: "felt" },
+          { name: "expiration", type: "felt" },
+        ],
+      },
+      message: {
+        method: "POST",
+        path: "/v1/auth",
+        body: "",
+        timestamp,
+        expiration,
+      },
+    };
+
+    // Correctly format message hash to hex before signing
+    const messageHash = typedData.getMessageHash(typedDataPayload, this.starknetAddress);
+
+    // Sign the hash
+    const signature = ec.starkCurve.sign(messageHash, this.starknetPrivateKey);
+
+    // Format the signature as a JSON string array of hex numbers as required by starknet
+    // ec.sign returns { r, s }. We map it to an array of string values
+    const signatureArray = typeof signature === 'object' && signature != null && 'r' in signature && 's' in signature ? [signature.r.toString(10), signature.s.toString(10)] : Array.isArray(signature) ? signature : [];
+
+    const requestHeaders = {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+      "PARADEX-STARKNET-ACCOUNT": this.starknetAddress,
+      "PARADEX-STARKNET-SIGNATURE": JSON.stringify(signatureArray),
+      "PARADEX-TIMESTAMP": timestamp,
+      "PARADEX-SIGNATURE-EXPIRATION": expiration,
+    };
+
+    const url = `${this.baseUrl}/v1/auth`;
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), this.timeout);
+
+    const response = await fetch(url, {
+      method: "POST",
+      headers: requestHeaders,
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Failed to authenticate with Paradex: ${response.status} - ${errorText}`);
+    }
+
+    const data = await response.json() as { jwt_token: string };
+
+    this.jwtToken = data.jwt_token;
+    // JWTs are short-lived; refresh a bit early to avoid edge expirations.
+    this.jwtExpiresAt = Date.now() + 3 * 60 * 1000;
+
+    return this.jwtToken;
+  }
+
+  private async resolveChainId(): Promise<string> {
+    if (this.chainId) {
+      return this.chainId;
+    }
+
+    const config = await this.fetchSystemConfig();
+    const chainId = this.extractChainId(config);
+
+    if (!chainId) {
+      throw new Error(
+        "Paradex chainId not found in /v1/system/config. Set PARADEX_CHAIN_ID to override."
+      );
+    }
+
+    this.chainId = chainId;
+    return chainId;
+  }
+
+  private extractChainId(config: Record<string, unknown>): string | undefined {
+    const directKeys = [
+      "chainId",
+      "chain_id",
+      "starknet_chain_id",
+      "starknetChainId",
+    ];
+
+    for (const key of directKeys) {
+      const value = config[key as keyof typeof config];
+      if (typeof value === "string" || typeof value === "number") {
+        return String(value);
+      }
+    }
+
+    const starknet = config.starknet;
+    if (starknet && typeof starknet === "object") {
+      const nested = starknet as Record<string, unknown>;
+      for (const key of directKeys) {
+        const value = nested[key];
+        if (typeof value === "string" || typeof value === "number") {
+          return String(value);
+        }
+      }
+    }
+
+    return undefined;
+  }
+
+  private async fetchSystemConfig(): Promise<Record<string, unknown>> {
+    const url = `${this.baseUrl}/v1/system/config`;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), this.timeout);
+
+    try {
+      const response = await fetch(url, { signal: controller.signal });
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(
+          `Failed to fetch Paradex system config: ${response.status} - ${errorText}`
+        );
+      }
+
+      return (await response.json()) as Record<string, unknown>;
     } catch (error) {
       clearTimeout(timeoutId);
       throw error;
@@ -137,30 +311,33 @@ export class ParadexClient {
   // Trading APIs (require authentication)
 
   async getPositions(): Promise<ParadexPosition[]> {
-    if (!this.apiKey) {
+    if (!this.starknetAddress) {
       throw new Error("API credentials required for positions");
     }
     return this.request<ParadexPosition[]>("/v1/positions");
   }
 
   async getPosition(market: string): Promise<ParadexPosition> {
-    if (!this.apiKey) {
+    if (!this.starknetAddress) {
       throw new Error("API credentials required");
     }
     return this.request<ParadexPosition>(`/v1/positions/${market}`);
   }
 
   async getBalances(): Promise<ParadexBalance[]> {
-    if (!this.apiKey) {
+    if (!this.starknetAddress) {
       throw new Error("API credentials required for balances");
     }
     return this.request<ParadexBalance[]>("/v1/balances");
   }
 
   async createOrder(request: ParadexCreateOrderRequest): Promise<ParadexOrder> {
-    if (!this.apiKey) {
+    if (!this.starknetAddress) {
       throw new Error("API credentials required for trading");
     }
+
+    // For Paradex, order creation might require another signature (Order signature).
+    // This depends on the API endpoints configuration. Assuming the JWT allows taking action or that this endpoint will fail without order payload signature, we send it anyway.
     return this.request<ParadexOrder>("/v1/orders", {
       method: "POST",
       body: JSON.stringify(request),
@@ -168,14 +345,14 @@ export class ParadexClient {
   }
 
   async getOrder(orderId: string): Promise<ParadexOrder> {
-    if (!this.apiKey) {
+    if (!this.starknetAddress) {
       throw new Error("API credentials required");
     }
     return this.request<ParadexOrder>(`/v1/orders/${orderId}`);
   }
 
   async cancelOrder(orderId: string): Promise<{ success: boolean }> {
-    if (!this.apiKey) {
+    if (!this.starknetAddress) {
       throw new Error("API credentials required");
     }
     return this.request<{ success: boolean }>(`/v1/orders/${orderId}`, {
@@ -184,7 +361,7 @@ export class ParadexClient {
   }
 
   async cancelAllOrders(market?: string): Promise<{ canceled: number }> {
-    if (!this.apiKey) {
+    if (!this.starknetAddress) {
       throw new Error("API credentials required");
     }
     const query = market ? `?market=${market}` : "";
@@ -194,7 +371,7 @@ export class ParadexClient {
   }
 
   async getOpenOrders(market?: string): Promise<ParadexOrder[]> {
-    if (!this.apiKey) {
+    if (!this.starknetAddress) {
       throw new Error("API credentials required");
     }
     const query = market ? `?market=${market}` : "";
@@ -209,7 +386,7 @@ export class ParadexClient {
     orders: ParadexOrder[];
     nextCursor?: string;
   }> {
-    if (!this.apiKey) {
+    if (!this.starknetAddress) {
       throw new Error("API credentials required");
     }
     const query = new URLSearchParams();
@@ -227,7 +404,7 @@ export class ParadexClient {
     trades: ParadexTrade[];
     nextCursor?: string;
   }> {
-    if (!this.apiKey) {
+    if (!this.starknetAddress) {
       throw new Error("API credentials required");
     }
     const query = new URLSearchParams();
@@ -249,7 +426,7 @@ export class ParadexClient {
       time: string;
     }>;
   }> {
-    if (!this.apiKey) {
+    if (!this.starknetAddress) {
       throw new Error("API credentials required");
     }
     const query = new URLSearchParams();
@@ -265,7 +442,7 @@ export class ParadexClient {
     accountId: string;
     createdAt: string;
   }> {
-    if (!this.apiKey) {
+    if (!this.starknetAddress) {
       throw new Error("API credentials required");
     }
     return this.request("/v1/account");

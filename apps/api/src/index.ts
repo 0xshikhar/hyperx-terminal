@@ -454,15 +454,29 @@ if (env.EXTENDED_API_KEY && env.EXTENDED_API_SECRET) {
   orderRouter.registerExchange("extended", extendedClient);
 }
 
-if (env.PARADEX_API_KEY && env.PARADEX_API_SECRET) {
+const hasParadexAuth = Boolean(
+  env.PARADEX_JWT_TOKEN ||
+    (env.PARADEX_STARKNET_ADDRESS && env.PARADEX_STARKNET_PRIVATE_KEY)
+);
+
+if (hasParadexAuth) {
+  const defaultParadexUrl =
+    env.NODE_ENV === "production"
+      ? "https://api.prod.paradex.trade"
+      : "https://api.testnet.paradex.trade";
+  const paradexBaseUrl =
+    env.PARADEX_API_URL || env.PARADEX_REST_URL || defaultParadexUrl;
+  const isTestnet = paradexBaseUrl.toLowerCase().includes("testnet");
+
   const paradexClient = createParadexClient({
     name: "paradex",
-    baseUrl: env.PARADEX_API_URL || "https://api.prod.paradex.trade",
-    chainId: Number(env.PARADEX_CHAIN_ID) || 1,
-    network: "mainnet",
+    baseUrl: paradexBaseUrl,
+    chainId: Number(env.PARADEX_CHAIN_ID ?? ""),
+    network: isTestnet ? "sepolia" : "mainnet",
     credentials: {
-      apiKey: env.PARADEX_API_KEY,
-      apiSecret: env.PARADEX_API_SECRET,
+      starknetAddress: env.PARADEX_STARKNET_ADDRESS,
+      starknetPrivateKey: env.PARADEX_STARKNET_PRIVATE_KEY,
+      jwtToken: env.PARADEX_JWT_TOKEN,
     },
   });
   orderRouter.registerExchange("paradex", paradexClient);
