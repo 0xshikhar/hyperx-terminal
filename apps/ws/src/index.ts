@@ -6,6 +6,7 @@ import { getSubscriptionManager } from "./SubscriptionManager.js";
 import { getMessageDispatcher } from "./MessageDispatcher.js";
 import { authenticateConnection, requiresAuth, validateAccountChannel } from "./auth.js";
 import { initRedisPubSub, onPubSubMessage, isPubSubEnabled, startRedisSubscriber } from "./pubsub";
+import { initParadexWsBridge } from "./paradexWs.js";
 
 const PORT = Number(process.env.PORT ?? 3002);
 
@@ -18,6 +19,28 @@ if (result.enabled) {
 // Initialize subscription manager and message dispatcher
 const subscriptionManager = getSubscriptionManager();
 const messageDispatcher = getMessageDispatcher();
+const paradexWsEnabled = process.env.PARADEX_WS_ENABLED?.toLowerCase() !== "false";
+const paradexWsUrl =
+  process.env.PARADEX_WS_URL ||
+  (process.env.NODE_ENV === "production"
+    ? "wss://ws.api.prod.paradex.trade/v1"
+    : "wss://ws.api.testnet.paradex.trade/v1");
+const paradexBridge = paradexWsEnabled
+  ? initParadexWsBridge({
+      wsUrl: paradexWsUrl,
+      jwtToken: process.env.PARADEX_JWT_TOKEN,
+      onStatus: (status) => {
+        messageDispatcher.dispatch({
+          channel: "status",
+          data: {
+            type: "status",
+            networkStatus: status,
+            timestamp: Date.now(),
+          } as ServerMessage,
+        });
+      },
+    })
+  : null;
 
 // Message schemas
 const subscribeSchema = z.object({
@@ -177,6 +200,14 @@ wss.on("connection", (ws: WebSocket, req: IncomingMessage) => {
       if (sub.data.type === "subscribe") {
         const success = subscriptionManager.subscribe(id, key, requiresAuth(key));
         if (success) {
+          if (
+            paradexBridge &&
+            (channelInfo.channel === "ticker" ||
+              channelInfo.channel === "orderbook" ||
+              channelInfo.channel === "trades")
+          ) {
+            paradexBridge.subscribe(channelInfo.channel, channelInfo.market);
+          }
           ws.send(JSON.stringify({
             type: "subscribed",
             channel: key
@@ -189,6 +220,14 @@ wss.on("connection", (ws: WebSocket, req: IncomingMessage) => {
         }
       } else {
         subscriptionManager.unsubscribe(id, key);
+        if (
+          paradexBridge &&
+          (channelInfo.channel === "ticker" ||
+            channelInfo.channel === "orderbook" ||
+            channelInfo.channel === "trades")
+        ) {
+          paradexBridge.unsubscribe(channelInfo.channel, channelInfo.market);
+        }
         ws.send(JSON.stringify({
           type: "unsubscribed",
           channel: key
@@ -198,10 +237,26 @@ wss.on("connection", (ws: WebSocket, req: IncomingMessage) => {
   });
 
   ws.on("close", () => {
+    if (paradexBridge) {
+      for (const subKey of client.subscriptions) {
+        const [channel, market] = subKey.split(":");
+        if (channel === "ticker" || channel === "orderbook" || channel === "trades") {
+          paradexBridge.unsubscribe(channel as "ticker" | "orderbook" | "trades", market);
+        }
+      }
+    }
     subscriptionManager.removeClient(id);
   });
 
   ws.on("error", () => {
+    if (paradexBridge) {
+      for (const subKey of client.subscriptions) {
+        const [channel, market] = subKey.split(":");
+        if (channel === "ticker" || channel === "orderbook" || channel === "trades") {
+          paradexBridge.unsubscribe(channel as "ticker" | "orderbook" | "trades", market);
+        }
+      }
+    }
     subscriptionManager.removeClient(id);
   });
 });
@@ -321,16 +376,30 @@ function publishAccountUpdates() {
   }
 }
 
-// Publish market data
+const useMockStreams = !paradexBridge;
 const markets = ["BTC-USD", "ETH-USD", "STRK-USD"] as const;
-setInterval(() => {
-  for (const market of markets) {
-    publishTicker(market);
-    publishOrderbook(market);
-    publishTrades(market);
-  }
-  publishStatus();
-}, 500);
+
+if (useMockStreams) {
+  setInterval(() => {
+    for (const market of markets) {
+      publishTicker(market);
+      publishOrderbook(market);
+      publishTrades(market);
+    }
+    publishStatus();
+  }, 500);
+} else {
+  setInterval(() => {
+    messageDispatcher.dispatch({
+      channel: "status",
+      data: {
+        type: "status",
+        networkStatus: paradexBridge?.getStatus() ?? "down",
+        timestamp: Date.now(),
+      } as ServerMessage,
+    });
+  }, 5000);
+}
 
 // Publish account updates (every 2 seconds)
 setInterval(() => {
