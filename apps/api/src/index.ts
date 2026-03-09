@@ -12,7 +12,13 @@ import { registerRateLimit } from "./middleware/rateLimit";
 import { requireAuth, optionalAuth } from "./middleware/auth.js";
 import { authRoutes } from "./routes/auth.js";
 import { z } from "zod";
-import { getOrderRouter, createExtendedClient, createParadexClient } from "./dex/index.js";
+import {
+  getOrderRouter,
+  createExtendedClient,
+  createParadexClient,
+  ExtendedClient,
+  ParadexClient,
+} from "./dex/index.js";
 import type { RouteRequest } from "@hyperx/types/dex";
 
 const PORT = Number(env.PORT ?? 3001);
@@ -355,9 +361,10 @@ app.post("/api/notifications/:id/read", async (req, reply) => {
 const orderSchema = z.object({
   market: z.string(),
   side: z.union([z.literal("buy"), z.literal("sell")]),
-  type: z.union([z.literal("market"), z.literal("limit")]),
+  type: z.union([z.literal("market"), z.literal("limit"), z.literal("stop")]),
   size: z.string(),
   price: z.string().optional(),
+  stopPrice: z.string().optional(),
 });
 
 app.post("/api/orders", async (req, reply) => {
@@ -365,6 +372,33 @@ app.post("/api/orders", async (req, reply) => {
   if (!body.success) {
     reply.status(400);
     return { error: "invalid_order" };
+  }
+
+  if (paradexClient) {
+    try {
+      const paradexType =
+        body.data.type === "stop"
+          ? body.data.price
+            ? "STOP_LIMIT"
+            : "STOP_MARKET"
+          : body.data.type === "limit"
+            ? "LIMIT"
+            : "MARKET";
+      const order = await paradexClient.createOrder({
+        market: toParadexMarket(body.data.market),
+        side: body.data.side === "buy" ? "BUY" : "SELL",
+        type: paradexType,
+        size: body.data.size,
+        price: body.data.price,
+        stopPrice: body.data.stopPrice,
+        timeInForce: "GTC",
+      });
+      const id = (order as { id?: string }).id ?? `${body.data.market}-${Date.now()}`;
+      return { id };
+    } catch (error) {
+      reply.status(500);
+      return { error: "order_failed", message: (error as Error).message };
+    }
   }
 
   const id = `${body.data.market}-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
@@ -409,7 +443,192 @@ function computePnl(position: typeof seedPositions[0]) {
   return { pnl, pnlPercent };
 }
 
+function toParadexMarket(market: string): string {
+  if (market.toUpperCase().includes("-PERP")) return market;
+  return `${market}-PERP`;
+}
+
+function fromParadexMarket(market: string): string {
+  return market.replace(/-PERP$/i, "");
+}
+
+function pickValue<T extends Record<string, unknown>>(
+  source: T,
+  keys: string[]
+): unknown {
+  for (const key of keys) {
+    if (key in source && source[key] != null) {
+      return source[key];
+    }
+  }
+  return undefined;
+}
+
+function pickString<T extends Record<string, unknown>>(
+  source: T,
+  keys: string[],
+  fallback = ""
+): string {
+  const value = pickValue(source, keys);
+  if (typeof value === "string") return value;
+  if (typeof value === "number") return String(value);
+  return fallback;
+}
+
+function pickNumber<T extends Record<string, unknown>>(
+  source: T,
+  keys: string[],
+  fallback = 0
+): number {
+  const value = pickValue(source, keys);
+  if (typeof value === "number") return value;
+  if (typeof value === "string") {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : fallback;
+  }
+  return fallback;
+}
+
+function toIsoTimestamp(value: unknown): string {
+  if (typeof value === "number") {
+    return new Date(value).toISOString();
+  }
+  if (typeof value === "string") {
+    const numeric = Number(value);
+    if (Number.isFinite(numeric) && value.trim() !== "") {
+      return new Date(numeric).toISOString();
+    }
+    const parsed = Date.parse(value);
+    if (!Number.isNaN(parsed)) return new Date(parsed).toISOString();
+  }
+  return new Date().toISOString();
+}
+
+function mapParadexPosition(raw: Record<string, unknown>) {
+  const marketRaw = pickString(raw, ["market", "symbol"]);
+  const market = fromParadexMarket(marketRaw);
+  const sideRaw = pickString(raw, ["side", "position_side"]);
+  const side = sideRaw.toUpperCase() === "SHORT" ? "short" : "long";
+  const sizeRaw = pickNumber(raw, ["size", "position_size", "positionSize"], 0);
+  const size = Math.abs(sizeRaw);
+  const entryPrice = pickNumber(raw, [
+    "entry_price",
+    "entryPrice",
+    "average_entry_price",
+    "avg_entry_price",
+    "average_entry_price_usd",
+  ]);
+  const leverage = Math.max(
+    pickNumber(raw, ["leverage", "position_leverage", "leverage_ratio"], 1),
+    1
+  );
+  const margin =
+    pickNumber(raw, ["margin", "initial_margin", "position_margin", "cost"], 0) ||
+    (entryPrice && size ? (entryPrice * size) / leverage : 0);
+  const unrealizedPnl = pickNumber(raw, [
+    "unrealized_pnl",
+    "unrealizedPnl",
+    "pnl",
+    "unrealized_pnl_usd",
+  ]);
+  let markPrice = pickNumber(raw, ["mark_price", "markPrice"], 0);
+  if (!markPrice && entryPrice && size) {
+    const direction = side === "long" ? 1 : -1;
+    markPrice = entryPrice + (unrealizedPnl / size / direction);
+  }
+  if (!markPrice) markPrice = entryPrice || 0;
+
+  const openedAt = toIsoTimestamp(
+    pickValue(raw, ["created_at", "opened_at", "openedAt", "updated_at"])
+  );
+  const id = pickString(
+    raw,
+    ["id", "position_id", "positionId"],
+    `${market}-${side}-${openedAt}`
+  );
+  const direction = side === "long" ? 1 : -1;
+  const pnl = (markPrice - entryPrice) * size * direction;
+  const pnlPercent = margin ? (pnl / margin) * 100 : 0;
+
+  return {
+    id,
+    market,
+    side,
+    size,
+    entryPrice,
+    markPrice,
+    leverage,
+    margin,
+    openedAt,
+    pnl,
+    pnlPercent,
+  };
+}
+
+function normalizeOrderStatus(statusRaw: string) {
+  const status = statusRaw.toUpperCase();
+  if (["OPEN", "NEW", "PENDING"].includes(status)) return "open";
+  if (["PARTIAL", "PARTIALLY_FILLED"].includes(status)) return "partial";
+  if (["FILLED", "CLOSED"].includes(status)) return "filled";
+  if (["CANCELED", "CANCELLED", "REJECTED"].includes(status)) return "canceled";
+  return "open";
+}
+
+function mapParadexOrder(raw: Record<string, unknown>) {
+  const marketRaw = pickString(raw, ["market", "symbol"]);
+  const market = fromParadexMarket(marketRaw);
+  const sideRaw = pickString(raw, ["side"]);
+  const side = sideRaw.toUpperCase() === "SELL" ? "sell" : "buy";
+  const typeRaw = pickString(raw, ["type"]);
+  const typeUpper = typeRaw.toUpperCase();
+  const type =
+    typeUpper.startsWith("STOP") ? "stop" : typeUpper === "MARKET" ? "market" : "limit";
+  const price = pickNumber(raw, ["price", "trigger_price", "triggerPrice"], 0);
+  const size = pickNumber(raw, ["size", "remaining_size", "remainingSize"], 0);
+  const status = normalizeOrderStatus(pickString(raw, ["status"], "OPEN"));
+  const id = pickString(raw, ["id", "order_id", "orderId"], `${market}-${Date.now()}`);
+  return { id, market, side, type, price, size, status };
+}
+
+function mapParadexTrade(raw: Record<string, unknown>) {
+  const marketRaw = pickString(raw, ["market", "symbol"]);
+  const market = fromParadexMarket(marketRaw);
+  const sideRaw = pickString(raw, ["side"]);
+  const side = sideRaw.toUpperCase() === "SELL" ? "sell" : "buy";
+  const size = pickNumber(raw, ["size", "quantity", "qty"], 0);
+  const price = pickNumber(raw, ["price"], 0);
+  const fee = pickNumber(raw, ["fee", "commission"], 0);
+  const pnl = pickNumber(raw, ["pnl"], 0);
+  const executedAt = toIsoTimestamp(
+    pickValue(raw, ["timestamp", "time", "executed_at", "executedAt"])
+  );
+  const id = pickString(raw, ["id", "trade_id", "tradeId"], `${market}-${Date.now()}`);
+  return { id, market, side, size, price, fee, pnl, executedAt };
+}
+
+function mapParadexFunding(raw: Record<string, unknown>) {
+  const marketRaw = pickString(raw, ["market", "symbol"]);
+  const market = fromParadexMarket(marketRaw);
+  const rate = pickNumber(raw, ["fundingRate", "funding_rate", "rate"], 0);
+  const payment = pickNumber(raw, ["payment", "fundingPayment", "funding_payment"], 0);
+  const time = toIsoTimestamp(pickValue(raw, ["time", "timestamp", "paid_at", "paidAt"]));
+  const id = pickString(raw, ["id"], `${market}-${time}`);
+  return { id, market, rate, payment, time };
+}
+
 app.get("/api/positions", async (req, reply) => {
+  if (paradexClient) {
+    try {
+      const raw = await paradexClient.getPositions();
+      const positions = raw
+        .map((pos) => mapParadexPosition(pos as unknown as Record<string, unknown>))
+        .sort((a, b) => b.openedAt.localeCompare(a.openedAt));
+      return { positions };
+    } catch (error) {
+      console.error("Failed to fetch Paradex positions:", error);
+    }
+  }
+
   const positions = seedPositions.map((pos) => {
     const { pnl, pnlPercent } = computePnl(pos);
     return { ...pos, pnl, pnlPercent };
@@ -418,18 +637,71 @@ app.get("/api/positions", async (req, reply) => {
 });
 
 app.get("/api/orders", async (req, reply) => {
+  const market = (req.query as { market?: string }).market;
+  if (paradexClient) {
+    try {
+      const raw = await paradexClient.getOpenOrders(
+        market ? toParadexMarket(market) : undefined
+      );
+      const orders = raw.map((order) =>
+        mapParadexOrder(order as unknown as Record<string, unknown>)
+      );
+      return { orders };
+    } catch (error) {
+      console.error("Failed to fetch Paradex orders:", error);
+    }
+  }
+
   return { orders: seedOrders };
 });
 
 app.get("/api/trades", async (req, reply) => {
-  const page = Number((req.query as { page?: string }).page) || 1;
+  const query = req.query as { page?: string; market?: string };
+  const page = Number(query.page) || 1;
+  const market = query.market;
+
+  if (paradexClient) {
+    try {
+      const paradexMarket = toParadexMarket(market || "BTC-USD");
+      const tradesResponse = await paradexClient.getTrades(
+        paradexMarket,
+        PAGE_SIZE
+      );
+      const items = tradesResponse.trades.map((trade) =>
+        mapParadexTrade(trade as unknown as Record<string, unknown>)
+      );
+      return { items, total: items.length };
+    } catch (error) {
+      console.error("Failed to fetch Paradex trades:", error);
+    }
+  }
+
   const start = (page - 1) * PAGE_SIZE;
   const items = seedTrades.slice(start, start + PAGE_SIZE);
   return { items, total: seedTrades.length };
 });
 
 app.get("/api/funding", async (req, reply) => {
-  const page = Number((req.query as { page?: string }).page) || 1;
+  const query = req.query as { page?: string; market?: string };
+  const page = Number(query.page) || 1;
+  const market = query.market;
+
+  if (paradexClient) {
+    try {
+      const paradexMarket = market ? toParadexMarket(market) : undefined;
+      const fundingResponse = await paradexClient.getFundingPayments(
+        paradexMarket,
+        PAGE_SIZE
+      );
+      const items = fundingResponse.payments.map((payment) =>
+        mapParadexFunding(payment as unknown as Record<string, unknown>)
+      );
+      return { items, total: items.length };
+    } catch (error) {
+      console.error("Failed to fetch Paradex funding:", error);
+    }
+  }
+
   const start = (page - 1) * PAGE_SIZE;
   const items = seedFunding.slice(start, start + PAGE_SIZE);
   return { items, total: seedFunding.length };
@@ -438,10 +710,13 @@ app.get("/api/funding", async (req, reply) => {
 // DEX Integration Routes
 
 const orderRouter = getOrderRouter();
+const dexClients = new Map<string, ExtendedClient | ParadexClient>();
+let extendedClient: ExtendedClient | null = null;
+let paradexClient: ParadexClient | null = null;
 
 // Initialize DEX clients if credentials are available
 if (env.EXTENDED_API_KEY && env.EXTENDED_API_SECRET) {
-  const extendedClient = createExtendedClient({
+  extendedClient = createExtendedClient({
     name: "extended",
     baseUrl: env.EXTENDED_API_URL || "https://api.extended.exchange",
     chainId: Number(env.EXTENDED_CHAIN_ID) || 1,
@@ -452,11 +727,12 @@ if (env.EXTENDED_API_KEY && env.EXTENDED_API_SECRET) {
     },
   });
   orderRouter.registerExchange("extended", extendedClient);
+  dexClients.set("extended", extendedClient);
 }
 
 const hasParadexAuth = Boolean(
   env.PARADEX_JWT_TOKEN ||
-    (env.PARADEX_STARKNET_ADDRESS && env.PARADEX_STARKNET_PRIVATE_KEY)
+  (env.PARADEX_STARKNET_ADDRESS && env.PARADEX_STARKNET_PRIVATE_KEY)
 );
 
 if (hasParadexAuth) {
@@ -468,7 +744,7 @@ if (hasParadexAuth) {
     env.PARADEX_API_URL || env.PARADEX_REST_URL || defaultParadexUrl;
   const isTestnet = paradexBaseUrl.toLowerCase().includes("testnet");
 
-  const paradexClient = createParadexClient({
+  paradexClient = createParadexClient({
     name: "paradex",
     baseUrl: paradexBaseUrl,
     chainId: Number(env.PARADEX_CHAIN_ID ?? ""),
@@ -480,6 +756,7 @@ if (hasParadexAuth) {
     },
   });
   orderRouter.registerExchange("paradex", paradexClient);
+  dexClients.set("paradex", paradexClient);
 }
 
 // DEX Market routes
@@ -489,7 +766,17 @@ app.get("/api/dex/markets", async () => {
 
   for (const exchangeName of exchanges) {
     try {
-      // This would fetch real markets in production
+      const client = dexClients.get(exchangeName);
+      if (client instanceof ParadexClient) {
+        const markets = await client.getMarkets();
+        allMarkets.push({ exchange: exchangeName, markets });
+        continue;
+      }
+      if (client instanceof ExtendedClient) {
+        const markets = await client.getMarkets();
+        allMarkets.push({ exchange: exchangeName, markets });
+        continue;
+      }
       allMarkets.push({
         exchange: exchangeName,
         markets: [],
@@ -500,6 +787,36 @@ app.get("/api/dex/markets", async () => {
   }
 
   return { exchanges, markets: allMarkets };
+});
+
+app.get("/api/dex/paradex/account", async (req, reply) => {
+  if (!paradexClient) {
+    reply.status(400);
+    return { error: "paradex_not_configured" };
+  }
+
+  try {
+    const account = await paradexClient.getAccount();
+    return { account };
+  } catch (error) {
+    reply.status(500);
+    return { error: "paradex_account_failed", message: (error as Error).message };
+  }
+});
+
+app.get("/api/dex/paradex/balances", async (req, reply) => {
+  if (!paradexClient) {
+    reply.status(400);
+    return { error: "paradex_not_configured" };
+  }
+
+  try {
+    const balances = await paradexClient.getBalances();
+    return { balances };
+  } catch (error) {
+    reply.status(500);
+    return { error: "paradex_balances_failed", message: (error as Error).message };
+  }
 });
 
 // DEX Order routes

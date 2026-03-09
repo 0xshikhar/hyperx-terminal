@@ -89,7 +89,10 @@ export class OrderRouter {
           
           price = remainingSize > 0 ? 0 : totalCost / size;
         } else if (client instanceof ParadexClient) {
-          const orderbook = await client.getOrderbook(market);
+          const paradexMarket = market.toUpperCase().includes("-PERP")
+            ? market
+            : `${market}-PERP`;
+          const orderbook = await client.getOrderbook(paradexMarket);
           const levels =
             side === "buy" ? orderbook.asks : orderbook.bids;
           

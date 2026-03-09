@@ -18,7 +18,7 @@ import type {
   OrderType,
 } from "@hyperx/types/dex";
 
-import { ec, typedData } from "starknet";
+import { ec, shortString, typedData } from "starknet";
 import type { TypedData } from "starknet";
 
 export interface ParadexClientOptions extends DEXConfig {
@@ -29,6 +29,14 @@ export interface ParadexClientOptions extends DEXConfig {
   };
   jwtToken?: string;
 }
+
+type ParadexResults<T> = {
+  results?: T[];
+  next?: string;
+  prev?: string;
+};
+
+type ParadexAccountInfo = Record<string, unknown>;
 
 export class ParadexClient {
   private baseUrl: string;
@@ -56,6 +64,22 @@ export class ParadexClient {
   private normalizeBaseUrl(baseUrl: string): string {
     const trimmed = baseUrl.replace(/\/+$/, "");
     return trimmed.endsWith("/v1") ? trimmed.slice(0, -3) : trimmed;
+  }
+
+  private normalizeChainId(chainId: string): string {
+    if (chainId.startsWith("0x") || /^\d+$/.test(chainId)) {
+      return chainId;
+    }
+    return shortString.encodeShortString(chainId);
+  }
+
+  private unwrapResults<T>(data: unknown): T[] {
+    if (Array.isArray(data)) return data as T[];
+    if (data && typeof data === "object") {
+      const results = (data as ParadexResults<T>).results;
+      if (Array.isArray(results)) return results;
+    }
+    return [];
   }
 
   private async request<T>(
@@ -107,9 +131,9 @@ export class ParadexClient {
       throw new Error("Starknet credentials required to generate Paradex JWT");
     }
 
-    const timestamp = Math.floor(Date.now() / 1000).toString();
-    const expiration = (Math.floor(Date.now() / 1000) + 1800).toString(); // 30 min signature expiry
-    const chainId = await this.resolveChainId();
+    const timestamp = Math.floor(Date.now() / 1000);
+    const expiration = timestamp + 1800; // 30 min signature expiry
+    const chainId = this.normalizeChainId(await this.resolveChainId());
 
     // EIP-712-like TypedData for Paradex
     const typedDataPayload: TypedData = {
@@ -157,8 +181,8 @@ export class ParadexClient {
       Accept: "application/json",
       "PARADEX-STARKNET-ACCOUNT": this.starknetAddress,
       "PARADEX-STARKNET-SIGNATURE": JSON.stringify(signatureArray),
-      "PARADEX-TIMESTAMP": timestamp,
-      "PARADEX-SIGNATURE-EXPIRATION": expiration,
+      "PARADEX-TIMESTAMP": String(timestamp),
+      "PARADEX-SIGNATURE-EXPIRATION": String(expiration),
     };
 
     const url = `${this.baseUrl}/v1/auth`;
@@ -258,10 +282,84 @@ export class ParadexClient {
     }
   }
 
+  private toQuantums(value: string, precision: number): string {
+    const [whole, fraction = ""] = value.split(".");
+    const sanitizedWhole = whole.replace(/^0+(?=\d)/, "") || "0";
+    const paddedFraction = `${fraction}00000000000000000000`.slice(0, precision);
+    const combined = `${sanitizedWhole}${paddedFraction}`.replace(/^0+(?=\d)/, "") || "0";
+    return combined;
+  }
+
+  private signOrderPayload(
+    chainId: string,
+    order: ParadexCreateOrderRequest,
+    timestamp: number
+  ): string {
+    if (!this.starknetAddress || !this.starknetPrivateKey) {
+      throw new Error("Starknet credentials required to sign Paradex orders");
+    }
+
+    const sideForSigning = order.side === "BUY" ? "1" : "2";
+    const priceForSigning = order.price ?? "0";
+    const priceQuantums = this.toQuantums(priceForSigning, 8);
+    const sizeQuantums = this.toQuantums(order.size, 8);
+    const orderTypeFelt = shortString.encodeShortString(order.type);
+    const marketFelt = shortString.encodeShortString(order.market);
+
+    const typedDataPayload: TypedData = {
+      domain: {
+        name: "Paradex",
+        chainId,
+        version: "1",
+      },
+      primaryType: "Order",
+      types: {
+        StarkNetDomain: [
+          { name: "name", type: "felt" },
+          { name: "chainId", type: "felt" },
+          { name: "version", type: "felt" },
+        ],
+        Order: [
+          { name: "timestamp", type: "felt" },
+          { name: "market", type: "felt" },
+          { name: "side", type: "felt" },
+          { name: "orderType", type: "felt" },
+          { name: "size", type: "felt" },
+          { name: "price", type: "felt" },
+        ],
+      },
+      message: {
+        timestamp,
+        market: marketFelt,
+        side: sideForSigning,
+        orderType: orderTypeFelt,
+        size: sizeQuantums,
+        price: priceQuantums,
+      },
+    };
+
+    const messageHash = typedData.getMessageHash(
+      typedDataPayload,
+      this.starknetAddress
+    );
+    const signature = ec.starkCurve.sign(messageHash, this.starknetPrivateKey);
+    const signatureArray =
+      typeof signature === "object" &&
+      signature != null &&
+      "r" in signature &&
+      "s" in signature
+        ? [signature.r.toString(10), signature.s.toString(10)]
+        : Array.isArray(signature)
+          ? signature
+          : [];
+    return JSON.stringify(signatureArray);
+  }
+
   // Market Data APIs
 
   async getMarkets(): Promise<ParadexMarket[]> {
-    return this.request<ParadexMarket[]>("/v1/markets");
+    const data = await this.request<unknown>("/v1/markets");
+    return this.unwrapResults<ParadexMarket>(data);
   }
 
   async getMarket(market: string): Promise<ParadexMarket> {
@@ -314,7 +412,8 @@ export class ParadexClient {
     if (!this.starknetAddress) {
       throw new Error("API credentials required for positions");
     }
-    return this.request<ParadexPosition[]>("/v1/positions");
+    const data = await this.request<unknown>("/v1/positions");
+    return this.unwrapResults<ParadexPosition>(data);
   }
 
   async getPosition(market: string): Promise<ParadexPosition> {
@@ -328,7 +427,8 @@ export class ParadexClient {
     if (!this.starknetAddress) {
       throw new Error("API credentials required for balances");
     }
-    return this.request<ParadexBalance[]>("/v1/balances");
+    const data = await this.request<unknown>("/v1/balances");
+    return this.unwrapResults<ParadexBalance>(data);
   }
 
   async createOrder(request: ParadexCreateOrderRequest): Promise<ParadexOrder> {
@@ -336,11 +436,45 @@ export class ParadexClient {
       throw new Error("API credentials required for trading");
     }
 
-    // For Paradex, order creation might require another signature (Order signature).
-    // This depends on the API endpoints configuration. Assuming the JWT allows taking action or that this endpoint will fail without order payload signature, we send it anyway.
+    if (
+      (request.type === "LIMIT" || request.type === "STOP_LIMIT") &&
+      !request.price
+    ) {
+      throw new Error("Price is required for limit orders");
+    }
+
+    if (
+      (request.type === "STOP_LIMIT" || request.type === "STOP_MARKET") &&
+      !request.stopPrice
+    ) {
+      throw new Error("stopPrice is required for stop orders");
+    }
+
+    const chainId = this.normalizeChainId(await this.resolveChainId());
+    const signatureTimestamp = Date.now();
+    const signature = this.signOrderPayload(chainId, request, signatureTimestamp);
+    const instruction = request.postOnly
+      ? "POST_ONLY"
+      : request.timeInForce || "GTC";
+    const payload = {
+      market: request.market,
+      side: request.side,
+      type: request.type,
+      size: request.size,
+      price:
+        request.price ??
+        (request.type === "MARKET" || request.type === "STOP_MARKET" ? "0" : undefined),
+      trigger_price: request.stopPrice,
+      client_id: request.clientId,
+      instruction,
+      flags: request.reduceOnly ? ["REDUCE_ONLY"] : undefined,
+      signature,
+      signature_timestamp: signatureTimestamp,
+    };
+
     return this.request<ParadexOrder>("/v1/orders", {
       method: "POST",
-      body: JSON.stringify(request),
+      body: JSON.stringify(payload),
     });
   }
 
@@ -375,7 +509,8 @@ export class ParadexClient {
       throw new Error("API credentials required");
     }
     const query = market ? `?market=${market}` : "";
-    return this.request<ParadexOrder[]>(`/v1/orders${query}`);
+    const data = await this.request<unknown>(`/v1/orders${query}`);
+    return this.unwrapResults<ParadexOrder>(data);
   }
 
   async getOrderHistory(
@@ -393,7 +528,11 @@ export class ParadexClient {
     if (market) query.append("market", market);
     query.append("limit", limit.toString());
     if (cursor) query.append("cursor", cursor);
-    return this.request(`/v1/orders/history?${query}`);
+    const data = await this.request<unknown>(`/v1/orders/history?${query}`);
+    return {
+      orders: this.unwrapResults<ParadexOrder>(data),
+      nextCursor: (data as { next?: string } | undefined)?.next,
+    };
   }
 
   async getTrades(
@@ -411,7 +550,11 @@ export class ParadexClient {
     if (market) query.append("market", market);
     query.append("limit", limit.toString());
     if (cursor) query.append("cursor", cursor);
-    return this.request(`/v1/trades?${query}`);
+    const data = await this.request<unknown>(`/v1/trades?${query}`);
+    return {
+      trades: this.unwrapResults<ParadexTrade>(data),
+      nextCursor: (data as { next?: string } | undefined)?.next,
+    };
   }
 
   async getFundingPayments(
@@ -432,16 +575,21 @@ export class ParadexClient {
     const query = new URLSearchParams();
     if (market) query.append("market", market);
     query.append("limit", limit.toString());
-    return this.request(`/v1/funding/payments?${query}`);
+    const data = await this.request<unknown>(`/v1/funding/payments?${query}`);
+    return {
+      payments: this.unwrapResults<{
+        market: string;
+        payment: string;
+        positionSize: string;
+        fundingRate: string;
+        time: string;
+      }>(data),
+    };
   }
 
   // Account APIs
 
-  async getAccount(): Promise<{
-    starknetAddress: string;
-    accountId: string;
-    createdAt: string;
-  }> {
+  async getAccount(): Promise<ParadexAccountInfo> {
     if (!this.starknetAddress) {
       throw new Error("API credentials required");
     }
