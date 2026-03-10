@@ -1,0 +1,113 @@
+version: "3.8"
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: hyperx-postgres
+    environment:
+      POSTGRES_USER: hyperx
+      POSTGRES_PASSWORD: hyperx_password
+      POSTGRES_DB: hyperx
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hyperx -d hyperx"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - hyperx-network
+
+  # Redis for caching and pub/sub
+  redis:
+    image: redis:7-alpine
+    container_name: hyperx-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - hyperx-network
+
+  # API Server
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    container_name: hyperx-api
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      DATABASE_URL: postgresql://hyperx:hyperx_password@postgres:5432/hyperx?schema=public
+      JWT_SECRET: ${JWT_SECRET:-your-super-secret-jwt-key-change-in-production}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-your-refresh-secret-change-in-production}
+      REDIS_URL: redis://redis:6379
+      # Add other env vars as needed
+    ports:
+      - "3001:3001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./apps/api:/app
+      - /app/node_modules
+    networks:
+      - hyperx-network
+    restart: unless-stopped
+
+  # WebSocket Server
+  ws:
+    build:
+      context: .
+      dockerfile: apps/ws/Dockerfile
+    container_name: hyperx-ws
+    environment:
+      NODE_ENV: production
+      PORT: 3002
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: ${JWT_SECRET:-your-super-secret-jwt-key-change-in-production}
+    ports:
+      - "3002:3002"
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - hyperx-network
+    restart: unless-stopped
+
+  # Web Frontend (served via nginx)
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    container_name: hyperx-web
+    environment:
+      VITE_API_URL: http://localhost:3001
+      VITE_WS_URL: ws://localhost:3002
+    ports:
+      - "3000:80"
+    depends_on:
+      - api
+      - ws
+    networks:
+      - hyperx-network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  hyperx-network:
+    driver: bridge

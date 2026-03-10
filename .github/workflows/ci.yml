@@ -1,0 +1,155 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  # Lint and Type Check
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          
+      - name: Install pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 10
+          
+      - name: Install dependencies
+        run: pnpm install
+        
+      - name: Lint
+        run: pnpm lint
+        
+      - name: Type check
+        run: pnpm typecheck
+
+  # Test Web Frontend
+  test-web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          
+      - name: Install pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 10
+          
+      - name: Install dependencies
+        run: pnpm install
+        
+      - name: Test Web
+        run: pnpm test:web
+        
+      - name: Upload coverage
+        uses: codecov/codecov-action@v3
+        with:
+          files: ./apps/web/coverage/lcov.info
+          flags: web
+
+  # Test API
+  test-api:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          
+      - name: Install pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 10
+          
+      - name: Install dependencies
+        run: pnpm install
+        
+      - name: Setup test database
+        run: |
+          cd apps/api
+          pnpm prisma migrate deploy
+        env:
+          DATABASE_URL: postgresql://test:test@localhost:5432/test
+          
+      - name: Test API
+        run: pnpm test:api
+        env:
+          DATABASE_URL: postgresql://test:test@localhost:5432/test
+          JWT_SECRET: test-secret
+
+  # Build Check
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          
+      - name: Install pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 10
+          
+      - name: Install dependencies
+        run: pnpm install
+        
+      - name: Build Web
+        run: pnpm build:web
+        
+      - name: Build API
+        run: pnpm build:api
+        
+      - name: Build WS
+        run: pnpm build:ws
+
+  # Security Audit
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          
+      - name: Install pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 10
+          
+      - name: Audit dependencies
+        run: pnpm audit --production
+        continue-on-error: true
