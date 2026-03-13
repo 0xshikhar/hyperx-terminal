@@ -294,7 +294,7 @@ export function benchmark(data: unknown): { json: number; msgpack: number; ratio
   const mpTime = performance.now() - mpStart;
   
   // Log sizes for debugging (will be tree-shaken in production if not used)
-  if (typeof process !== "undefined" && process.env?.NODE_ENV === "development") {
+  if (import.meta.env.DEV) {
     // eslint-disable-next-line no-console
     console.log(`JSON: ${jsonSize} bytes, Msgpack: ${mpSize} bytes, Ratio: ${(jsonSize / mpSize).toFixed(2)}x`);
   }
