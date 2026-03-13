@@ -18,23 +18,6 @@ const intervalSeconds: Record<CandleInterval, number> = {
   "1d": 86400,
 };
 
-const buildSeed = (market: string, interval: CandleInterval) => {
-  const seconds = intervalSeconds[interval];
-  const now = Math.floor(Date.now() / 1000);
-  const base =
-    market === "ETH-USD" ? 4800 : market === "STRK-USD" ? 2.2 : 95000;
-  return Array.from({ length: 60 }).map((_, i) => {
-    const time = now - (60 - i) * seconds;
-    const range = market === "STRK-USD" ? 0.02 : 80;
-    const drift = market === "STRK-USD" ? 0.01 : 40;
-    const open = base + (Math.random() - 0.5) * range;
-    const close = open + (Math.random() - 0.5) * drift;
-    const high = Math.max(open, close) + Math.random() * (range * 0.4);
-    const low = Math.min(open, close) - Math.random() * (range * 0.4);
-    return { time, open, high, low, close };
-  });
-};
-
 const updateFromTicker = (
   candles: Candle[],
   message: TickerMessage,
@@ -60,11 +43,7 @@ const updateFromTicker = (
 };
 
 export function useCandleStream(market: string, interval: CandleInterval) {
-  const [candles, setCandles] = useState<Candle[]>(() => buildSeed(market, interval));
-
-  useEffect(() => {
-    setCandles(buildSeed(market, interval));
-  }, [market, interval]);
+  const [candles, setCandles] = useState<Candle[]>([]);
 
   useEffect(() => {
     const channel = makeCandlesChannel(market, interval);
