@@ -225,7 +225,7 @@ export function useThrottledWebSocket(options: ThrottledWSOptions = {}) {
       }
       pendingRef.current = [];
     };
-  }, [flush]);
+  }, []);
 
   return {
     /** Connection state from wsClient */
