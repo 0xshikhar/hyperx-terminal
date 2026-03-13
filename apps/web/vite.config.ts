@@ -19,9 +19,10 @@ export default defineConfig({
           if (!id.includes("node_modules")) return undefined;
 
           if (id.includes("lightweight-charts")) return "vendor-charts";
-          if (id.includes("starknet") || id.includes("@starknet-io") || id.includes("@cartridge")) {
-            return "vendor-starknet";
-          }
+          if (id.includes("@starknet-io/get-starknet")) return "vendor-wallet";
+          if (id.includes("@cartridge/controller")) return "vendor-wallet";
+          if (id.includes("starkzap")) return "vendor-starkzap";
+          if (id.includes("starknet")) return "vendor-starknet-core";
           if (id.includes("framer-motion")) return "vendor-motion";
           if (id.includes("cmdk")) return "vendor-cmdk";
           if (id.includes("react-router-dom")) return "vendor-router";
