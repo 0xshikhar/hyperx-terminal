@@ -26,17 +26,6 @@ const buildDayBuckets = () => {
   });
 };
 
-const buildFallbackSeries = (position: PortfolioHistoryPosition) => {
-  const horizon = HISTORY_DAYS - 1;
-  const sign = position.pnl >= 0 ? 1 : -1;
-  const start = position.pnl - Math.max(Math.abs(position.pnl) * 0.7, 1) * sign;
-
-  return Array.from({ length: HISTORY_DAYS }, (_, index) => {
-    const ratio = horizon > 0 ? index / horizon : 1;
-    return start + (position.pnl - start) * ratio;
-  });
-};
-
 export function buildPortfolioPnlHistory(
   position: PortfolioHistoryPosition,
   trades: TradeHistoryDto[],
@@ -71,9 +60,10 @@ export function buildPortfolioPnlHistory(
   }
 
   const hasHistory = cumulative.some((value) => Math.abs(value) > 0.0001);
-  const baseSeries = hasHistory ? cumulative : buildFallbackSeries(position);
-  const lastValue = baseSeries[baseSeries.length - 1] ?? 0;
+  if (!hasHistory) return [];
+
+  const lastValue = cumulative[cumulative.length - 1] ?? 0;
   const offset = position.pnl - lastValue;
 
-  return baseSeries.map((value) => Number((value + offset).toFixed(4)));
+  return cumulative.map((value) => Number((value + offset).toFixed(4)));
 }
