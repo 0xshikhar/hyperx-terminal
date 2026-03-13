@@ -34,7 +34,9 @@ interface RiskMetrics {
 
 export function RiskAnalytics({ positions, riskFreeRate = 0.05 }: RiskAnalyticsProps) {
   const metrics = useMemo<RiskMetrics>(() => {
-    if (positions.length === 0) {
+    const positionsWithHistory = positions.filter((position) => position.pnlHistory.length > 0);
+
+    if (positionsWithHistory.length === 0) {
       return {
         var95: 0,
         var99: 0,
@@ -47,11 +49,11 @@ export function RiskAnalytics({ positions, riskFreeRate = 0.05 }: RiskAnalyticsP
 
     // Aggregate portfolio daily returns
     const portfolioReturns: number[] = [];
-    const days = Math.max(...positions.map(p => p.pnlHistory.length));
+    const days = Math.max(...positionsWithHistory.map((p) => p.pnlHistory.length));
     
     for (let i = 0; i < days; i++) {
       let dailyReturn = 0;
-      positions.forEach(pos => {
+      positionsWithHistory.forEach((pos) => {
         if (pos.pnlHistory[i] !== undefined) {
           dailyReturn += pos.pnlHistory[i];
         }
@@ -60,10 +62,20 @@ export function RiskAnalytics({ positions, riskFreeRate = 0.05 }: RiskAnalyticsP
     }
 
     // Calculate returns (percentage)
-    const totalNotional = positions.reduce(
+    const totalNotional = positionsWithHistory.reduce(
       (sum, p) => sum + Math.abs(p.size * p.markPrice),
       0
     );
+    if (totalNotional === 0) {
+      return {
+        var95: 0,
+        var99: 0,
+        sharpeRatio: 0,
+        maxDrawdown: 0,
+        volatility: 0,
+        beta: 0,
+      };
+    }
     const returns = portfolioReturns.map(r => r / totalNotional);
 
     // Standard deviation (volatility)
@@ -97,8 +109,8 @@ export function RiskAnalytics({ positions, riskFreeRate = 0.05 }: RiskAnalyticsP
     });
 
     // Beta (simplified - assume market is first position)
-    const marketReturns = positions[0]?.pnlHistory.map((_, i) => {
-      return positions.reduce((sum, p) => sum + (p.pnlHistory[i] || 0), 0) / totalNotional;
+    const marketReturns = positionsWithHistory[0]?.pnlHistory.map((_, i) => {
+      return positionsWithHistory.reduce((sum, p) => sum + (p.pnlHistory[i] || 0), 0) / totalNotional;
     }) || [];
     
     const marketMean = marketReturns.reduce((a, b) => a + b, 0) / marketReturns.length;
