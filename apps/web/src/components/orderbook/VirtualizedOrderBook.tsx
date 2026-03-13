@@ -312,11 +312,6 @@ export function VirtualizedOrderBook() {
     }));
   }, [aggregatedAsks, minePriceSet]);
 
-  // Price click handler - for future price selection feature
-  // const handlePriceClick = (price: number) => {
-  //   console.log("[OrderBook] Price clicked:", price);
-  // };
-
   return (
     <div
       ref={containerRef}
