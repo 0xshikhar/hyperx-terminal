@@ -1,6 +1,6 @@
-import { connect, disconnect } from "@starknet-io/get-starknet";
-import { RpcProvider, WalletAccount } from "starknet";
 import { create } from "zustand";
+
+type WalletAccountType = import("starknet").WalletAccount;
 
 export type WalletState = {
   isConnecting: boolean;
@@ -8,7 +8,7 @@ export type WalletState = {
   address: string | null;
   walletName: string | null;
   chainId: string | null;
-  account: WalletAccount | null;
+  account: WalletAccountType | null;
   connectWallet: () => Promise<void>;
   disconnectWallet: () => Promise<void>;
 };
@@ -54,6 +54,10 @@ export const useWallet = create<WalletState>()((set, get) => {
 
       set({ isConnecting: true });
       try {
+        const [{ connect }, { RpcProvider, WalletAccount }] = await Promise.all([
+          import("@starknet-io/get-starknet"),
+          import("starknet"),
+        ]);
         const swo = await connect({
           modalMode: "alwaysAsk",
           modalTheme: "dark",
@@ -97,6 +101,7 @@ export const useWallet = create<WalletState>()((set, get) => {
 
     disconnectWallet: async () => {
       try {
+        const { disconnect } = await import("@starknet-io/get-starknet");
         await disconnect({ clearLastWallet: true });
       } catch {
         return;

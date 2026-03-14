@@ -4,7 +4,6 @@
  * Handles Starknet wallet authentication with JWT tokens
  */
 
-import { constants } from "starknet";
 import { apiClient } from "./apiClient/client";
 import { useWallet } from "@/components/wallet/useWallet";
 
@@ -127,8 +126,8 @@ export async function signInWithWallet(): Promise<AuthResponse> {
   const envNetwork = (import.meta.env.VITE_STARKNET_NETWORK ?? "sepolia").toLowerCase();
   const envChainId =
     envNetwork === "mainnet"
-      ? constants.StarknetChainId.SN_MAIN
-      : constants.StarknetChainId.SN_SEPOLIA;
+      ? "SN_MAIN"
+      : "SN_SEPOLIA";
   const chainId = walletChainId ?? envChainId;
 
   const typedData = {
