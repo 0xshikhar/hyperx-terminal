@@ -6,3 +6,16 @@ dist
 !.env.example
 *.log
 pnpm-debug.log*
+
+apps/api/node_modules
+apps/api/dist
+apps/api/.cache
+
+apps/web/node_modules
+apps/web/dist
+apps/web/.cache
+apps/web/coverage
+
+apps/ws/node_modules
+apps/ws/dist
+apps/ws/.cache
