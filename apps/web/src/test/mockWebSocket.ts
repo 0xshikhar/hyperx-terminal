@@ -10,7 +10,7 @@
  *   ws.simulateMessage({ type: 'orderbook', data: {...} });
  */
 
-import { vi } from "vitest";
+import { vi, type Mock } from "vitest";
 
 export type WebSocketMessage = 
   | { type: "orderbook"; market: string; bids: [number, number][]; asks: [number, number][] }
@@ -28,8 +28,8 @@ export interface MockWebSocketInstance {
   CLOSING: 2;
   CLOSED: 3;
   
-  send: ReturnType<typeof vi.fn>;
-  close: ReturnType<typeof vi.fn>;
+  send: Mock<[data: unknown], void>;
+  close: Mock<[code?: number, reason?: string], void>;
   
   // Event handlers
   onopen: ((event: Event) => void) | null;
@@ -116,9 +116,8 @@ export function mockWebSocket(): MockWebSocketInstance {
 
 export class MockWebSocketServer {
   private clients: MockWebSocketInstance[] = [];
-  private messageHandlers: Map<string, ((data: unknown) => void)[]> = new Map();
   
-  constructor(private url: string = "wss://test.example.com") {}
+  constructor(_url = "wss://test.example.com") {}
   
   connect(): MockWebSocketInstance {
     const client = mockWebSocket();
