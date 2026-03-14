@@ -215,7 +215,7 @@ app.get("/api/alerts", async (req, reply) => {
   });
 
   return {
-    alerts: alerts.map((alert) => ({
+    alerts: alerts.map((alert: any) => ({
       id: alert.id,
       market: alert.market,
       condition: alert.condition,
@@ -294,7 +294,7 @@ app.get("/api/notifications", async (req, reply) => {
   });
 
   return {
-    notifications: notifications.map((n) => ({
+    notifications: notifications.map((n: any) => ({
       id: n.id,
       title: n.title,
       message: n.message,
