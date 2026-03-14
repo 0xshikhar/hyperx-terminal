@@ -29,6 +29,7 @@ export class WSClient {
   private reconnectAttempts = 0;
   private reconnectTimeout: number | null = null;
   private state: ConnectionState = "disconnected";
+  private shouldReconnect = true;
   private stateListeners = new Set<Listener<ConnectionState>>();
 
   private channelListeners = new Map<WSChannel, Set<Listener<ServerMessage>>>();
@@ -47,6 +48,7 @@ export class WSClient {
   connect() {
     if (this.ws?.readyState === WebSocket.OPEN) return;
 
+    this.shouldReconnect = true;
     this.setState("connecting");
     
     // Append JWT token to URL for authentication
@@ -72,7 +74,7 @@ export class WSClient {
 
     ws.onclose = () => {
       this.setState("disconnected");
-      if (!this.reconnect) return;
+      if (!this.reconnect || !this.shouldReconnect) return;
       this.scheduleReconnect();
     };
 
@@ -84,6 +86,7 @@ export class WSClient {
   }
 
   disconnect() {
+    this.shouldReconnect = false;
     if (this.reconnectTimeout) {
       window.clearTimeout(this.reconnectTimeout);
       this.reconnectTimeout = null;
@@ -153,6 +156,12 @@ export class WSClient {
    * See docs/phase1/index.md for implementation details.
    */
   private scheduleReconnect() {
+    if (!this.shouldReconnect) return;
+    if (this.reconnectTimeout) {
+      window.clearTimeout(this.reconnectTimeout);
+      this.reconnectTimeout = null;
+    }
+
     const exponentialDelay = Math.min(
       this.reconnectDelayMs * Math.pow(2, this.reconnectAttempts),
       this.maxReconnectDelayMs
@@ -162,9 +171,15 @@ export class WSClient {
     const delay = Math.floor(jitter);
     
     this.reconnectAttempts += 1;
-    console.log(`[WSClient] Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts}, base ${exponentialDelay}ms)`);
-    
+    if (import.meta.env.DEV) {
+      console.debug(
+        `[WSClient] Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts}, base ${exponentialDelay}ms)`
+      );
+    }
+
     this.reconnectTimeout = window.setTimeout(() => {
+      this.reconnectTimeout = null;
+      if (!this.shouldReconnect) return;
       this.connect();
     }, delay);
   }

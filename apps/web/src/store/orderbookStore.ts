@@ -26,6 +26,7 @@ type OrderbookState = {
   setAggregation: (aggregation: number) => void;
   queueBatch: (delta: OrderbookDelta) => void;
   applyBatch: (batch: OrderbookDelta[]) => void;
+  clearTimer: () => void;
 };
 
 const MAX_LEVELS = 200;
@@ -63,7 +64,13 @@ export const useOrderbookStore = create<OrderbookState>()((set, get) => ({
   flushTimer: null,
   aggregation: 1,
 
-  setMarket: (market) => set({ market, bids: [], asks: [], pendingBatch: [] }),
+  setMarket: (market) => {
+    const timer = get().flushTimer;
+    if (timer) {
+      window.clearTimeout(timer);
+    }
+    set({ market, bids: [], asks: [], pendingBatch: [], flushTimer: null });
+  },
   setAggregation: (aggregation) => set({ aggregation }),
 
   queueBatch: (delta) => {
@@ -71,8 +78,7 @@ export const useOrderbookStore = create<OrderbookState>()((set, get) => ({
     if (current.market && current.market !== delta.market) return;
 
     set((state) => ({ pendingBatch: [...state.pendingBatch, delta] }));
-    const now = get();
-    if (now.flushTimer) return;
+    if (get().flushTimer) return;
 
     const timer = window.setTimeout(() => {
       const { pendingBatch } = get();
@@ -81,6 +87,14 @@ export const useOrderbookStore = create<OrderbookState>()((set, get) => ({
     }, FLUSH_WINDOW_MS);
 
     set({ flushTimer: timer });
+  },
+
+  clearTimer: () => {
+    const timer = get().flushTimer;
+    if (timer) {
+      window.clearTimeout(timer);
+    }
+    set({ flushTimer: null, pendingBatch: [] });
   },
 
   applyBatch: (batch) => {

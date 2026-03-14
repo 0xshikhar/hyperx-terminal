@@ -51,16 +51,20 @@ export async function listOpenOrders() {
   return response.data.orders;
 }
 
-export async function listTradeHistory(page = 1) {
+export async function listTradeHistory(page = 1, market?: string) {
+  const searchParams = new URLSearchParams({ page: String(page) });
+  if (market) searchParams.set("market", market);
   const response = await apiClient.get<{ items: TradeHistoryDto[]; total: number }>(
-    `/trades?page=${page}`
+    `/trades?${searchParams.toString()}`
   );
   return response.data;
 }
 
-export async function listFundingHistory(page = 1) {
+export async function listFundingHistory(page = 1, market?: string) {
+  const searchParams = new URLSearchParams({ page: String(page) });
+  if (market) searchParams.set("market", market);
   const response = await apiClient.get<{ items: FundingHistoryDto[]; total: number }>(
-    `/funding?page=${page}`
+    `/funding?${searchParams.toString()}`
   );
   return response.data;
 }
