@@ -71,9 +71,13 @@ export function TradeForm({ onSubmit }: TradeFormProps) {
     };
     setIsSubmitting(true);
     try {
-      await onSubmit?.(order);
-      const placed = await placeOrder(order);
-      toast.success(`Order submitted (${placed.id})`);
+      if (onSubmit) {
+        await onSubmit(order);
+        toast.success("Order submitted");
+      } else {
+        const placed = await placeOrder(order);
+        toast.success(`Order submitted (${placed.id})`);
+      }
     } catch {
       toast.error("Order submission failed");
     } finally {
