@@ -33,12 +33,15 @@ export function buildPortfolioPnlHistory(
 ) {
   const buckets = buildDayBuckets();
   const openedAt = new Date(position.openedAt).getTime();
+  if (!Number.isFinite(openedAt)) return [];
+  const bucketByKey = new Map(buckets.map((bucket) => [bucket.key, bucket]));
 
   const addDelta = (time: string, delta: number) => {
+    const timestamp = new Date(time).getTime();
+    if (!Number.isFinite(timestamp) || timestamp < openedAt) return;
     const key = toDayKey(time);
-    const bucket = buckets.find((entry) => entry.key === key);
+    const bucket = bucketByKey.get(key);
     if (!bucket) return;
-    if (new Date(time).getTime() < openedAt) return;
     bucket.value += delta;
   };
 
