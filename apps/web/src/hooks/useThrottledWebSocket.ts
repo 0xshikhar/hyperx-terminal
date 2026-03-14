@@ -68,8 +68,11 @@ export function useThrottledWebSocket(options: ThrottledWSOptions = {}) {
   const rafIdRef = useRef<number | null>(null);
   const timeoutIdRef = useRef<number | null>(null);
   const lastFlushRef = useRef<number>(0);
+  const mountedRef = useRef(true);
 
   const flush = useCallback(() => {
+    if (!mountedRef.current) return;
+
     const now = performance.now();
     const pending = pendingRef.current;
     
@@ -210,17 +213,17 @@ export function useThrottledWebSocket(options: ThrottledWSOptions = {}) {
     return pendingRef.current.length;
   }, []);
 
-  // Cleanup on unmount
+    // Cleanup on unmount
   useEffect(() => {
     return () => {
+      mountedRef.current = false;
       if (rafIdRef.current) {
         cancelAnimationFrame(rafIdRef.current);
       }
       if (timeoutIdRef.current) {
         clearTimeout(timeoutIdRef.current);
       }
-      // Final flush
-      flush();
+      pendingRef.current = [];
     };
   }, [flush]);
 
