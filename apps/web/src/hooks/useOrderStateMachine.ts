@@ -28,6 +28,7 @@ export type OrderEvent =
 
 export interface Order {
   id: string;
+  exchangeOrderId?: string;
   state: OrderStatus;
   side: "buy" | "sell";
   size: number;
@@ -108,7 +109,7 @@ export function orderReducer(state: Order, event: OrderEvent): Order {
 
   switch (event.type) {
     case "ACCEPTED":
-      updates.id = event.orderId;
+      updates.exchangeOrderId = event.orderId;
       break;
     case "FILL":
       updates.filledSize = Math.min(event.filledSize, event.totalSize);

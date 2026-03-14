@@ -22,10 +22,13 @@ describe("orderReducer", () => {
   });
 
   it("transitions pending -> open on accepted", () => {
-    const pending = orderReducer(makeOrder(), { type: "SUBMIT" });
+    const draft = makeOrder();
+    const originalId = draft.id;
+    const pending = orderReducer(draft, { type: "SUBMIT" });
     const next = orderReducer(pending, { type: "ACCEPTED", orderId: "ex-1" });
     expect(next.state).toBe("open");
-    expect(next.id).toBe("ex-1");
+    expect(next.id).toBe(originalId);
+    expect(next.exchangeOrderId).toBe("ex-1");
   });
 
   it("transitions open -> partially_filled on partial fill", () => {
