@@ -11,6 +11,29 @@ export default defineConfig({
     react(),
     tailwindcss(),
   ],
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (!id.includes("node_modules")) return undefined;
+
+          if (id.includes("lightweight-charts")) return "vendor-charts";
+          if (id.includes("starknet") || id.includes("@starknet-io") || id.includes("@cartridge")) {
+            return "vendor-starknet";
+          }
+          if (id.includes("framer-motion")) return "vendor-motion";
+          if (id.includes("cmdk")) return "vendor-cmdk";
+          if (id.includes("react-router-dom")) return "vendor-router";
+          if (id.includes("@tanstack/react-query")) return "vendor-query";
+          if (id.includes("@radix-ui")) return "vendor-radix";
+          if (id.includes("react-window")) return "vendor-window";
+          if (id.includes("sonner")) return "vendor-toast";
+
+          return "vendor";
+        },
+      },
+    },
+  },
   server: {
     proxy: {
       "/api": {
