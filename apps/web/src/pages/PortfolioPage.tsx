@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { useQueries } from "@tanstack/react-query";
 import { AccountSummary } from "@/components/account/AccountSummary";
 import { PreferencesCard } from "@/components/account/PreferencesCard";
 import { PositionsTabs } from "@/components/positions/PositionsTabs";
@@ -12,22 +13,80 @@ import { PriceAlertsV2 } from "@/components/alerts/PriceAlertsV2";
 import { TradeJournal } from "@/components/journal/TradeJournal";
 import { ShortcutCustomizer } from "@/components/keyboard-shortcuts/ShortcutCustomizer";
 import { usePositions } from "@/hooks/usePositions";
+import {
+  listFundingHistory,
+  listTradeHistory,
+  type FundingHistoryDto,
+  type TradeHistoryDto,
+} from "@/services/apiClient/positions.api";
+import { buildPortfolioPnlHistory } from "@/lib/portfolioAnalytics";
 
 export function PortfolioPage() {
   const { positions } = usePositions();
 
+  const historyQueries = useQueries({
+    queries: positions.map((position) => ({
+      queryKey: ["portfolio-history", position.market],
+      queryFn: async () => {
+        const [trades, funding] = await Promise.all([
+          listTradeHistory(1, position.market),
+          listFundingHistory(1, position.market),
+        ]);
+
+        return {
+          market: position.market,
+          trades: trades.items,
+          funding: funding.items,
+        };
+      },
+      enabled: positions.length > 0,
+      staleTime: 60_000,
+      retry: false,
+    })),
+  });
+
+  const historyByMarket = useMemo(
+    () =>
+      new Map<
+        string,
+        { trades: TradeHistoryDto[]; funding: FundingHistoryDto[] }
+      >(
+        historyQueries
+          .map((query) => query.data)
+          .filter(
+            (
+              data
+            ): data is {
+              market: string;
+              trades: TradeHistoryDto[];
+              funding: FundingHistoryDto[];
+            } => Boolean(data)
+          )
+          .map((data) => [data.market, data] as const)
+      ),
+    [historyQueries]
+  );
+
   const riskPositions = useMemo(
     () =>
-      positions.map((position, index) => ({
-        market: position.market,
-        size: position.size,
-        side: position.side,
-        entryPrice: position.entryPrice,
-        markPrice: position.markPrice,
-        pnl: position.pnl,
-        pnlHistory: Array.from({ length: 30 }, (_, day) => position.pnl * ((day + 1) / 30) * (index % 2 === 0 ? 1 : 0.8)),
-      })),
-    [positions]
+      positions.map((position) => {
+        const history = historyByMarket.get(position.market);
+
+        return {
+          market: position.market,
+          size: position.size,
+          side: position.side,
+          entryPrice: position.entryPrice,
+          markPrice: position.markPrice,
+          pnl: position.pnl,
+          pnlHistory: buildPortfolioPnlHistory(
+            position,
+            history?.trades ?? [],
+            history?.funding ?? []
+          ),
+        };
+      }),
+    [historyByMarket, positions]
   );
 
   const rebalanceTargets = useMemo(

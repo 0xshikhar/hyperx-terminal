@@ -1,4 +1,4 @@
-import { StrictMode, useEffect, useState } from "react";
+import { StrictMode, Suspense, lazy, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -6,16 +6,29 @@ import App from "./App.tsx";
 import { Toaster as SonnerToaster } from "@/components/ui/sonner";
 import { startClientServices } from "@/services/startup";
 import { NotificationsToastBridge } from "@/components/notifications/NotificationsToastBridge";
-import { PerformanceMonitor } from "@/components/monitoring/PerformanceMonitor";
 import { useUIStore, getEffectiveTheme } from "@/store/uiStore";
 import { useMarketStore } from "@/store/marketStore";
 import { KeyboardShortcutsProvider } from "@/hooks/useKeyboardShortcuts";
-import { CommandPaletteV2 } from "@/components/command-palette/CommandPaletteV2";
-import { KeyboardShortcutsHelp } from "@/components/keyboard-shortcuts/KeyboardShortcutsHelp";
 import { ToastContainer } from "@/components/toast/Toast";
 import { initAuth } from "@/services/auth.service";
 import { useThemeKeyboardShortcut } from "@/hooks/useTheme";
 import "~/styles/globals.css";
+
+const PerformanceMonitor = lazy(() =>
+  import("@/components/monitoring/PerformanceMonitor").then((module) => ({
+    default: module.PerformanceMonitor,
+  }))
+);
+const CommandPaletteV2 = lazy(() =>
+  import("@/components/command-palette/CommandPaletteV2").then((module) => ({
+    default: module.CommandPaletteV2,
+  }))
+);
+const KeyboardShortcutsHelp = lazy(() =>
+  import("@/components/keyboard-shortcuts/KeyboardShortcutsHelp").then((module) => ({
+    default: module.KeyboardShortcutsHelp,
+  }))
+);
 
 const queryClient = new QueryClient();
 
@@ -72,13 +85,15 @@ export function AppRoot() {
     <KeyboardShortcutsProvider>
       <QueryClientProvider client={queryClient}>
         <BrowserRouter>
-          <App />
-          <NotificationsToastBridge />
-          <PerformanceMonitor />
-          <SonnerToaster />
-          <ToastContainer position="top-right" />
-          <CommandPaletteV2 open={commandPaletteOpen} onOpenChange={setCommandPaletteOpen} />
-          <KeyboardShortcutsHelp open={keyboardHelpOpen} onClose={() => setKeyboardHelpOpen(false)} />
+          <Suspense fallback={null}>
+            <App />
+            <NotificationsToastBridge />
+            <PerformanceMonitor />
+            <SonnerToaster />
+            <ToastContainer position="top-right" />
+            <CommandPaletteV2 open={commandPaletteOpen} onOpenChange={setCommandPaletteOpen} />
+            <KeyboardShortcutsHelp open={keyboardHelpOpen} onClose={() => setKeyboardHelpOpen(false)} />
+          </Suspense>
         </BrowserRouter>
       </QueryClientProvider>
     </KeyboardShortcutsProvider>
