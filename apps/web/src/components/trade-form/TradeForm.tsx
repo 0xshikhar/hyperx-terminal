@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMarketStore } from "@/store/marketStore";
 import { cn } from "@/lib/utils";
 import { placeOrder } from "@/services/apiClient/orders.api";
@@ -37,6 +37,16 @@ export function TradeForm({ onSubmit }: TradeFormProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
 
+  const resetForm = () => {
+    setSize("");
+    setPrice("");
+    setStopPrice("");
+    setTakeProfit("");
+    setStopLoss("");
+    setLeverage(10);
+    setOrderType("market");
+  };
+
   const {
     errors,
     isValid,
@@ -57,7 +67,7 @@ export function TradeForm({ onSubmit }: TradeFormProps) {
   });
 
   const submit = async () => {
-    if (isSubmitting) return;
+    if (isSubmitting || !isValid) return;
     const order: TradeOrder = {
       market: activeMarket,
       side,
@@ -78,12 +88,17 @@ export function TradeForm({ onSubmit }: TradeFormProps) {
         const placed = await placeOrder(order);
         toast.success(`Order submitted (${placed.id})`);
       }
+      resetForm();
     } catch {
       toast.error("Order submission failed");
     } finally {
       setIsSubmitting(false);
     }
   };
+
+  useEffect(() => {
+    setConfirmOpen(false);
+  }, [activeMarket]);
 
   return (
     <div className="h-full rounded-lg border border-border bg-card p-4">
@@ -324,7 +339,7 @@ export function TradeForm({ onSubmit }: TradeFormProps) {
                 setConfirmOpen(false);
                 await submit();
               }}
-              disabled={isSubmitting}
+              disabled={isSubmitting || !isValid}
             >
               Confirm
             </Button>
