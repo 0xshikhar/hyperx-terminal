@@ -3,12 +3,15 @@ import { useAuthStore } from "../authStore";
 
 describe("authStore", () => {
   beforeEach(() => {
+    const { login, logout } = useAuthStore.getState();
     // Reset store state
     useAuthStore.setState({
       user: null,
       isAuthenticated: false,
       token: null,
       wallet: null,
+      login,
+      logout,
     });
 
     // Clear mocks
@@ -52,6 +55,7 @@ describe("authStore", () => {
       user: { id: "user-123", walletAddress: "0x123" },
       isAuthenticated: true,
       token: "jwt-token",
+      wallet: "0x123",
     });
 
     // Call logout action
