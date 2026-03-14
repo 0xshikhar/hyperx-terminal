@@ -15,12 +15,19 @@ type ExtendedPerformance = Performance & {
   memory?: PerformanceMemory;
 };
 
+let activeTrackerCount = 0;
+
 export function useMemoryTracker(sampleSize = 30) {
   const [samples, setSamples] = useState<MemorySample[]>([]);
-  const mountedRef = useRef(0);
+  const mountedRef = useRef(false);
+  const [mountedComponents, setMountedComponents] = useState(activeTrackerCount);
 
   useEffect(() => {
-    mountedRef.current += 1;
+    if (!mountedRef.current) {
+      mountedRef.current = true;
+      activeTrackerCount += 1;
+      setMountedComponents(activeTrackerCount);
+    }
 
     const collect = () => {
       const perf = performance as ExtendedPerformance;
@@ -39,7 +46,11 @@ export function useMemoryTracker(sampleSize = 30) {
     const interval = window.setInterval(collect, 2000);
 
     return () => {
-      mountedRef.current = Math.max(0, mountedRef.current - 1);
+      if (mountedRef.current) {
+        mountedRef.current = false;
+        activeTrackerCount = Math.max(0, activeTrackerCount - 1);
+        setMountedComponents(activeTrackerCount);
+      }
       window.clearInterval(interval);
     };
   }, [sampleSize]);
@@ -51,7 +62,9 @@ export function useMemoryTracker(sampleSize = 30) {
   return {
     samples,
     latest,
-    mountedComponents: mountedRef.current,
+    mountedComponents,
     growthMB,
+    isSupported: Boolean((performance as ExtendedPerformance).memory),
+    sampleIntervalMs: 2000,
   };
 }
