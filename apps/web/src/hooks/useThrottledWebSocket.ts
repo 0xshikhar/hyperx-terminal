@@ -245,8 +245,8 @@ export function useThrottledOrderbook(market: string) {
   });
 
   return {
-    subscribe: <T>(callback: Listener<T>) => 
-      subscribeThrottled("orderbook" as const, market, callback as Listener<"orderbook">),
+    subscribe: (callback: Listener<ChannelPayloadMap["orderbook"]>) =>
+      subscribeThrottled("orderbook", market, callback),
     flushNow,
   };
 }
@@ -260,8 +260,8 @@ export function useThrottledTrades(market: string) {
   });
 
   return {
-    subscribe: <T>(callback: Listener<T>) => 
-      subscribeThrottled("trades" as const, market, callback as Listener<"trades">),
+    subscribe: (callback: Listener<ChannelPayloadMap["trades"]>) =>
+      subscribeThrottled("trades", market, callback),
     flushNow,
   };
 }

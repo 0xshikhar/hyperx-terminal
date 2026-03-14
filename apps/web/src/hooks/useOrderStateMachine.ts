@@ -1,21 +1,21 @@
 /**
  * Order State Machine Hook
- * 
+ *
  * Manages order lifecycle states and transitions.
  * See docs/phase3/index.md for implementation details.
  */
 
-import { useReducer, useCallback } from "react";
+import { useCallback, useReducer } from "react";
 
-export type OrderState = 
-  | "draft"           // Initial, user editing
-  | "pending"         // Submitted, waiting for exchange
-  | "open"            // Accepted by exchange, in orderbook
-  | "partially_filled" // Some quantity filled
-  | "filled"          // Complete fill
-  | "cancel_pending"  // Cancel request sent
-  | "cancelled"       // Confirmed cancelled
-  | "rejected";       // Exchange rejected
+export type OrderStatus =
+  | "draft"
+  | "pending"
+  | "open"
+  | "partially_filled"
+  | "filled"
+  | "cancel_pending"
+  | "cancelled"
+  | "rejected";
 
 export type OrderEvent =
   | { type: "SUBMIT" }
@@ -28,7 +28,7 @@ export type OrderEvent =
 
 export interface Order {
   id: string;
-  state: OrderState;
+  state: OrderStatus;
   side: "buy" | "sell";
   size: number;
   filledSize: number;
@@ -42,14 +42,18 @@ export interface Order {
 interface OrderStateMachine {
   orders: Order[];
   dispatch: React.Dispatch<OrderEvent & { orderId: string }>;
-  submitOrder: (order: Omit<Order, "id" | "state" | "filledSize" | "createdAt" | "updatedAt">) => string;
+  submitOrder: (
+    order: Omit<Order, "id" | "state" | "filledSize" | "createdAt" | "updatedAt">
+  ) => string;
+  addDraftOrder: (
+    order: Omit<Order, "id" | "state" | "filledSize" | "createdAt" | "updatedAt">
+  ) => string;
   cancelOrder: (orderId: string) => void;
   getOrder: (orderId: string) => Order | undefined;
-  getOrdersByState: (state: OrderState) => Order[];
+  getOrdersByState: (state: OrderStatus) => Order[];
 }
 
-// State transition table
-const transitions: Record<OrderState, Partial<Record<OrderEvent["type"], OrderState>>> = {
+export const transitions: Record<OrderStatus, Partial<Record<OrderEvent["type"], OrderStatus>>> = {
   draft: {
     SUBMIT: "pending",
   },
@@ -76,23 +80,38 @@ const transitions: Record<OrderState, Partial<Record<OrderEvent["type"], OrderSt
   },
 };
 
-function orderReducer(state: Order, event: OrderEvent): Order {
-  const currentTransitions = transitions[state.state];
-  const nextState = currentTransitions?.[event.type];
+export const createDraftOrder = (
+  order: Omit<Order, "id" | "state" | "filledSize" | "createdAt" | "updatedAt">
+): Order => {
+  const now = Date.now();
+  return {
+    ...order,
+    id: Math.random().toString(36).slice(2, 11),
+    state: "draft",
+    filledSize: 0,
+    createdAt: now,
+    updatedAt: now,
+  };
+};
+
+export function orderReducer(state: Order, event: OrderEvent): Order {
+  const nextState = transitions[state.state]?.[event.type];
 
   if (!nextState) {
-    console.warn(`Invalid transition: ${state.state} -> ${event.type}`);
     return state;
   }
 
-  const updates: Partial<Order> = { state: nextState, updatedAt: Date.now() };
+  const updates: Partial<Order> = {
+    state: nextState,
+    updatedAt: Date.now(),
+  };
 
   switch (event.type) {
     case "ACCEPTED":
       updates.id = event.orderId;
       break;
     case "FILL":
-      updates.filledSize = event.filledSize;
+      updates.filledSize = Math.min(event.filledSize, event.totalSize);
       if (event.filledSize >= event.totalSize) {
         updates.state = "filled";
       }
@@ -105,53 +124,69 @@ function orderReducer(state: Order, event: OrderEvent): Order {
   return { ...state, ...updates };
 }
 
-function ordersReducer(state: Order[], action: OrderEvent & { orderId: string }): Order[] {
-  const index = state.findIndex(o => o.id === action.orderId);
+type OrderAction =
+  | { type: "ADD"; order: Order }
+  | ({ orderId: string } & OrderEvent);
+
+function ordersReducer(state: Order[], action: OrderAction): Order[] {
+  if (action.type === "ADD") {
+    return [action.order, ...state];
+  }
+
+  const index = state.findIndex((order) => order.id === action.orderId);
   if (index === -1) return state;
 
-  const newState = [...state];
-  newState[index] = orderReducer(state[index], action);
-  return newState;
+  const next = [...state];
+  next[index] = orderReducer(state[index], action);
+  return next;
 }
 
 export function useOrderStateMachine(): OrderStateMachine {
   const [orders, dispatch] = useReducer(ordersReducer, []);
 
-  const submitOrder = useCallback((order: Omit<Order, "id" | "state" | "filledSize" | "createdAt" | "updatedAt">): string => {
-    const id = Math.random().toString(36).substr(2, 9);
-    const newOrder: Order = {
-      ...order,
-      id,
-      state: "draft",
-      filledSize: 0,
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-    };
-    
-    dispatch({ type: "SUBMIT", orderId: id });
-    return id;
-  }, [dispatch]);
+  const addDraftOrder = useCallback(
+    (
+      order: Omit<Order, "id" | "state" | "filledSize" | "createdAt" | "updatedAt">
+    ) => {
+      const draftOrder = createDraftOrder(order);
+      dispatch({ type: "ADD", order: draftOrder });
+      return draftOrder.id;
+    },
+    []
+  );
+
+  const submitOrder = useCallback(
+    (
+      order: Omit<Order, "id" | "state" | "filledSize" | "createdAt" | "updatedAt">
+    ) => {
+      const id = addDraftOrder(order);
+      dispatch({ type: "SUBMIT", orderId: id });
+      return id;
+    },
+    [addDraftOrder]
+  );
 
   const cancelOrder = useCallback((orderId: string) => {
     dispatch({ type: "CANCEL", orderId });
-  }, [dispatch]);
+  }, []);
 
-  const getOrder = useCallback((orderId: string) => {
-    return orders.find(o => o.id === orderId);
-  }, [orders]);
+  const getOrder = useCallback(
+    (orderId: string) => orders.find((order) => order.id === orderId),
+    [orders]
+  );
 
-  const getOrdersByState = useCallback((state: OrderState) => {
-    return orders.filter(o => o.state === state);
-  }, [orders]);
+  const getOrdersByState = useCallback(
+    (state: OrderStatus) => orders.filter((order) => order.state === state),
+    [orders]
+  );
 
   return {
     orders,
-    dispatch,
+    dispatch: dispatch as React.Dispatch<OrderEvent & { orderId: string }>,
     submitOrder,
+    addDraftOrder,
     cancelOrder,
     getOrder,
     getOrdersByState,
   };
 }
-
-export { transitions };

@@ -10,7 +10,7 @@ import { PerformanceMonitor } from "@/components/monitoring/PerformanceMonitor";
 import { useUIStore, getEffectiveTheme } from "@/store/uiStore";
 import { useMarketStore } from "@/store/marketStore";
 import { KeyboardShortcutsProvider } from "@/hooks/useKeyboardShortcuts";
-import { CommandPalette } from "@/components/command-palette/CommandPalette";
+import { CommandPaletteV2 } from "@/components/command-palette/CommandPaletteV2";
 import { KeyboardShortcutsHelp } from "@/components/keyboard-shortcuts/KeyboardShortcutsHelp";
 import { ToastContainer } from "@/components/toast/Toast";
 import { initAuth } from "@/services/auth.service";
@@ -77,7 +77,7 @@ export function AppRoot() {
           <PerformanceMonitor />
           <SonnerToaster />
           <ToastContainer position="top-right" />
-          <CommandPalette open={commandPaletteOpen} onOpenChange={setCommandPaletteOpen} />
+          <CommandPaletteV2 open={commandPaletteOpen} onOpenChange={setCommandPaletteOpen} />
           <KeyboardShortcutsHelp open={keyboardHelpOpen} onClose={() => setKeyboardHelpOpen(false)} />
         </BrowserRouter>
       </QueryClientProvider>
