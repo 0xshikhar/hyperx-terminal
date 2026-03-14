@@ -31,6 +31,14 @@ export class WSClient {
   private state: ConnectionState = "disconnected";
   private shouldReconnect = true;
   private stateListeners = new Set<Listener<ConnectionState>>();
+  private activeSubscriptions = new Map<
+    string,
+    {
+      channel: SubscribableChannel | CandlesChannel;
+      market?: string;
+      count: number;
+    }
+  >();
 
   private channelListeners = new Map<WSChannel, Set<Listener<ServerMessage>>>();
 
@@ -46,7 +54,9 @@ export class WSClient {
   }
 
   connect() {
-    if (this.ws?.readyState === WebSocket.OPEN) return;
+    if (this.ws?.readyState === WebSocket.OPEN || this.ws?.readyState === WebSocket.CONNECTING) {
+      return;
+    }
 
     this.shouldReconnect = true;
     this.setState("connecting");
@@ -58,11 +68,14 @@ export class WSClient {
     const ws = new WebSocket(url);
 
     ws.onopen = () => {
+      if (this.ws !== ws) return;
       this.reconnectAttempts = 0;
       this.setState("connected");
+      this.resubscribeAll();
     };
 
     ws.onmessage = (event) => {
+      if (this.ws !== ws) return;
       const raw = typeof event.data === "string" ? event.data : "";
       try {
         const parsed = serverMessageSchema.parse(JSON.parse(raw)) as ServerMessage;
@@ -73,12 +86,16 @@ export class WSClient {
     };
 
     ws.onclose = () => {
+      if (this.ws === ws) {
+        this.ws = null;
+      }
       this.setState("disconnected");
       if (!this.reconnect || !this.shouldReconnect) return;
       this.scheduleReconnect();
     };
 
     ws.onerror = () => {
+      if (this.ws !== ws) return;
       this.setState("error");
     };
 
@@ -102,19 +119,29 @@ export class WSClient {
   }
 
   subscribe(channel: SubscribableChannel | CandlesChannel, market?: string) {
-    const usesRawChannel = typeof channel === "string" && channel.startsWith("candles:");
-    this.send({
-      type: "subscribe",
-      channels: [usesRawChannel ? { channel } : { channel, market }],
-    });
+    const key = this.subscriptionKey(channel, market);
+    const existing = this.activeSubscriptions.get(key);
+    if (existing) {
+      existing.count += 1;
+      return;
+    }
+
+    this.activeSubscriptions.set(key, { channel, market, count: 1 });
+    this.sendSubscription("subscribe", channel, market);
   }
 
   unsubscribe(channel: SubscribableChannel | CandlesChannel, market?: string) {
-    const usesRawChannel = typeof channel === "string" && channel.startsWith("candles:");
-    this.send({
-      type: "unsubscribe",
-      channels: [usesRawChannel ? { channel } : { channel, market }],
-    });
+    const key = this.subscriptionKey(channel, market);
+    const existing = this.activeSubscriptions.get(key);
+    if (!existing) return;
+
+    if (existing.count > 1) {
+      existing.count -= 1;
+      return;
+    }
+
+    this.activeSubscriptions.delete(key);
+    this.sendSubscription("unsubscribe", channel, market);
   }
 
   onStateChange(listener: Listener<ConnectionState>) {
@@ -147,6 +174,28 @@ export class WSClient {
     if (!listeners) return;
     for (const listener of listeners) {
       listener(message);
+    }
+  }
+
+  private sendSubscription(
+    type: "subscribe" | "unsubscribe",
+    channel: SubscribableChannel | CandlesChannel,
+    market?: string
+  ) {
+    const usesRawChannel = typeof channel === "string" && channel.startsWith("candles:");
+    this.send({
+      type,
+      channels: [usesRawChannel ? { channel } : { channel, market }],
+    });
+  }
+
+  private subscriptionKey(channel: SubscribableChannel | CandlesChannel, market?: string) {
+    return `${channel}::${market ?? "*"}`;
+  }
+
+  private resubscribeAll() {
+    for (const subscription of this.activeSubscriptions.values()) {
+      this.sendSubscription("subscribe", subscription.channel, subscription.market);
     }
   }
 

@@ -28,6 +28,7 @@ export interface ThrottledWSOptions {
 }
 
 interface PendingMessage<T = unknown> {
+  subscriptionKey: string;
   channel: WSChannel;
   payload: T;
   timestamp: number;
@@ -64,7 +65,7 @@ export function useThrottledWebSocket(options: ThrottledWSOptions = {}) {
 
   // Refs to avoid re-renders during high-frequency updates
   const pendingRef = useRef<PendingMessage[]>([]);
-  const callbacksRef = useRef<Map<WSChannel, Set<Listener<unknown>>>>(new Map());
+  const callbacksRef = useRef<Map<string, Set<Listener<unknown>>>>(new Map());
   const rafIdRef = useRef<number | null>(null);
   const timeoutIdRef = useRef<number | null>(null);
   const lastFlushRef = useRef<number>(0);
@@ -84,17 +85,17 @@ export function useThrottledWebSocket(options: ThrottledWSOptions = {}) {
 
     // Group by channel for efficient batching
     if (batch) {
-      const byChannel = new Map<WSChannel, unknown[]>();
+      const bySubscription = new Map<string, unknown[]>();
       
       for (const msg of pending) {
-        const existing = byChannel.get(msg.channel) ?? [];
+        const existing = bySubscription.get(msg.subscriptionKey) ?? [];
         existing.push(msg.payload);
-        byChannel.set(msg.channel, existing);
+        bySubscription.set(msg.subscriptionKey, existing);
       }
 
       // Invoke callbacks with batched data
-      for (const [channel, payloads] of byChannel) {
-        const callbacks = callbacksRef.current.get(channel);
+      for (const [subscriptionKey, payloads] of bySubscription) {
+        const callbacks = callbacksRef.current.get(subscriptionKey);
         if (callbacks) {
           for (const cb of callbacks) {
             // Pass array if multiple messages, single payload if one
@@ -105,7 +106,7 @@ export function useThrottledWebSocket(options: ThrottledWSOptions = {}) {
     } else {
       // Non-batched: invoke per message
       for (const msg of pending) {
-        const callbacks = callbacksRef.current.get(msg.channel);
+        const callbacks = callbacksRef.current.get(msg.subscriptionKey);
         if (callbacks) {
           for (const cb of callbacks) {
             cb(msg.payload);
@@ -149,12 +150,14 @@ export function useThrottledWebSocket(options: ThrottledWSOptions = {}) {
    * Handle incoming WebSocket message
    */
   const handleMessage = useCallback(<T extends WSChannel>(
+    subscriptionKey: string,
     channel: T,
     payload: ChannelPayloadMap[T]
   ) => {
     const pending = pendingRef.current;
     
     pending.push({
+      subscriptionKey,
       channel,
       payload,
       timestamp: performance.now(),
@@ -175,14 +178,25 @@ export function useThrottledWebSocket(options: ThrottledWSOptions = {}) {
     market: string | undefined,
     listener: Listener<ChannelPayloadMap[T]>
   ): (() => void) => {
+    const subscriptionKey = `${channel}::${market ?? "*"}`;
+
     // Register throttled listener
-    const callbacks = callbacksRef.current.get(channel as WSChannel) ?? new Set();
+    const callbacks = callbacksRef.current.get(subscriptionKey) ?? new Set();
     callbacks.add(listener as Listener<unknown>);
-    callbacksRef.current.set(channel as WSChannel, callbacks);
+    callbacksRef.current.set(subscriptionKey, callbacks);
 
     // Subscribe to actual WebSocket
     const wrappedListener = (payload: ChannelPayloadMap[T]) => {
-      handleMessage(channel as WSChannel, payload);
+      const payloadMarket =
+        typeof payload === "object" && payload !== null && "market" in payload
+          ? String((payload as { market?: string }).market ?? "")
+          : undefined;
+
+      if (market && payloadMarket && payloadMarket !== market) {
+        return;
+      }
+
+      handleMessage(subscriptionKey, channel as WSChannel, payload);
     };
 
     const wsUnsubscribe = wsClient.on(channel as WSChannel, wrappedListener);
@@ -194,7 +208,20 @@ export function useThrottledWebSocket(options: ThrottledWSOptions = {}) {
       wsClient.unsubscribe(channel, market);
       callbacks.delete(listener as Listener<unknown>);
       if (callbacks.size === 0) {
-        callbacksRef.current.delete(channel as WSChannel);
+        callbacksRef.current.delete(subscriptionKey);
+        pendingRef.current = pendingRef.current.filter(
+          (message) => message.subscriptionKey !== subscriptionKey
+        );
+        if (pendingRef.current.length === 0) {
+          if (rafIdRef.current) {
+            cancelAnimationFrame(rafIdRef.current);
+            rafIdRef.current = null;
+          }
+          if (timeoutIdRef.current) {
+            clearTimeout(timeoutIdRef.current);
+            timeoutIdRef.current = null;
+          }
+        }
       }
     };
   }, [handleMessage]);
