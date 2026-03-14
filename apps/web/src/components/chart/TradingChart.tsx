@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import {
   createChart,
   type CandlestickData,
@@ -35,6 +35,7 @@ export function TradingChart() {
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const lastTimeRef = useRef<UTCTimestamp | null>(null);
+  const [overlayVersion, setOverlayVersion] = useState(0);
   const {
     activeTool,
     setActiveTool,
@@ -90,29 +91,79 @@ export function TradingChart() {
     );
   };
 
-  const mapClientPoint = (event: React.MouseEvent<HTMLDivElement>) => {
+  const normalizeTime = (value: unknown) => {
+    if (typeof value === "number") return value;
+    if (value && typeof value === "object") {
+      const candidate = value as { timestamp?: number; year?: number; month?: number; day?: number };
+      if (typeof candidate.timestamp === "number") return candidate.timestamp;
+      if (
+        typeof candidate.year === "number" &&
+        typeof candidate.month === "number" &&
+        typeof candidate.day === "number"
+      ) {
+        return Math.floor(Date.UTC(candidate.year, candidate.month - 1, candidate.day) / 1000);
+      }
+    }
+    return null;
+  };
+
+  const mapClientPoint = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
     const container = containerRef.current;
-    if (!container || candles.length === 0) return null;
+    const chart = chartRef.current as unknown as {
+      timeScale?: () => {
+        coordinateToTime?: (coordinate: number) => unknown;
+      };
+    } | null;
+    const series = seriesRef.current as unknown as {
+      coordinateToPrice?: (coordinate: number) => number | null;
+    } | null;
+
+    if (!container || candles.length === 0 || !chart || !series) return null;
     const rect = container.getBoundingClientRect();
-    const xRatio = Math.min(Math.max((event.clientX - rect.left) / rect.width, 0), 1);
-    const yRatio = Math.min(Math.max((event.clientY - rect.top) / rect.height, 0), 1);
+    const x = event.clientX - rect.left;
+    const y = event.clientY - rect.top;
+    const time = normalizeTime(chart.timeScale?.()?.coordinateToTime?.(x));
+    const price = series.coordinateToPrice?.(y);
+
+    if (typeof price === "number" && time !== null) {
+      return { price, time };
+    }
+
+    const xRatio = Math.min(Math.max(x / rect.width, 0), 1);
+    const yRatio = Math.min(Math.max(y / rect.height, 0), 1);
     const minPrice = Math.min(...lows);
     const maxPrice = Math.max(...highs);
-    const price = maxPrice - yRatio * (maxPrice - minPrice || 1);
+    const fallbackPrice = maxPrice - yRatio * (maxPrice - minPrice || 1);
     const firstTime = candles[0]?.time ?? 0;
     const lastTime = candles[candles.length - 1]?.time ?? firstTime;
-    const time = Math.round(firstTime + xRatio * (lastTime - firstTime || 1));
-    return { price, time };
-  };
+    const fallbackTime = Math.round(firstTime + xRatio * (lastTime - firstTime || 1));
+    return { price: fallbackPrice, time: fallbackTime };
+  }, [candles, highs, lows]);
 
   const drawLines = useMemo(() => {
     if (candles.length === 0) return [];
+    const chart = chartRef.current as unknown as {
+      timeScale?: () => {
+        timeToCoordinate?: (time: UTCTimestamp) => number | null;
+      };
+    } | null;
+    const series = seriesRef.current as unknown as {
+      priceToCoordinate?: (price: number) => number | null;
+    } | null;
     const minPrice = Math.min(...lows);
     const maxPrice = Math.max(...highs);
     const firstTime = candles[0]?.time ?? 0;
     const lastTime = candles[candles.length - 1]?.time ?? firstTime;
-    const toY = (price: number) => ((maxPrice - price) / (maxPrice - minPrice || 1)) * 100;
-    const toX = (time: number) => ((time - firstTime) / (lastTime - firstTime || 1)) * 100;
+    const toY = (price: number) => {
+      const y = series?.priceToCoordinate?.(price);
+      if (typeof y === "number") return y / (containerRef.current?.clientHeight || 1) * 100;
+      return ((maxPrice - price) / (maxPrice - minPrice || 1)) * 100;
+    };
+    const toX = (time: number) => {
+      const x = chart?.timeScale?.()?.timeToCoordinate?.(time as UTCTimestamp);
+      if (typeof x === "number") return x / (containerRef.current?.clientWidth || 1) * 100;
+      return ((time - firstTime) / (lastTime - firstTime || 1)) * 100;
+    };
 
     return lines.map((line: DrawingLine) => ({
       id: line.id,
@@ -122,7 +173,7 @@ export function TradingChart() {
       y2: toY(line.type === "horizontal" ? line.startPrice : line.endPrice ?? line.startPrice),
       color: line.color,
     }));
-  }, [candles, highs, lines, lows]);
+  }, [candles, highs, lines, lows, overlayVersion]);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -148,6 +199,12 @@ export function TradingChart() {
       wickUpColor: "#26A69A",
       wickDownColor: "#EF5350",
     });
+    const timeScale = chart.timeScale() as unknown as {
+      subscribeVisibleLogicalRangeChange?: (handler: () => void) => void;
+      unsubscribeVisibleLogicalRangeChange?: (handler: () => void) => void;
+    };
+    const notifyOverlay = () => setOverlayVersion((value) => value + 1);
+    timeScale.subscribeVisibleLogicalRangeChange?.(notifyOverlay);
 
     chartRef.current = chart;
     seriesRef.current = series;
@@ -161,9 +218,11 @@ export function TradingChart() {
     };
 
     resize();
+    notifyOverlay();
     window.addEventListener("resize", resize);
     return () => {
       window.removeEventListener("resize", resize);
+      timeScale.unsubscribeVisibleLogicalRangeChange?.(notifyOverlay);
       chart.remove();
       chartRef.current = null;
       seriesRef.current = null;
