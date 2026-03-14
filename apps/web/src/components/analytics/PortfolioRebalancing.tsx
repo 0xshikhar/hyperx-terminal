@@ -6,7 +6,7 @@
  */
 
 import { useState, useMemo } from "react";
-import { Scale, Target, RefreshCw, ArrowRight } from "lucide-react";
+import { Scale, RefreshCw, ArrowRight } from "lucide-react";
 
 interface Position {
   market: string;
@@ -51,6 +51,7 @@ export function PortfolioRebalancing({
       market: p.market,
       currentValue: Math.abs(p.size * p.markPrice),
       currentPercent: (Math.abs(p.size * p.markPrice) / totalValue) * 100,
+      markPrice: p.markPrice,
       side: p.side,
     }));
 
@@ -86,7 +87,7 @@ export function PortfolioRebalancing({
           actionSize = (drift / 100) * totalValue / (current?.markPrice || 1);
         } else {
           action = "buy";
-          actionSize = (Math.abs(drift) / 100) * totalValue / (target?.targetPercent || 1);
+          actionSize = (Math.abs(drift) / 100) * totalValue / (current?.markPrice || 1);
         }
       }
 

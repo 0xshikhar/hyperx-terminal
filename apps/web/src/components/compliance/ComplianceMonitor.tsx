@@ -47,17 +47,6 @@ export function ComplianceMonitor({
     };
   }, [checks]);
 
-  const getStatusIcon = (status: ComplianceStatus) => {
-    switch (status) {
-      case "pass":
-        return <CheckCircle className="w-5 h-5 text-emerald-400" />;
-      case "warning":
-        return <AlertTriangle className="w-5 h-5 text-amber-400" />;
-      case "violation":
-        return <XCircle className="w-5 h-5 text-red-400" />;
-    }
-  };
-
   const getSeverityBadge = (severity: ComplianceCheck["severity"]) => {
     const colors = {
       low: "bg-slate-500/20 text-slate-400",

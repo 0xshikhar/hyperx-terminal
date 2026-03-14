@@ -229,5 +229,3 @@ export function OCOOrderForm({ currentPrice, onSubmit }: OCOOrderFormProps) {
     </div>
   );
 }
-
-export type { OCOOrder };

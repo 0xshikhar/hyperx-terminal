@@ -101,7 +101,7 @@ export function FPSCounter({
   position = "top-right",
   warningThreshold = 30,
 }: FPSCounterProps) {
-  const { fps, frameTime, droppedFrames, isStable } = useFPSMonitor();
+  const { fps, frameTime, droppedFrames } = useFPSMonitor();
   const [isExpanded, setIsExpanded] = useState(detailed);
 
   const positionClasses = {

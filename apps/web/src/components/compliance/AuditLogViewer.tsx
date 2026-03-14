@@ -6,7 +6,7 @@
  */
 
 import { useState, useMemo } from "react";
-import { History, Download, Filter, Search, ChevronLeft, ChevronRight } from "lucide-react";
+import { History, Download, Search, ChevronLeft, ChevronRight } from "lucide-react";
 
 type AuditAction = 
   | "order_created" 
@@ -44,7 +44,7 @@ export function AuditLogViewer({ logs, onExport }: AuditLogViewerProps) {
   const [searchTerm, setSearchTerm] = useState("");
   const [actionFilter, setActionFilter] = useState<AuditAction | "all">("all");
   const [severityFilter, setSeverityFilter] = useState<AuditSeverity | "all">("all");
-  const [dateRange, setDateRange] = useState<{ start?: number; end?: number }>({});
+  const [dateRange] = useState<{ start?: number; end?: number }>({});
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 20;
 

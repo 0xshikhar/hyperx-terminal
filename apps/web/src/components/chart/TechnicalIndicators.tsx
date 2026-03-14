@@ -5,7 +5,6 @@
  * See docs/phase2/index.md for implementation details.
  */
 
-import { useMemo, useCallback } from "react";
 import { TrendingUp, Activity, BarChart3 } from "lucide-react";
 
 export type IndicatorType = "ema" | "vwap" | "rsi" | "volume";

@@ -6,7 +6,7 @@
  */
 
 import { useState, useEffect, useCallback } from "react";
-import { Bell, BellOff, DollarSign, Percent, Trash2 } from "lucide-react";
+import { Bell, Trash2 } from "lucide-react";
 
 interface Alert {
   id: string;

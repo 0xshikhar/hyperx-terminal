@@ -8,22 +8,22 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 export function TerminalLayout() {
   return (
     <ErrorBoundary>
-      <div className="flex h-screen flex-col bg-background scanlines">
+      <div className="flex min-h-screen flex-col bg-background scanlines">
         {/* Top border accent */}
         <div className="h-[2px] bg-gradient-to-r from-transparent via-primary/50 to-transparent" />
         
         {/* Main layout */}
-        <div className="flex flex-1 overflow-hidden">
+        <div className="flex flex-1 min-h-0 overflow-hidden">
           {/* Left sidebar */}
           <Sidebar />
           
           {/* Main content area */}
-          <div className="flex flex-col flex-1 min-w-0">
+          <div className="flex min-w-0 flex-1 flex-col">
             {/* Top navigation bar */}
             <Navbar />
             
             {/* Content with grid lines background */}
-            <main className="relative flex-1 overflow-hidden grid-lines">
+            <main className="relative flex-1 min-h-0 overflow-y-auto overflow-x-hidden grid-lines">
               {/* Corner accent */}
               <div className="absolute top-0 left-0 w-20 h-20 pointer-events-none">
                 <div className="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-primary/30 to-transparent" />
@@ -31,7 +31,7 @@ export function TerminalLayout() {
               </div>
               
               {/* Content */}
-              <div className="relative z-10 h-full p-4">
+              <div className="relative z-10 min-h-full p-4">
                 <Outlet />
               </div>
             </main>

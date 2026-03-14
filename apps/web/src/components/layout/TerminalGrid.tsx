@@ -55,15 +55,15 @@ export function TerminalGrid({
           onLayout={(sizes) => setPanelLayout({ left: sizes })}
         >
           <Panel defaultSize={leftLayout[0]} minSize={5}>
-            <div className="h-full min-h-0">{marketSelector}</div>
+            <div className="h-full min-h-0 outline-none" data-vim-nav="true" tabIndex={0}>{marketSelector}</div>
           </Panel>
           <PanelResizeHandle className="h-1 bg-transparent hover:bg-border transition-colors" />
           <Panel defaultSize={leftLayout[1]} minSize={20}>
-            <div className="h-full min-h-0">{chart}</div>
+            <div className="h-full min-h-0 outline-none" data-vim-nav="true" tabIndex={0}>{chart}</div>
           </Panel>
           <PanelResizeHandle className="h-1 bg-transparent hover:bg-border transition-colors" />
           <Panel defaultSize={leftLayout[2]} minSize={15}>
-            <div className="h-full min-h-0">{positions}</div>
+            <div className="h-full min-h-0 outline-none" data-vim-nav="true" tabIndex={0}>{positions}</div>
           </Panel>
         </PanelGroup>
       </Panel>
@@ -74,15 +74,15 @@ export function TerminalGrid({
           onLayout={(sizes) => setPanelLayout({ right: sizes })}
         >
           <Panel defaultSize={rightLayout[0]} minSize={20}>
-            <div className="h-full min-h-0">{orderBook}</div>
+            <div className="h-full min-h-0 outline-none" data-vim-nav="true" tabIndex={0}>{orderBook}</div>
           </Panel>
           <PanelResizeHandle className="h-1 bg-transparent hover:bg-border transition-colors" />
           <Panel defaultSize={rightLayout[1]} minSize={10}>
-            <div className="h-full min-h-0">{tradeForm}</div>
+            <div className="h-full min-h-0 outline-none" data-vim-nav="true" tabIndex={0}>{tradeForm}</div>
           </Panel>
           <PanelResizeHandle className="h-1 bg-transparent hover:bg-border transition-colors" />
           <Panel defaultSize={rightLayout[2]} minSize={10}>
-            <div className="h-full min-h-0">{recentTrades}</div>
+            <div className="h-full min-h-0 outline-none" data-vim-nav="true" tabIndex={0}>{recentTrades}</div>
           </Panel>
         </PanelGroup>
       </Panel>

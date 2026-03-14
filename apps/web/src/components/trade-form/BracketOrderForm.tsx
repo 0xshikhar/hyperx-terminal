@@ -6,7 +6,7 @@
  */
 
 import { useState, useCallback } from "react";
-import { Target, Shield, Calculator } from "lucide-react";
+import { Target, Shield } from "lucide-react";
 
 interface BracketOrderFormProps {
   currentPrice: number;
@@ -214,5 +214,3 @@ export function BracketOrderForm({ currentPrice, onSubmit }: BracketOrderFormPro
     </div>
   );
 }
-
-export type { BracketOrder };

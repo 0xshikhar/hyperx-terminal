@@ -6,7 +6,7 @@
  */
 
 import { useState, useCallback } from "react";
-import { Users, Plus, Settings, Shield, ChevronDown } from "lucide-react";
+import { Users, Plus, ChevronDown } from "lucide-react";
 
 interface TradingAccount {
   id: string;

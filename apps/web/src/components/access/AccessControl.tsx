@@ -6,7 +6,7 @@
  */
 
 import { useState, useCallback } from "react";
-import { Key, User, Lock, Eye, EyeOff, Copy, Trash2, Check } from "lucide-react";
+import { Key, User, Lock, Copy, Trash2, Check } from "lucide-react";
 
 type Permission = 
   | "trade:spot"
@@ -82,7 +82,6 @@ export function AccessControl({
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [newKeyName, setNewKeyName] = useState("");
   const [selectedPermissions, setSelectedPermissions] = useState<Permission[]>(["api:read"]);
-  const [revealedSecrets, setRevealedSecrets] = useState<Set<string>>(new Set());
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
   const handleCreateKey = useCallback(() => {

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   createChart,
   type CandlestickData,
@@ -9,17 +9,120 @@ import {
 import { useMarketStore } from "@/store/marketStore";
 import { ChartToolbar } from "@/components/chart/ChartToolbar";
 import { ChartPositionOverlay } from "@/components/chart/ChartPositionOverlay";
+import {
+  DrawingToolsToolbar,
+  useDrawingTools,
+  type DrawingLine,
+} from "@/components/chart/DrawingTools";
+import {
+  TechnicalIndicatorsToolbar,
+  calculateEMA,
+  calculateRSI,
+  calculateVWAP,
+  type IndicatorType,
+} from "@/components/chart/TechnicalIndicators";
+import { VolumeProfile } from "@/components/chart/VolumeProfile";
 import { useCandleStream } from "@/hooks/useCandleStream";
+import { useRecentTrades } from "@/hooks/useRecentTrades";
 import type { CandleInterval } from "@/services/wsClient";
 
 export function TradingChart() {
   const activeMarket = useMarketStore((s) => s.activeMarket);
   const [interval, setInterval] = useState<CandleInterval>("1m");
   const { candles } = useCandleStream(activeMarket, interval);
+  const { trades } = useRecentTrades(activeMarket);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const lastTimeRef = useRef<UTCTimestamp | null>(null);
+  const {
+    activeTool,
+    setActiveTool,
+    lines,
+    startDrawing,
+    updateDrawing,
+    endDrawing,
+    clearLines,
+  } = useDrawingTools();
+  const [indicators, setIndicators] = useState([
+    { type: "ema" as IndicatorType, period: 20, visible: true, color: "#38bdf8" },
+    { type: "vwap" as IndicatorType, visible: true, color: "#f59e0b" },
+    { type: "rsi" as IndicatorType, period: 14, visible: false, color: "#a78bfa" },
+  ]);
+
+  const closes = useMemo(() => candles.map((candle) => candle.close), [candles]);
+  const highs = useMemo(() => candles.map((candle) => candle.high), [candles]);
+  const lows = useMemo(() => candles.map((candle) => candle.low), [candles]);
+  const syntheticVolumes = useMemo(
+    () => candles.map((candle) => Math.max(1, Math.abs(candle.close - candle.open) * 100)),
+    [candles]
+  );
+  const ema = useMemo(() => calculateEMA(closes, 20), [closes]);
+  const vwap = useMemo(
+    () => calculateVWAP(highs, lows, closes, syntheticVolumes),
+    [closes, highs, lows, syntheticVolumes]
+  );
+  const rsi = useMemo(() => calculateRSI(closes, 14), [closes]);
+
+  const indicatorSummary = useMemo(
+    () =>
+      indicators
+        .filter((indicator) => indicator.visible)
+        .map((indicator) => {
+          if (indicator.type === "ema") {
+            return { label: `EMA ${indicator.period}`, value: ema[ema.length - 1] };
+          }
+          if (indicator.type === "vwap") {
+            return { label: "VWAP", value: vwap[vwap.length - 1] };
+          }
+          return { label: `RSI ${indicator.period}`, value: rsi[rsi.length - 1] };
+        }),
+    [ema, indicators, rsi, vwap]
+  );
+
+  const toggleIndicator = (type: IndicatorType) => {
+    setIndicators((prev) =>
+      prev.map((indicator) =>
+        indicator.type === type
+          ? { ...indicator, visible: !indicator.visible }
+          : indicator
+      )
+    );
+  };
+
+  const mapClientPoint = (event: React.MouseEvent<HTMLDivElement>) => {
+    const container = containerRef.current;
+    if (!container || candles.length === 0) return null;
+    const rect = container.getBoundingClientRect();
+    const xRatio = Math.min(Math.max((event.clientX - rect.left) / rect.width, 0), 1);
+    const yRatio = Math.min(Math.max((event.clientY - rect.top) / rect.height, 0), 1);
+    const minPrice = Math.min(...lows);
+    const maxPrice = Math.max(...highs);
+    const price = maxPrice - yRatio * (maxPrice - minPrice || 1);
+    const firstTime = candles[0]?.time ?? 0;
+    const lastTime = candles[candles.length - 1]?.time ?? firstTime;
+    const time = Math.round(firstTime + xRatio * (lastTime - firstTime || 1));
+    return { price, time };
+  };
+
+  const drawLines = useMemo(() => {
+    if (candles.length === 0) return [];
+    const minPrice = Math.min(...lows);
+    const maxPrice = Math.max(...highs);
+    const firstTime = candles[0]?.time ?? 0;
+    const lastTime = candles[candles.length - 1]?.time ?? firstTime;
+    const toY = (price: number) => ((maxPrice - price) / (maxPrice - minPrice || 1)) * 100;
+    const toX = (time: number) => ((time - firstTime) / (lastTime - firstTime || 1)) * 100;
+
+    return lines.map((line: DrawingLine) => ({
+      id: line.id,
+      x1: toX(line.startTime),
+      y1: toY(line.startPrice),
+      x2: toX(line.endTime ?? line.startTime),
+      y2: toY(line.type === "horizontal" ? line.startPrice : line.endPrice ?? line.startPrice),
+      color: line.color,
+    }));
+  }, [candles, highs, lines, lows]);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -89,16 +192,68 @@ export function TradingChart() {
 
   return (
     <div className="h-full rounded-lg border border-border bg-card p-4">
-      <div className="flex items-center justify-between">
-        <h3 className="text-sm font-semibold">Chart</h3>
-        <div className="flex items-center gap-3">
-          <span className="text-xs text-muted-foreground">{activeMarket}</span>
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <h3 className="text-sm font-semibold">Chart</h3>
+          <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+            <span>{activeMarket}</span>
+            {indicatorSummary.map((item) => (
+              <span key={item.label} className="rounded-full bg-muted px-2 py-1 font-mono">
+                {item.label}: {item.value?.toFixed(2) ?? "--"}
+              </span>
+            ))}
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-3">
+          <DrawingToolsToolbar
+            activeTool={activeTool}
+            onToolChange={setActiveTool}
+            onClear={clearLines}
+          />
+          <TechnicalIndicatorsToolbar
+            indicators={indicators}
+            onToggle={toggleIndicator}
+          />
           <ChartToolbar interval={interval} onIntervalChange={setInterval} />
         </div>
       </div>
-      <div className="relative mt-4 h-64 rounded-md border border-border">
-        <div ref={containerRef} className="h-full w-full" />
-        <ChartPositionOverlay market={activeMarket} />
+
+      <div className="mt-4 grid gap-4 xl:grid-cols-[1fr,280px]">
+        <div
+          className="relative h-72 rounded-md border border-border"
+          onMouseDown={(event) => {
+            const point = mapClientPoint(event);
+            if (point) startDrawing(point.price, point.time);
+          }}
+          onMouseMove={(event) => {
+            const point = mapClientPoint(event);
+            if (point) updateDrawing(point.price, point.time);
+          }}
+          onMouseUp={endDrawing}
+          onMouseLeave={endDrawing}
+        >
+          <div ref={containerRef} className="h-full w-full" />
+          <ChartPositionOverlay market={activeMarket} />
+          <svg viewBox="0 0 100 100" className="pointer-events-none absolute inset-0 h-full w-full">
+            {drawLines.map((line) => (
+              <line
+                key={line.id}
+                x1={line.x1}
+                y1={line.y1}
+                x2={line.x2}
+                y2={line.y2}
+                stroke={line.color}
+                strokeWidth="0.6"
+                vectorEffect="non-scaling-stroke"
+              />
+            ))}
+          </svg>
+        </div>
+
+        <VolumeProfile
+          prices={trades.map((trade) => trade.price)}
+          volumes={trades.map((trade) => trade.size)}
+        />
       </div>
     </div>
   );

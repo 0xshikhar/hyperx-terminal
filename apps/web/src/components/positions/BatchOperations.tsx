@@ -6,7 +6,7 @@
  */
 
 import { useState, useCallback } from "react";
-import { CheckSquare, Square, X, ArrowRight, Calculator } from "lucide-react";
+import { CheckSquare, Square, X, Calculator } from "lucide-react";
 
 interface Position {
   id: string;

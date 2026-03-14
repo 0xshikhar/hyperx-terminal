@@ -8,5 +8,7 @@
 
 export { FPSCounter, PerformanceBadge, PerformancePanel } from "./FPSCounter";
 export { LatencyDisplay } from "./LatencyDisplay";
+export { LatencyGraph } from "./LatencyGraph";
+export { PerformanceDashboard } from "./PerformanceDashboard";
 export { StatusBar } from "./StatusBar";
 export { PerformanceMonitor } from "./PerformanceMonitor";
