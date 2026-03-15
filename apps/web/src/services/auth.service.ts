@@ -6,6 +6,8 @@
 
 import { apiClient } from "./apiClient/client";
 import { useWallet } from "@/components/wallet/useWallet";
+import { useAuthStore } from "@/store/authStore";
+import { TOKEN_KEY } from "./auth.constants";
 
 interface AuthResponse {
   token: string;
@@ -20,8 +22,6 @@ interface NonceResponse {
   message: string;
   expiresIn: number;
 }
-
-const TOKEN_KEY = "hyperx-jwt-token";
 
 /**
  * Get stored JWT token
@@ -65,16 +65,23 @@ export async function requestNonce(walletAddress: string): Promise<NonceResponse
 export async function authenticateWallet(
   walletAddress: string,
   signature: string[],
-  message: string
+  message: string,
+  chainId: string
 ): Promise<AuthResponse> {
   const response = await apiClient.post("/auth/verify", {
     walletAddress,
     signature,
     message,
+    chainId,
   });
   
   // Store token
   setToken(response.data.token);
+  useAuthStore.getState().login({
+    user: response.data.user,
+    token: response.data.token,
+    wallet: walletAddress,
+  });
   
   return response.data;
 }
@@ -85,6 +92,7 @@ export async function authenticateWallet(
 export async function refreshToken(): Promise<{ token: string }> {
   const response = await apiClient.post("/auth/refresh");
   setToken(response.data.token);
+  useAuthStore.getState().setSession({ token: response.data.token });
   return response.data;
 }
 
@@ -96,6 +104,7 @@ export async function logout(): Promise<void> {
     await apiClient.post("/auth/logout");
   } finally {
     removeToken();
+    useAuthStore.getState().logout();
   }
 }
 
@@ -163,7 +172,8 @@ export async function signInWithWallet(): Promise<AuthResponse> {
   const authResponse = await authenticateWallet(
     address,
     normalizedSignature,
-    message
+    message,
+    chainId
   );
 
   return authResponse;
@@ -219,15 +229,20 @@ function signatureValueToString(value: unknown): string {
  */
 export async function initAuth(): Promise<boolean> {
   const token = getToken();
-  if (!token) return false;
+  if (!token) {
+    useAuthStore.getState().setAuthReady(true);
+    return false;
+  }
 
   try {
     // Try to refresh token to validate it
     await refreshToken();
+    useAuthStore.getState().setAuthReady(true);
     return true;
   } catch {
     // Token invalid, remove it
     removeToken();
+    useAuthStore.getState().logout();
     return false;
   }
 }

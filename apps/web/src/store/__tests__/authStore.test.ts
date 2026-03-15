@@ -1,17 +1,21 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { useAuthStore } from "../authStore";
+import { TOKEN_KEY } from "@/services/auth.constants";
 
 describe("authStore", () => {
   beforeEach(() => {
-    const { login, logout } = useAuthStore.getState();
+    const { login, logout, setAuthReady, setSession } = useAuthStore.getState();
     // Reset store state
     useAuthStore.setState({
       user: null,
       isAuthenticated: false,
       token: null,
       wallet: null,
+      authReady: false,
       login,
       logout,
+      setAuthReady,
+      setSession,
     });
 
     // Clear mocks
@@ -25,6 +29,7 @@ describe("authStore", () => {
     expect(state.isAuthenticated).toBe(false);
     expect(state.token).toBeNull();
     expect(state.wallet).toBeNull();
+    expect(state.authReady).toBe(false);
   });
 
   it("should update auth state on login", () => {
@@ -66,7 +71,8 @@ describe("authStore", () => {
     expect(state.user).toBeNull();
     expect(state.isAuthenticated).toBe(false);
     expect(state.token).toBeNull();
-    expect(localStorage.removeItem).toHaveBeenCalledWith("token");
+    expect(state.authReady).toBe(true);
+    expect(localStorage.removeItem).toHaveBeenCalledWith(TOKEN_KEY);
   });
 
   it("should check authentication status correctly", () => {

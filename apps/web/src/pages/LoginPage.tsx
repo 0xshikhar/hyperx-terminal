@@ -1,23 +1,31 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { Zap, Shield, Lock, ChevronRight, Terminal } from "lucide-react";
 import { useWallet } from "@/components/wallet/useWallet";
 import { signInWithWallet, isAuthenticated } from "@/services/auth.service";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
+import { runtimeConfig } from "@/config/runtime";
 
 export function LoginPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { connectWallet, isConnected, address, account } = useWallet();
   const [isAuthenticating, setIsAuthenticating] = useState(false);
   const [step, setStep] = useState<"connect" | "sign" | "complete">("connect");
+  const nextPath = searchParams.get("next") || "/terminal";
 
   // Check if already authenticated
   useEffect(() => {
-    if (isAuthenticated()) {
-      navigate("/terminal");
+    if (!runtimeConfig.protectionGateEnabled && isAuthenticated()) {
+      navigate(nextPath);
+      return;
     }
-  }, [navigate]);
+
+    if (isAuthenticated()) {
+      navigate(nextPath);
+    }
+  }, [navigate, nextPath]);
 
   // Handle wallet connection
   const handleConnect = async () => {
@@ -45,7 +53,7 @@ export function LoginPage() {
       
       // Redirect after short delay
       setTimeout(() => {
-        navigate("/terminal");
+        navigate(nextPath);
       }, 1000);
     } catch (error) {
       console.error("Authentication failed:", error);
