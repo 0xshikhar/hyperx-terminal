@@ -80,41 +80,38 @@ export function RealTimePnL({ positions }: RealTimePnLProps) {
   const total = formatPnL(pnlData.totalUnrealizedPnL + pnlData.totalRealizedPnL);
 
   return (
-    <div className="rounded-lg border border-border bg-card p-4">
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="text-sm font-semibold flex items-center gap-2">
+    <div className="rounded-[18px] border border-[#213136] bg-[#091416]">
+      <div className="flex items-center justify-between border-b border-[#152327] px-4 py-3">
+        <h3 className="flex items-center gap-2 text-sm font-semibold text-[#dde5e7]">
           <DollarSign className="w-4 h-4" />
           PnL Overview
         </h3>
-        <span className="text-xs text-muted-foreground">Live</span>
+        <span className="text-xs text-[#7e8c91]">Live</span>
       </div>
 
-      <div className="grid grid-cols-2 gap-3">
-        {/* Unrealized PnL */}
-        <div className={`p-3 rounded-lg ${unrealized.bgClass}`}>
-          <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">
+      <div className="grid grid-cols-2 gap-3 p-4">
+        <div className={`rounded-md border border-[#1d2b2f] p-3 ${unrealized.bgClass}`}>
+          <p className="mb-1 text-[10px] uppercase tracking-[0.12em] text-[#708084]">
             Unrealized PnL
           </p>
-          <p className={`text-lg font-bold ${unrealized.colorClass} flex items-center gap-1`}>
+          <p className={`flex items-center gap-1 text-lg font-bold ${unrealized.colorClass}`}>
             <unrealized.Icon className="w-4 h-4" />
             {unrealized.text}
           </p>
         </div>
 
-        {/* Daily PnL */}
-        <div className={`p-3 rounded-lg ${daily.bgClass}`}>
-          <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">
+        <div className={`rounded-md border border-[#1d2b2f] p-3 ${daily.bgClass}`}>
+          <p className="mb-1 text-[10px] uppercase tracking-[0.12em] text-[#708084]">
             Daily PnL
           </p>
-          <p className={`text-lg font-bold ${daily.colorClass} flex items-center gap-1`}>
+          <p className={`flex items-center gap-1 text-lg font-bold ${daily.colorClass}`}>
             <daily.Icon className="w-4 h-4" />
             {daily.text}
           </p>
         </div>
 
-        {/* Total PnL */}
-        <div className={`p-3 rounded-lg ${total.bgClass}`}>
-          <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">
+        <div className={`rounded-md border border-[#1d2b2f] p-3 ${total.bgClass}`}>
+          <p className="mb-1 text-[10px] uppercase tracking-[0.12em] text-[#708084]">
             Total PnL
           </p>
           <p className={`text-lg font-bold ${total.colorClass}`}>
@@ -122,32 +119,30 @@ export function RealTimePnL({ positions }: RealTimePnLProps) {
           </p>
         </div>
 
-        {/* Win Rate */}
-        <div className="p-3 rounded-lg bg-muted/50">
-          <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">
+        <div className="rounded-md border border-[#1d2b2f] bg-[#0c181b] p-3">
+          <p className="mb-1 text-[10px] uppercase tracking-[0.12em] text-[#708084]">
             Win Rate
           </p>
-          <p className="text-lg font-bold flex items-center gap-1">
+          <p className="flex items-center gap-1 text-lg font-bold text-[#d8dfe1]">
             <Percent className="w-4 h-4" />
             {pnlData.winRate}%
           </p>
-          <p className="text-xs text-muted-foreground">
+          <p className="text-xs text-[#7e8c91]">
             {pnlData.profitableTrades}/{pnlData.totalTrades} trades
           </p>
         </div>
       </div>
 
-      {/* Margin Usage */}
-      <div className="mt-4 pt-4 border-t border-border">
-        <div className="flex justify-between text-xs mb-2">
-          <span className="text-muted-foreground">Margin Used</span>
-          <span className="font-medium">
+      <div className="border-t border-[#152327] px-4 py-4">
+        <div className="mb-2 flex justify-between text-xs">
+          <span className="text-[#7e8c91]">Margin Used</span>
+          <span className="font-medium text-[#d8dfe1]">
             ${pnlData.totalMarginUsed.toLocaleString()} / ${pnlData.totalMarginAvailable.toLocaleString()}
           </span>
         </div>
-        <div className="h-2 bg-muted rounded-full overflow-hidden">
+        <div className="h-2 overflow-hidden rounded-full bg-[#132126]">
           <div 
-            className="h-full bg-primary transition-all duration-500"
+            className="h-full bg-[#53d8c8] transition-all duration-500"
             style={{ 
               width: `${Math.min(100, (pnlData.totalMarginUsed / pnlData.totalMarginAvailable) * 100)}%` 
             }}

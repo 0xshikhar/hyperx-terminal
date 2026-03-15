@@ -17,6 +17,9 @@ export function IncidentConsole({ compact = false }: IncidentConsoleProps) {
   const { latest, growthMB } = useMemoryTracker();
   const connectionState = useRuntimeHealthStore((state) => state.connectionState);
   const reconnectCount = useRuntimeHealthStore((state) => state.reconnectCount);
+  const reconnectPlan = useRuntimeHealthStore((state) => state.reconnectPlan);
+  const lastDisconnect = useRuntimeHealthStore((state) => state.lastDisconnect);
+  const lastPongAt = useRuntimeHealthStore((state) => state.lastPongAt);
   const getMarketFeedHealth = useRuntimeHealthStore((state) => state.getMarketFeedHealth);
   const feedHealth = getMarketFeedHealth(activeMarket);
 
@@ -38,7 +41,13 @@ export function IncidentConsole({ compact = false }: IncidentConsoleProps) {
         : "healthy";
   const feedStatus = feedHealth.isFresh ? "healthy" : connectionState === "connected" ? "critical" : "offline";
 
-  const cards = [
+  const cards: Array<{
+    label: string;
+    icon: JSX.Element;
+    status: "healthy" | "degraded" | "critical" | "recovering" | "offline";
+    value: string;
+    helper: string;
+  }> = [
     {
       label: "Socket",
       icon: <Wifi className="h-4 w-4" />,
@@ -49,7 +58,12 @@ export function IncidentConsole({ compact = false }: IncidentConsoleProps) {
           : connectionState === "connecting"
             ? "Reconnecting"
             : "Offline",
-      helper: reconnectCount > 0 ? `${reconnectCount} reconnects this session` : "Stable session",
+      helper:
+        connectionState === "connecting" && reconnectPlan
+          ? `Retry ${reconnectPlan.attempt} in ${Math.max(0, Math.ceil((reconnectPlan.reconnectAt - Date.now()) / 1000))}s`
+          : reconnectCount > 0
+            ? `${reconnectCount} reconnects this session`
+            : "Stable session",
     },
     {
       label: "Feed",
@@ -77,7 +91,23 @@ export function IncidentConsole({ compact = false }: IncidentConsoleProps) {
       value: latest ? `${latest.usedMB.toFixed(1)} MB` : "Unavailable",
       helper: latest ? `${growthMB >= 0 ? "+" : ""}${growthMB.toFixed(1)} MB window` : "Browser memory API unavailable",
     },
-  ] as const;
+  ];
+
+  if (lastDisconnect) {
+    cards[1] = {
+      ...cards[1],
+      helper: feedHealth.ageMs === null
+        ? `Last disconnect ${lastDisconnect.code}${lastDisconnect.reason ? `: ${lastDisconnect.reason}` : ""}`
+        : cards[1].helper,
+    };
+  }
+
+  if (connectionState === "connected" && lastPongAt) {
+    cards[0] = {
+      ...cards[0],
+      helper: `Last pong ${Math.max(0, Math.round((Date.now() - lastPongAt) / 1000))}s ago`,
+    };
+  }
 
   return (
     <div

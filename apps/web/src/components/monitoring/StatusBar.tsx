@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Blocks, Clock, Zap, Activity, Cpu } from "lucide-react";
+import { Blocks, Clock, Zap, Activity, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { LatencyDisplay } from "@/components/monitoring/LatencyDisplay";
 import { useWebSocket } from "@/hooks/useWebSocket";
@@ -22,9 +22,10 @@ export function StatusBar({ className, showDetails = true }: StatusBarProps) {
   const [status, setStatus] = useState<StatusData>({});
   const [timeAgo, setTimeAgo] = useState<number | null>(null);
   const [currentTime, setCurrentTime] = useState<string>("");
-  const [systemLoad, setSystemLoad] = useState<number>(18);
   const { state: wsState, on, subscribe } = useWebSocket(true);
   const reconnectCount = useRuntimeHealthStore((state) => state.reconnectCount);
+  const reconnectPlan = useRuntimeHealthStore((state) => state.reconnectPlan);
+  const lastPongAt = useRuntimeHealthStore((state) => state.lastPongAt);
   const getMarketFeedHealth = useRuntimeHealthStore((state) => state.getMarketFeedHealth);
   const feedHealth = getMarketFeedHealth(activeMarket);
 
@@ -74,17 +75,6 @@ export function StatusBar({ className, showDetails = true }: StatusBarProps) {
     return () => clearInterval(interval);
   }, []);
 
-  useEffect(() => {
-    const updateLoad = () => {
-      const tick = Date.now() / 10000;
-      const next = 18 + Math.sin(tick) * 6;
-      setSystemLoad(Math.max(8, Number(next.toFixed(1))));
-    };
-    updateLoad();
-    const interval = setInterval(updateLoad, 5000);
-    return () => clearInterval(interval);
-  }, []);
-
   return (
     <div
       className={cn(
@@ -98,11 +88,15 @@ export function StatusBar({ className, showDetails = true }: StatusBarProps) {
           <div
             className={cn(
               "status-dot",
-              wsState === "connected" ? "active" : "inactive"
+              wsState === "connected"
+                ? "active"
+                : wsState === "connecting"
+                  ? "active"
+                  : "inactive"
             )}
           />
           <span className="font-mono text-muted-foreground uppercase tracking-wider">
-            {wsState === "connected" ? "ONLINE" : "OFFLINE"}
+            {wsState === "connected" ? "ONLINE" : wsState === "connecting" ? "RECOVERING" : "OFFLINE"}
           </span>
         </div>
 
@@ -141,12 +135,22 @@ export function StatusBar({ className, showDetails = true }: StatusBarProps) {
               </div>
             )}
 
-            {/* System load */}
             <div className="hidden md:flex items-center gap-2 text-muted-foreground">
-              <Cpu className="h-3 w-3 text-terminal-magenta" />
-              <span className="font-mono text-[10px] uppercase tracking-wider">Load</span>
+              <RefreshCw
+                className={cn(
+                  "h-3 w-3",
+                  reconnectPlan ? "animate-spin text-terminal-yellow" : "text-terminal-magenta"
+                )}
+              />
+              <span className="font-mono text-[10px] uppercase tracking-wider">
+                {reconnectPlan ? "Retry" : "Pong"}
+              </span>
               <span className="font-mono text-foreground">
-                {systemLoad.toFixed(1)}%
+                {reconnectPlan
+                  ? `${Math.max(0, Math.ceil((reconnectPlan.reconnectAt - Date.now()) / 1000))}s`
+                  : lastPongAt
+                    ? `${Math.max(0, Math.round((Date.now() - lastPongAt) / 1000))}s`
+                    : "--"}
               </span>
             </div>
 

@@ -4,12 +4,17 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { AlertManager } from "@/components/alerts/AlertManager";
 import { useQuery } from "@tanstack/react-query";
 import { listAlerts } from "@/services/apiClient/alerts.api";
+import { useWallet } from "@/components/wallet/useWallet";
+import { isAuthenticated } from "@/services/auth.service";
 
 export function AlertBell() {
+  const address = useWallet((state) => state.address);
+  const authed = isAuthenticated();
   const { data: alerts = [] } = useQuery({
     queryKey: ["alerts"],
     queryFn: listAlerts,
     retry: false,
+    enabled: Boolean(address) && authed,
   });
   const count = alerts.filter((a) => !a.triggered).length;
 

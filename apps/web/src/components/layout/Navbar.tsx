@@ -4,6 +4,7 @@ import { cn } from "@/lib/utils";
 import { ConnectWalletButton } from "@/components/wallet/ConnectWalletButton";
 import { AlertBell } from "@/components/alerts/AlertBell";
 import { NotificationBell } from "@/components/notifications/NotificationBell";
+import { useRuntimeHealthStore } from "@/store/runtimeHealthStore";
 
 const navItems = [
   { href: "/terminal", label: "TRADE", icon: BarChart3 },
@@ -14,6 +15,8 @@ const navItems = [
 
 export function Navbar() {
   const location = useLocation();
+  const connectionState = useRuntimeHealthStore((state) => state.connectionState);
+  const reconnectPlan = useRuntimeHealthStore((state) => state.reconnectPlan);
 
   return (
     <header className="flex items-center justify-between border-b border-border/50 bg-card/50 backdrop-blur-sm px-4 py-2">
@@ -64,9 +67,24 @@ export function Navbar() {
       <div className="flex items-center gap-3">
         {/* Connection status */}
         <div className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded bg-secondary/50 border border-border/50">
-          <div className="status-dot active animate-pulse-glow" />
+          <div
+            className={cn(
+              "status-dot",
+              connectionState === "connected"
+                ? "active animate-pulse-glow"
+                : connectionState === "connecting"
+                  ? "active"
+                  : "inactive"
+            )}
+          />
           <span className="font-mono text-[10px] text-muted-foreground uppercase tracking-wider">
-            Connected
+            {connectionState === "connected"
+              ? "Connected"
+              : connectionState === "connecting"
+                ? reconnectPlan
+                  ? `Retry ${Math.max(0, Math.ceil((reconnectPlan.reconnectAt - Date.now()) / 1000))}s`
+                  : "Recovering"
+                : "Offline"}
           </span>
         </div>
         

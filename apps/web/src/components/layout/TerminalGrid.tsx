@@ -1,6 +1,4 @@
 import type { ReactNode } from "react";
-import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
-import { useUIStore } from "@/store/uiStore";
 
 type TerminalGridProps = {
   marketSelector: ReactNode;
@@ -11,23 +9,6 @@ type TerminalGridProps = {
   positions: ReactNode;
 };
 
-const clamp = (value: number, min: number, max: number) =>
-  Math.min(max, Math.max(min, value));
-
-function sanitizeSizes(
-  sizes: number[] | undefined,
-  fallback: number[],
-  min: number
-): number[] {
-  if (!sizes || sizes.length !== fallback.length) return fallback;
-  const numeric = sizes.map((value) =>
-    Number.isFinite(value) ? clamp(value, min, 100) : min
-  );
-  const total = numeric.reduce((sum, value) => sum + value, 0);
-  if (total <= 0) return fallback;
-  return numeric.map((value) => Number(((value / total) * 100).toFixed(2)));
-}
-
 export function TerminalGrid({
   marketSelector,
   orderBook,
@@ -36,56 +17,36 @@ export function TerminalGrid({
   recentTrades,
   positions,
 }: TerminalGridProps) {
-  const panelLayout = useUIStore((s) => s.panelLayout);
-  const setPanelLayout = useUIStore((s) => s.setPanelLayout);
-
-  const mainLayout = sanitizeSizes(panelLayout.main, [75, 25], 5);
-  const leftLayout = sanitizeSizes(panelLayout.left, [10, 50, 40], 5);
-  const rightLayout = sanitizeSizes(panelLayout.right, [60, 20, 20], 5);
-
   return (
-    <PanelGroup
-      direction="horizontal"
-      className="h-full min-h-0"
-      onLayout={(sizes) => setPanelLayout({ main: sizes })}
-    >
-      <Panel defaultSize={mainLayout[0]} minSize={30}>
-        <PanelGroup
-          direction="vertical"
-          onLayout={(sizes) => setPanelLayout({ left: sizes })}
-        >
-          <Panel defaultSize={leftLayout[0]} minSize={5}>
-            <div className="h-full min-h-0 outline-none" data-vim-nav="true" tabIndex={0}>{marketSelector}</div>
-          </Panel>
-          <PanelResizeHandle className="h-1 bg-transparent hover:bg-border transition-colors" />
-          <Panel defaultSize={leftLayout[1]} minSize={20}>
-            <div className="h-full min-h-0 outline-none" data-vim-nav="true" tabIndex={0}>{chart}</div>
-          </Panel>
-          <PanelResizeHandle className="h-1 bg-transparent hover:bg-border transition-colors" />
-          <Panel defaultSize={leftLayout[2]} minSize={15}>
-            <div className="h-full min-h-0 outline-none" data-vim-nav="true" tabIndex={0}>{positions}</div>
-          </Panel>
-        </PanelGroup>
-      </Panel>
-      <PanelResizeHandle className="w-1 bg-transparent hover:bg-border transition-colors" />
-      <Panel defaultSize={mainLayout[1]} minSize={15}>
-        <PanelGroup
-          direction="vertical"
-          onLayout={(sizes) => setPanelLayout({ right: sizes })}
-        >
-          <Panel defaultSize={rightLayout[0]} minSize={20}>
-            <div className="h-full min-h-0 outline-none" data-vim-nav="true" tabIndex={0}>{orderBook}</div>
-          </Panel>
-          <PanelResizeHandle className="h-1 bg-transparent hover:bg-border transition-colors" />
-          <Panel defaultSize={rightLayout[1]} minSize={10}>
-            <div className="h-full min-h-0 outline-none" data-vim-nav="true" tabIndex={0}>{tradeForm}</div>
-          </Panel>
-          <PanelResizeHandle className="h-1 bg-transparent hover:bg-border transition-colors" />
-          <Panel defaultSize={rightLayout[2]} minSize={10}>
-            <div className="h-full min-h-0 outline-none" data-vim-nav="true" tabIndex={0}>{recentTrades}</div>
-          </Panel>
-        </PanelGroup>
-      </Panel>
-    </PanelGroup>
+    <div className="grid h-full min-h-0 gap-4 xl:grid-cols-[280px,minmax(0,1fr),360px] xl:grid-rows-[minmax(420px,1fr),minmax(300px,0.86fr)]">
+      <section
+        className="min-h-0 outline-none xl:row-span-2"
+        data-vim-nav="true"
+        tabIndex={0}
+      >
+        {marketSelector}
+      </section>
+
+      <section className="min-h-0 outline-none" data-vim-nav="true" tabIndex={0}>
+        {chart}
+      </section>
+
+      <section className="min-h-0 outline-none" data-vim-nav="true" tabIndex={0}>
+        {tradeForm}
+      </section>
+
+      <section className="min-h-0 outline-none" data-vim-nav="true" tabIndex={0}>
+        {positions}
+      </section>
+
+      <section className="grid min-h-0 gap-4 xl:grid-rows-[minmax(0,1fr),minmax(0,0.78fr)]">
+        <div className="min-h-0 outline-none" data-vim-nav="true" tabIndex={0}>
+          {orderBook}
+        </div>
+        <div className="min-h-0 outline-none" data-vim-nav="true" tabIndex={0}>
+          {recentTrades}
+        </div>
+      </section>
+    </div>
   );
 }

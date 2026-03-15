@@ -8,12 +8,19 @@ import {
   type AlertCondition,
 } from "@/services/apiClient/alerts.api";
 import { AlertForm } from "@/components/alerts/AlertForm";
+import { useWallet } from "@/components/wallet/useWallet";
+import { isAuthenticated } from "@/services/auth.service";
 
 export function AlertManager() {
   const queryClient = useQueryClient();
+  const address = useWallet((state) => state.address);
+  const authed = isAuthenticated();
+  const alertsEnabled = Boolean(address) && authed;
   const { data: alerts = [], isLoading, isError } = useQuery({
     queryKey: ["alerts"],
     queryFn: listAlerts,
+    retry: false,
+    enabled: alertsEnabled,
   });
 
   const createMutation = useMutation({
@@ -46,6 +53,10 @@ export function AlertManager() {
     <div className="space-y-4">
       <AlertForm
         onSubmit={async (input) => {
+          if (!alertsEnabled) {
+            toast.error("Connect wallet to manage alerts");
+            return;
+          }
           await createMutation.mutateAsync(input);
         }}
       />
@@ -62,9 +73,13 @@ export function AlertManager() {
 
         {isLoading ? (
           <div className="px-3 py-3 text-xs text-muted-foreground">Loading…</div>
-        ) : isError ? (
+        ) : !alertsEnabled ? (
           <div className="px-3 py-3 text-xs text-muted-foreground">
             Connect wallet to load alerts.
+          </div>
+        ) : isError ? (
+          <div className="px-3 py-3 text-xs text-muted-foreground">
+            Alerts are temporarily unavailable.
           </div>
         ) : alerts.length === 0 ? (
           <div className="px-3 py-3 text-xs text-muted-foreground">
