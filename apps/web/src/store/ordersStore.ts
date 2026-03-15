@@ -112,6 +112,28 @@ const updateOrder = (
 
 const nextOptimisticId = () => `local-${Math.random().toString(36).slice(2, 10)}`;
 
+function resolveWorkingStatus(order: Order) {
+  if (order.filledSize >= order.size) return "filled" as const;
+  if (order.filledSize > 0) return "partially_filled" as const;
+  return "open" as const;
+}
+
+function canAcknowledge(order: Order) {
+  return order.status === "pending";
+}
+
+function canReject(order: Order) {
+  return order.status === "pending" || order.status === "cancel_pending";
+}
+
+function canCancel(order: Order) {
+  return ["pending", "open", "partially_filled", "cancel_pending"].includes(order.status);
+}
+
+function canFill(order: Order) {
+  return ["pending", "open", "partially_filled", "cancel_pending"].includes(order.status);
+}
+
 export const useOrdersStore = create<OrdersState>()((set) => ({
   openOrders: seedOrders,
   isLoading: false,
@@ -164,9 +186,9 @@ export const useOrdersStore = create<OrdersState>()((set) => ({
     set((state) => ({
       openOrders: updateOrder(state.openOrders, localOrderId, (order) => ({
         ...order,
-        exchangeOrderId,
-        status: order.filledSize > 0 ? "partially_filled" : "open",
-        updatedAt: now(),
+        exchangeOrderId: canAcknowledge(order) ? exchangeOrderId : order.exchangeOrderId,
+        status: canAcknowledge(order) ? resolveWorkingStatus(order) : order.status,
+        updatedAt: canAcknowledge(order) ? now() : order.updatedAt,
       })),
     })),
 
@@ -174,9 +196,9 @@ export const useOrdersStore = create<OrdersState>()((set) => ({
     set((state) => ({
       openOrders: updateOrder(state.openOrders, localOrderId, (order) => ({
         ...order,
-        status: "rejected",
-        rejectReason: reason,
-        updatedAt: now(),
+        status: canReject(order) ? "rejected" : order.status,
+        rejectReason: canReject(order) ? reason : order.rejectReason,
+        updatedAt: canReject(order) ? now() : order.updatedAt,
       })),
     })),
 
@@ -184,15 +206,18 @@ export const useOrdersStore = create<OrdersState>()((set) => ({
     set((state) => ({
       openOrders: updateOrder(state.openOrders, localOrderId, (order) => ({
         ...order,
-        status: "cancelled",
-        updatedAt: now(),
+        status: canCancel(order) ? "cancelled" : order.status,
+        updatedAt: canCancel(order) ? now() : order.updatedAt,
       })),
     })),
 
   markOrderFill: (localOrderId, filledSize) =>
     set((state) => ({
       openOrders: updateOrder(state.openOrders, localOrderId, (order) => {
-        const nextFilled = Math.min(filledSize, order.size);
+        if (!canFill(order)) {
+          return order;
+        }
+        const nextFilled = Math.min(Math.max(order.filledSize, filledSize), order.size);
         return {
           ...order,
           filledSize: nextFilled,

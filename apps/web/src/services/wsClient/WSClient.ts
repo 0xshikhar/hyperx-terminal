@@ -11,6 +11,20 @@ import { getToken } from "../auth.service";
 
 export type ConnectionState = "connecting" | "connected" | "disconnected" | "error";
 
+export type WSConnectionEvent =
+  | { type: "connect_start"; timestamp: number }
+  | { type: "open"; timestamp: number }
+  | { type: "close"; timestamp: number; code: number; reason: string; willReconnect: boolean }
+  | { type: "error"; timestamp: number }
+  | {
+      type: "reconnect_scheduled";
+      timestamp: number;
+      attempt: number;
+      delayMs: number;
+      reconnectAt: number;
+    }
+  | { type: "manual_disconnect"; timestamp: number };
+
 type Listener<T> = { bivarianceHack(payload: T): void }["bivarianceHack"];
 
 type WSClientOptions = {
@@ -31,6 +45,7 @@ export class WSClient {
   private state: ConnectionState = "disconnected";
   private shouldReconnect = true;
   private stateListeners = new Set<Listener<ConnectionState>>();
+  private connectionEventListeners = new Set<Listener<WSConnectionEvent>>();
   private activeSubscriptions = new Map<
     string,
     {
@@ -60,6 +75,7 @@ export class WSClient {
 
     this.shouldReconnect = true;
     this.setState("connecting");
+    this.emitConnectionEvent({ type: "connect_start", timestamp: Date.now() });
     
     // Append JWT token to URL for authentication
     const token = getToken();
@@ -71,6 +87,7 @@ export class WSClient {
       if (this.ws !== ws) return;
       this.reconnectAttempts = 0;
       this.setState("connected");
+      this.emitConnectionEvent({ type: "open", timestamp: Date.now() });
       this.resubscribeAll();
     };
 
@@ -85,18 +102,27 @@ export class WSClient {
       }
     };
 
-    ws.onclose = () => {
+    ws.onclose = (event) => {
       if (this.ws === ws) {
         this.ws = null;
       }
       this.setState("disconnected");
-      if (!this.reconnect || !this.shouldReconnect) return;
+      const willReconnect = this.reconnect && this.shouldReconnect;
+      this.emitConnectionEvent({
+        type: "close",
+        timestamp: Date.now(),
+        code: event.code,
+        reason: event.reason,
+        willReconnect,
+      });
+      if (!willReconnect) return;
       this.scheduleReconnect();
     };
 
     ws.onerror = () => {
       if (this.ws !== ws) return;
       this.setState("error");
+      this.emitConnectionEvent({ type: "error", timestamp: Date.now() });
     };
 
     this.ws = ws;
@@ -111,6 +137,7 @@ export class WSClient {
     this.ws?.close();
     this.ws = null;
     this.setState("disconnected");
+    this.emitConnectionEvent({ type: "manual_disconnect", timestamp: Date.now() });
   }
 
   send(message: ClientMessage) {
@@ -149,6 +176,11 @@ export class WSClient {
     return () => this.stateListeners.delete(listener);
   }
 
+  onConnectionEvent(listener: Listener<WSConnectionEvent>) {
+    this.connectionEventListeners.add(listener);
+    return () => this.connectionEventListeners.delete(listener);
+  }
+
   on<T extends WSChannel>(channel: T, listener: Listener<ChannelPayloadMap[T]>) {
     const set = this.channelListeners.get(channel as WSChannel) ?? new Set();
     set.add(listener as Listener<ServerMessage>);
@@ -174,6 +206,12 @@ export class WSClient {
     if (!listeners) return;
     for (const listener of listeners) {
       listener(message);
+    }
+  }
+
+  private emitConnectionEvent(event: WSConnectionEvent) {
+    for (const listener of this.connectionEventListeners) {
+      listener(event);
     }
   }
 
@@ -220,16 +258,27 @@ export class WSClient {
     const delay = Math.floor(jitter);
     
     this.reconnectAttempts += 1;
+    const reconnectAt = Date.now() + delay;
     if (import.meta.env.DEV) {
       console.debug(
         `[WSClient] Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts}, base ${exponentialDelay}ms)`
       );
     }
+    this.emitConnectionEvent({
+      type: "reconnect_scheduled",
+      timestamp: Date.now(),
+      attempt: this.reconnectAttempts,
+      delayMs: delay,
+      reconnectAt,
+    });
 
-    this.reconnectTimeout = window.setTimeout(() => {
+    const timeoutId = window.setTimeout(() => {
+      if (this.reconnectTimeout !== timeoutId) return;
       this.reconnectTimeout = null;
       if (!this.shouldReconnect) return;
       this.connect();
     }, delay);
+
+    this.reconnectTimeout = timeoutId;
   }
 }

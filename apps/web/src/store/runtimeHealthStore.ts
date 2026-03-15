@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { ConnectionState } from "@/services/wsClient";
+import type { ConnectionState, WSConnectionEvent } from "@/services/wsClient";
 
 type FeedTimestamps = {
   orderbook?: number;
@@ -8,14 +8,31 @@ type FeedTimestamps = {
   status?: number;
 };
 
+type ReconnectPlan = {
+  attempt: number;
+  delayMs: number;
+  scheduledAt: number;
+  reconnectAt: number;
+} | null;
+
+type DisconnectSnapshot = {
+  at: number;
+  code: number;
+  reason: string;
+} | null;
+
 type RuntimeHealthState = {
   connectionState: ConnectionState;
   reconnectCount: number;
   lastConnectionChangeAt: number | null;
   lastPongAt: number | null;
+  lastErrorAt: number | null;
+  lastSocketEventAt: number | null;
+  reconnectPlan: ReconnectPlan;
+  lastDisconnect: DisconnectSnapshot;
   feedsByMarket: Record<string, FeedTimestamps>;
   setConnectionState: (state: ConnectionState) => void;
-  recordReconnect: () => void;
+  recordConnectionEvent: (event: WSConnectionEvent) => void;
   recordPong: (timestamp?: number) => void;
   recordFeedEvent: (
     market: string,
@@ -36,6 +53,10 @@ export const useRuntimeHealthStore = create<RuntimeHealthState>()((set, get) => 
   reconnectCount: 0,
   lastConnectionChangeAt: null,
   lastPongAt: null,
+  lastErrorAt: null,
+  lastSocketEventAt: null,
+  reconnectPlan: null,
+  lastDisconnect: null,
   feedsByMarket: {},
 
   setConnectionState: (state) =>
@@ -44,11 +65,53 @@ export const useRuntimeHealthStore = create<RuntimeHealthState>()((set, get) => 
       lastConnectionChangeAt: Date.now(),
     }),
 
-  recordReconnect: () =>
-    set((current) => ({
-      reconnectCount: current.reconnectCount + 1,
-      lastConnectionChangeAt: Date.now(),
-    })),
+  recordConnectionEvent: (event) =>
+    set((current) => {
+      const base = {
+        lastSocketEventAt: event.timestamp,
+      };
+
+      switch (event.type) {
+        case "connect_start":
+          return base;
+        case "open":
+          return {
+            ...base,
+            reconnectPlan: null,
+          };
+        case "close":
+          return {
+            ...base,
+            reconnectPlan: event.willReconnect ? current.reconnectPlan : null,
+            lastDisconnect: {
+              at: event.timestamp,
+              code: event.code,
+              reason: event.reason,
+            },
+          };
+        case "error":
+          return {
+            ...base,
+            lastErrorAt: event.timestamp,
+          };
+        case "reconnect_scheduled":
+          return {
+            ...base,
+            reconnectCount: current.reconnectCount + 1,
+            reconnectPlan: {
+              attempt: event.attempt,
+              delayMs: event.delayMs,
+              scheduledAt: event.timestamp,
+              reconnectAt: event.reconnectAt,
+            },
+          };
+        case "manual_disconnect":
+          return {
+            ...base,
+            reconnectPlan: null,
+          };
+      }
+    }),
 
   recordPong: (timestamp = Date.now()) => set({ lastPongAt: timestamp }),
 

@@ -1,7 +1,10 @@
 import { create } from "zustand";
+import { normalizeMarketSymbol } from "@hyperx/types/common";
 
 export type MarketSnapshot = {
     symbol: string;
+    venueSymbol?: string;
+    displaySymbol?: string;
     name: string;
     lastPrice: number;
     changePercent24h: number;
@@ -51,12 +54,14 @@ const initialMarkets: MarketSnapshot[] = [
 export const useMarketStore = create<MarketState>()((set) => ({
     activeMarket: initialMarkets[0].symbol,
     markets: initialMarkets,
-    setActiveMarket: (symbol: string) => set({ activeMarket: symbol }),
+    setActiveMarket: (symbol: string) => set({ activeMarket: normalizeMarketSymbol(symbol) }),
     setMarkets: (markets: MarketSnapshot[]) => set({ markets }),
     updateMarket: (symbol: string, data: Partial<MarketSnapshot>) =>
         set((state) => ({
             markets: state.markets.map((market) =>
-                market.symbol === symbol ? { ...market, ...data } : market
+                normalizeMarketSymbol(market.symbol) === normalizeMarketSymbol(symbol)
+                    ? { ...market, ...data, symbol: normalizeMarketSymbol(market.symbol) }
+                    : market
             ),
         })),
 }));

@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
+import { createReferenceCandles } from "@/lib/mockMarketData";
+import { useMarketStore } from "@/store/marketStore";
 import {
   candleIntervals,
   makeCandlesChannel,
@@ -8,6 +10,7 @@ import {
   type CandlesMessage,
   type TickerMessage,
 } from "@/services/wsClient";
+import { normalizeMarketSymbol } from "@hyperx/types/common";
 
 const intervalSeconds: Record<CandleInterval, number> = {
   "1m": 60,
@@ -44,33 +47,42 @@ const updateFromTicker = (
 
 export function useCandleStream(market: string, interval: CandleInterval) {
   const [candles, setCandles] = useState<Candle[]>([]);
+  const normalizedMarket = useMemo(() => normalizeMarketSymbol(market), [market]);
+  const marketSnapshot = useMarketStore((state) =>
+    state.markets.find((entry) => entry.symbol === normalizedMarket)
+  );
 
   useEffect(() => {
-    const channel = makeCandlesChannel(market, interval);
+    const channel = makeCandlesChannel(normalizedMarket, interval);
     wsClient.subscribe(channel);
-    wsClient.subscribe("ticker", market);
+    wsClient.subscribe("ticker", normalizedMarket);
 
     const unsubscribeCandles = wsClient.on("candles", (message: CandlesMessage) => {
-      if (message.market !== market) return;
+      if (normalizeMarketSymbol(message.market) !== normalizedMarket) return;
       if (message.interval !== interval) return;
       setCandles(message.candles);
     });
 
     const unsubscribeTicker = wsClient.on("ticker", (message: TickerMessage) => {
-      if (message.market !== market) return;
+      if (normalizeMarketSymbol(message.market) !== normalizedMarket) return;
       if (!candleIntervals.includes(interval)) return;
       setCandles((current) => updateFromTicker(current, message, interval));
     });
 
     return () => {
       wsClient.unsubscribe(channel);
-      wsClient.unsubscribe("ticker", market);
+      wsClient.unsubscribe("ticker", normalizedMarket);
       unsubscribeCandles();
       unsubscribeTicker();
     };
-  }, [market, interval]);
+  }, [normalizedMarket, interval]);
 
-  const latest = useMemo(() => candles[candles.length - 1] ?? null, [candles]);
+  const referenceCandles = useMemo(
+    () => createReferenceCandles(marketSnapshot?.lastPrice ?? 100, interval),
+    [interval, marketSnapshot?.lastPrice]
+  );
+  const series = candles.length > 0 ? candles : referenceCandles;
+  const latest = useMemo(() => series[series.length - 1] ?? null, [series]);
 
-  return { candles, latest };
+  return { candles: series, latest, isReference: candles.length === 0 };
 }

@@ -7,6 +7,7 @@ import { useOrdersStore } from "@/store/ordersStore";
 import { usePositionsStore } from "@/store/positionsStore";
 import { useRuntimeHealthStore } from "@/store/runtimeHealthStore";
 import { useTradeStore } from "@/store/tradeStore";
+import { normalizeMarketSymbol } from "@hyperx/types/common";
 
 let started = false;
 
@@ -19,14 +20,11 @@ export function startClientServices() {
   let lastConnectionState = wsClient.connectionState;
   useRuntimeHealthStore.getState().setConnectionState(lastConnectionState);
 
-  wsClient.onStateChange((nextState) => {
-    if (
-      lastConnectionState === "connected" &&
-      (nextState === "disconnected" || nextState === "error")
-    ) {
-      useRuntimeHealthStore.getState().recordReconnect();
-    }
+  wsClient.onConnectionEvent((event) => {
+    useRuntimeHealthStore.getState().recordConnectionEvent(event);
+  });
 
+  wsClient.onStateChange((nextState) => {
     useRuntimeHealthStore.getState().setConnectionState(nextState);
     lastConnectionState = nextState;
   });
@@ -76,12 +74,17 @@ export function startClientServices() {
 async function hydrateMarkets() {
   try {
     const existing = useMarketStore.getState().markets;
-    const existingBySymbol = new Map(existing.map((market) => [market.symbol, market]));
+    const existingBySymbol = new Map(
+      existing.map((market) => [normalizeMarketSymbol(market.symbol), market])
+    );
     const markets = await listMarkets();
     const normalized = markets.map((market) => {
       const snapshot = existingBySymbol.get(market.symbol);
+      const symbol = normalizeMarketSymbol(market.symbol);
       return {
-        symbol: market.symbol,
+        symbol,
+        venueSymbol: market.venueSymbol,
+        displaySymbol: market.displaySymbol,
         name: market.name,
         lastPrice: market.lastPrice ?? snapshot?.lastPrice ?? 0,
         changePercent24h: market.changePercent24h ?? snapshot?.changePercent24h ?? 0,

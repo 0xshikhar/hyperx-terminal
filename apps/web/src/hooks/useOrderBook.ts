@@ -1,7 +1,10 @@
 import { useEffect, useMemo } from "react";
+import { createReferenceOrderbook } from "@/lib/mockMarketData";
 import { wsClient } from "@/services/wsClient";
 import { useOrderbookStore, type OrderbookLevel } from "@/store/orderbookStore";
 import { useOrdersStore } from "@/store/ordersStore";
+import { useMarketStore } from "@/store/marketStore";
+import { normalizeMarketSymbol } from "@hyperx/types/common";
 
 type OrderBookRow = {
   price: number;
@@ -57,6 +60,10 @@ const aggregateLevels = (levels: OrderbookLevel[], aggregation: number, side: "b
 };
 
 export function useOrderBook(market: string) {
+  const normalizedMarket = useMemo(() => normalizeMarketSymbol(market), [market]);
+  const marketSnapshot = useMarketStore((state) =>
+    state.markets.find((entry) => entry.symbol === normalizedMarket)
+  );
   const aggregation = useOrderbookStore((state) => state.aggregation);
   const setAggregation = useOrderbookStore((state) => state.setAggregation);
   const bids = useOrderbookStore((state) => state.bids);
@@ -64,18 +71,18 @@ export function useOrderBook(market: string) {
   const openOrders = useOrdersStore((state) => state.openOrders);
 
   useEffect(() => {
-    useOrderbookStore.getState().setMarket(market);
-    wsClient.subscribe("orderbook", market);
+    useOrderbookStore.getState().setMarket(normalizedMarket);
+    wsClient.subscribe("orderbook", normalizedMarket);
     return () => {
-      wsClient.unsubscribe("orderbook", market);
+      wsClient.unsubscribe("orderbook", normalizedMarket);
     };
-  }, [market]);
+  }, [normalizedMarket]);
 
   const minePriceSet = useMemo(() => {
     const prices = openOrders
       .filter(
         (order) =>
-          order.market === market &&
+          normalizeMarketSymbol(order.market) === normalizedMarket &&
           !["rejected", "cancelled", "filled"].includes(order.status)
       )
       .map((order) => order.price);
@@ -86,15 +93,23 @@ export function useOrderBook(market: string) {
       set.add(Number(bucket.toFixed(getPrecision(price))));
     }
     return set;
-  }, [openOrders, market, aggregation]);
+  }, [openOrders, normalizedMarket, aggregation]);
+
+  const referenceLevels = useMemo(
+    () => createReferenceOrderbook(marketSnapshot?.lastPrice ?? 100),
+    [marketSnapshot?.lastPrice]
+  );
+
+  const sourceBids = bids.length > 0 ? bids : referenceLevels.bids;
+  const sourceAsks = asks.length > 0 ? asks : referenceLevels.asks;
 
   const aggregatedBids = useMemo(
-    () => aggregateLevels(bids, aggregation, "bid"),
-    [bids, aggregation]
+    () => aggregateLevels(sourceBids, aggregation, "bid"),
+    [aggregation, sourceBids]
   );
   const aggregatedAsks = useMemo(
-    () => aggregateLevels(asks, aggregation, "ask"),
-    [asks, aggregation]
+    () => aggregateLevels(sourceAsks, aggregation, "ask"),
+    [aggregation, sourceAsks]
   );
 
   const bidRows = useMemo<OrderBookRow[]>(() => {
@@ -126,5 +141,6 @@ export function useOrderBook(market: string) {
     askRows,
     aggregatedBids,
     aggregatedAsks,
+    isReference: bids.length === 0 || asks.length === 0,
   };
 }

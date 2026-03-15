@@ -43,7 +43,7 @@ export function AppRoot() {
   // Initialize services and auth
   useEffect(() => {
     startClientServices();
-    initAuth();
+    void initAuth();
   }, []);
 
   // Apply theme

@@ -1,5 +1,6 @@
 import { Suspense, lazy } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
+import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { TerminalLayout } from "@/components/layout/TerminalLayout";
 
 const TerminalPage = lazy(() => import("@/pages/TerminalPage").then((module) => ({ default: module.TerminalPage })));
@@ -16,11 +17,13 @@ function App() {
         <Route path="/" element={<Navigate to="/terminal" replace />} />
         <Route path="/login" element={<LoginPage />} />
         <Route path="/onboard" element={<OnboardPage />} />
-        <Route element={<TerminalLayout />}>
-          <Route path="/terminal" element={<TerminalPage />} />
-          <Route path="/markets" element={<MarketsPage />} />
-          <Route path="/portfolio" element={<PortfolioPage />} />
-          <Route path="/leaderboard" element={<LeaderboardPage />} />
+        <Route element={<ProtectedRoute />}>
+          <Route element={<TerminalLayout />}>
+            <Route path="/terminal" element={<TerminalPage />} />
+            <Route path="/markets" element={<MarketsPage />} />
+            <Route path="/portfolio" element={<PortfolioPage />} />
+            <Route path="/leaderboard" element={<LeaderboardPage />} />
+          </Route>
         </Route>
         <Route path="*" element={<Navigate to="/terminal" replace />} />
       </Routes>

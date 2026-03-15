@@ -7,7 +7,7 @@ export const wsClient = new WSClient({
 });
 
 export { WSClient } from "./WSClient";
-export type { ConnectionState } from "./WSClient";
+export type { ConnectionState, WSConnectionEvent } from "./WSClient";
 export type {
   Candle,
   CandleInterval,

@@ -21,6 +21,10 @@ type OrderbookState = {
   pendingBatch: OrderbookDelta[];
   flushTimer: number | null;
   aggregation: number;
+  pendingBatchDepth: number;
+  lastBatchSize: number;
+  lastAppliedAt: number | null;
+  lastApplyDurationMs: number | null;
 
   setMarket: (market: string) => void;
   setAggregation: (aggregation: number) => void;
@@ -30,7 +34,7 @@ type OrderbookState = {
 };
 
 const MAX_LEVELS = 200;
-const FLUSH_WINDOW_MS = 50;
+export const FLUSH_WINDOW_MS = 50;
 
 function applySideDelta(
   side: OrderbookLevel[],
@@ -63,13 +67,27 @@ export const useOrderbookStore = create<OrderbookState>()((set, get) => ({
   pendingBatch: [],
   flushTimer: null,
   aggregation: 1,
+  pendingBatchDepth: 0,
+  lastBatchSize: 0,
+  lastAppliedAt: null,
+  lastApplyDurationMs: null,
 
   setMarket: (market) => {
     const timer = get().flushTimer;
     if (timer) {
       window.clearTimeout(timer);
     }
-    set({ market, bids: [], asks: [], pendingBatch: [], flushTimer: null });
+    set({
+      market,
+      bids: [],
+      asks: [],
+      pendingBatch: [],
+      flushTimer: null,
+      pendingBatchDepth: 0,
+      lastBatchSize: 0,
+      lastAppliedAt: null,
+      lastApplyDurationMs: null,
+    });
   },
   setAggregation: (aggregation) => set({ aggregation }),
 
@@ -77,13 +95,28 @@ export const useOrderbookStore = create<OrderbookState>()((set, get) => ({
     const current = get();
     if (current.market && current.market !== delta.market) return;
 
-    set((state) => ({ pendingBatch: [...state.pendingBatch, delta] }));
+    set((state) => {
+      const pendingBatch = [...state.pendingBatch, delta];
+      return {
+        pendingBatch,
+        pendingBatchDepth: pendingBatch.length,
+      };
+    });
     if (get().flushTimer) return;
 
     const timer = window.setTimeout(() => {
       const { pendingBatch } = get();
+      const startedAt = performance.now();
       get().applyBatch(pendingBatch);
-      set({ pendingBatch: [], flushTimer: null });
+      const durationMs = performance.now() - startedAt;
+      set({
+        pendingBatch: [],
+        pendingBatchDepth: 0,
+        flushTimer: null,
+        lastBatchSize: pendingBatch.length,
+        lastAppliedAt: Date.now(),
+        lastApplyDurationMs: durationMs,
+      });
     }, FLUSH_WINDOW_MS);
 
     set({ flushTimer: timer });
@@ -94,7 +127,7 @@ export const useOrderbookStore = create<OrderbookState>()((set, get) => ({
     if (timer) {
       window.clearTimeout(timer);
     }
-    set({ flushTimer: null, pendingBatch: [] });
+    set({ flushTimer: null, pendingBatch: [], pendingBatchDepth: 0 });
   },
 
   applyBatch: (batch) => {

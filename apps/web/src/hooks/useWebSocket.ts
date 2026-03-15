@@ -19,6 +19,7 @@ export function useWebSocket(autoConnect = true) {
   const [state, setState] = useState<ConnectionState>(wsClient.connectionState);
   const pingIntervalRef = useRef<number | null>(null);
   const pongUnsubscribeRef = useRef<(() => void) | null>(null);
+  const pongTimeoutRef = useRef<number | null>(null);
 
   useEffect(() => {
     const unsubscribe = wsClient.onStateChange(setState);
@@ -40,24 +41,46 @@ export function useWebSocket(autoConnect = true) {
         pongUnsubscribeRef.current();
         pongUnsubscribeRef.current = null;
       }
+      if (pongTimeoutRef.current) {
+        window.clearTimeout(pongTimeoutRef.current);
+        pongTimeoutRef.current = null;
+      }
       return;
     }
 
     const sendPing = () => {
+      if (pongUnsubscribeRef.current) {
+        pongUnsubscribeRef.current();
+        pongUnsubscribeRef.current = null;
+      }
+      if (pongTimeoutRef.current) {
+        window.clearTimeout(pongTimeoutRef.current);
+        pongTimeoutRef.current = null;
+      }
+
       const startTime = performance.now();
       const handlePong = () => {
         const ping = performance.now() - startTime;
         useLatencyStore.getState().setWsPing(ping);
+        if (pongUnsubscribeRef.current) {
+          pongUnsubscribeRef.current();
+          pongUnsubscribeRef.current = null;
+        }
+        if (pongTimeoutRef.current) {
+          window.clearTimeout(pongTimeoutRef.current);
+          pongTimeoutRef.current = null;
+        }
       };
       
       pongUnsubscribeRef.current = wsClient.on("pong", handlePong as Listener<unknown>);
       wsClient.ping();
       
-      setTimeout(() => {
+      pongTimeoutRef.current = window.setTimeout(() => {
         if (pongUnsubscribeRef.current) {
           pongUnsubscribeRef.current();
           pongUnsubscribeRef.current = null;
         }
+        pongTimeoutRef.current = null;
       }, 1000);
     };
 
@@ -72,6 +95,10 @@ export function useWebSocket(autoConnect = true) {
       if (pongUnsubscribeRef.current) {
         pongUnsubscribeRef.current();
         pongUnsubscribeRef.current = null;
+      }
+      if (pongTimeoutRef.current) {
+        window.clearTimeout(pongTimeoutRef.current);
+        pongTimeoutRef.current = null;
       }
     };
   }, [state]);
