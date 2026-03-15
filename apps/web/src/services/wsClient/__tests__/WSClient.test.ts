@@ -8,6 +8,7 @@ describe("WSClient", () => {
   beforeEach(() => {
     sockets = [];
     vi.useFakeTimers();
+    vi.spyOn(Math, "random").mockReturnValue(1);
 
     const MockSocket = vi.fn(() => {
       const socket = mockWebSocket();
@@ -74,6 +75,52 @@ describe("WSClient", () => {
     expect(sockets[0].getSentMessages()).toEqual([
       { type: "subscribe", channels: [{ channel: "orderbook", market: "ETH-USD" }] },
       { type: "unsubscribe", channels: [{ channel: "orderbook", market: "ETH-USD" }] },
+    ]);
+  });
+
+  it("emits reconnect scheduling metadata after an unexpected close", () => {
+    const client = new WSClient({
+      url: "ws://localhost:3002",
+      reconnectDelayMs: 10,
+      maxReconnectDelayMs: 10,
+    });
+    const events: string[] = [];
+
+    client.onConnectionEvent((event) => {
+      events.push(event.type);
+    });
+
+    client.connect();
+    sockets[0].simulateOpen();
+    sockets[0].simulateClose(1006, "drop");
+
+    expect(events).toEqual(["connect_start", "open", "close", "reconnect_scheduled"]);
+  });
+
+  it("cancels a pending reconnect when disconnect is called manually", () => {
+    const client = new WSClient({
+      url: "ws://localhost:3002",
+      reconnectDelayMs: 10,
+      maxReconnectDelayMs: 10,
+    });
+    const events: string[] = [];
+
+    client.onConnectionEvent((event) => {
+      events.push(event.type);
+    });
+
+    client.connect();
+    sockets[0].simulateOpen();
+    sockets[0].simulateClose(1006, "drop");
+    client.disconnect();
+    vi.runOnlyPendingTimers();
+
+    expect(events).toEqual([
+      "connect_start",
+      "open",
+      "close",
+      "reconnect_scheduled",
+      "manual_disconnect",
     ]);
   });
 });
