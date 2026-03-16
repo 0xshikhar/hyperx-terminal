@@ -3,7 +3,7 @@ import { useOrdersStore } from "@/store/ordersStore";
 
 export function useBatchOrders() {
   const orders = useOrdersStore((state) => state.openOrders);
-  const removeOrder = useOrdersStore((state) => state.removeOrder);
+  const markOrderCancelled = useOrdersStore((state) => state.markOrderCancelled);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
   const selectedOrders = useMemo(
@@ -20,7 +20,7 @@ export function useBatchOrders() {
   const clearSelection = () => setSelectedIds([]);
 
   const cancelSelected = () => {
-    selectedIds.forEach((id) => removeOrder(id));
+    selectedIds.forEach((id) => markOrderCancelled(id));
     clearSelection();
   };
 

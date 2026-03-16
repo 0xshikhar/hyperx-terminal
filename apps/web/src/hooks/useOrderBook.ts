@@ -72,7 +72,13 @@ export function useOrderBook(market: string) {
   }, [market]);
 
   const minePriceSet = useMemo(() => {
-    const prices = openOrders.filter((order) => order.market === market).map((order) => order.price);
+    const prices = openOrders
+      .filter(
+        (order) =>
+          order.market === market &&
+          !["rejected", "cancelled", "filled"].includes(order.status)
+      )
+      .map((order) => order.price);
     const set = new Set<number>();
     for (const price of prices) {
       const tickSize = getTickSize(price);
