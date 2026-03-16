@@ -274,7 +274,11 @@ export function VirtualizedOrderBook() {
   // Mark user's orders
   const minePriceSet = useMemo(() => {
     const prices = openOrders
-      .filter((order) => order.market === activeMarket)
+      .filter(
+        (order) =>
+          order.market === activeMarket &&
+          !["rejected", "cancelled", "filled"].includes(order.status)
+      )
       .map((order) => order.price);
     const set = new Set<number>();
     for (const price of prices) {

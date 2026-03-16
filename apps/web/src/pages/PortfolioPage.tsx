@@ -1,4 +1,5 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
+import { useLocation } from "react-router-dom";
 import { useQueries } from "@tanstack/react-query";
 import { AccountSummary } from "@/components/account/AccountSummary";
 import { PreferencesCard } from "@/components/account/PreferencesCard";
@@ -22,7 +23,11 @@ import {
 import { buildPortfolioPnlHistory } from "@/lib/portfolioAnalytics";
 
 export function PortfolioPage() {
+  const location = useLocation();
   const { positions } = usePositions();
+  const performanceRef = useRef<HTMLDivElement | null>(null);
+  const journalRef = useRef<HTMLDivElement | null>(null);
+  const shortcutsRef = useRef<HTMLDivElement | null>(null);
 
   const historyQueries = useQueries({
     queries: positions.map((position) => ({
@@ -98,6 +103,18 @@ export function PortfolioPage() {
     [positions]
   );
 
+  useEffect(() => {
+    const hash = location.hash.replace("#", "");
+    const anchors: Record<string, HTMLDivElement | null> = {
+      performance: performanceRef.current,
+      journal: journalRef.current,
+      shortcuts: shortcutsRef.current,
+    };
+
+    if (!hash || !anchors[hash]) return;
+    anchors[hash]?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [location.hash]);
+
   return (
     <div className="space-y-6 p-6">
       <h1 className="text-2xl font-semibold">Portfolio</h1>
@@ -115,12 +132,18 @@ export function PortfolioPage() {
         targets={rebalanceTargets}
         onRebalance={() => {}}
       />
-      <PerformanceDashboard />
+      <div id="performance" ref={performanceRef}>
+        <PerformanceDashboard />
+      </div>
       <div className="grid gap-6 xl:grid-cols-2">
         <PriceAlertsV2 />
-        <TradeJournal />
+        <div id="journal" ref={journalRef}>
+          <TradeJournal />
+        </div>
       </div>
-      <ShortcutCustomizer />
+      <div id="shortcuts" ref={shortcutsRef}>
+        <ShortcutCustomizer />
+      </div>
       <PreferencesCard />
       <PositionsTabs />
     </div>

@@ -30,10 +30,10 @@ const shortcutSections: ShortcutSection[] = [
   {
     title: "Trading",
     shortcuts: [
-      { keys: ["B"], description: "Focus Buy Side" },
-      { keys: ["S"], description: "Focus Sell Side" },
-      { keys: ["M"], description: "Market Order" },
-      { keys: ["L"], description: "Limit Order" },
+      { keys: ["B"], description: "Prepare buy order and focus size" },
+      { keys: ["S"], description: "Prepare sell order and focus size" },
+      { keys: ["M"], description: "Switch to market order" },
+      { keys: ["L"], description: "Switch to limit order and focus price" },
       { keys: ["Tab"], description: "Next Input Field" },
       { keys: ["Enter"], description: "Submit Order" },
     ],

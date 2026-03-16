@@ -5,6 +5,7 @@ import { useMarketStore } from "@/store/marketStore";
 import { useOrderbookStore } from "@/store/orderbookStore";
 import { useOrdersStore } from "@/store/ordersStore";
 import { usePositionsStore } from "@/store/positionsStore";
+import { useRuntimeHealthStore } from "@/store/runtimeHealthStore";
 import { useTradeStore } from "@/store/tradeStore";
 
 let started = false;
@@ -15,7 +16,23 @@ export function startClientServices() {
 
   void hydrateMarkets();
 
+  let lastConnectionState = wsClient.connectionState;
+  useRuntimeHealthStore.getState().setConnectionState(lastConnectionState);
+
+  wsClient.onStateChange((nextState) => {
+    if (
+      lastConnectionState === "connected" &&
+      (nextState === "disconnected" || nextState === "error")
+    ) {
+      useRuntimeHealthStore.getState().recordReconnect();
+    }
+
+    useRuntimeHealthStore.getState().setConnectionState(nextState);
+    lastConnectionState = nextState;
+  });
+
   wsClient.on("ticker", (message) => {
+    useRuntimeHealthStore.getState().recordFeedEvent(message.market, "ticker", message.timestamp);
     useMarketStore.getState().updateMarket(message.market, {
       lastPrice: message.lastPrice,
       changePercent24h: message.changePercent24h,
@@ -26,6 +43,7 @@ export function startClientServices() {
   });
 
   wsClient.on("orderbook", (message) => {
+    useRuntimeHealthStore.getState().recordFeedEvent(message.market, "orderbook", message.timestamp);
     useOrderbookStore.getState().queueBatch({
       market: message.market,
       bids: message.bids,
@@ -35,7 +53,16 @@ export function startClientServices() {
   });
 
   wsClient.on("trades", (message) => {
+    useRuntimeHealthStore.getState().recordFeedEvent(message.market, "trades", message.timestamp);
     useTradeStore.getState().addTrades(message.market, message.trades);
+  });
+
+  wsClient.on("pong", () => {
+    useRuntimeHealthStore.getState().recordPong();
+  });
+
+  wsClient.on("status", (message) => {
+    useRuntimeHealthStore.getState().recordFeedEvent("status", "status", message.timestamp);
   });
 
   wsClient.connect();

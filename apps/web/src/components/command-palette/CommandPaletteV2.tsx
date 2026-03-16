@@ -22,6 +22,8 @@ import { useTheme } from "@/hooks/useTheme";
 import { useWallet } from "@/components/wallet/useWallet";
 import { logout } from "@/services/auth.service";
 import { toast } from "sonner";
+import { useMarketStore } from "@/store/marketStore";
+import { dispatchTerminalAction } from "@/lib/terminalActions";
 
 type CommandPaletteV2Props = {
   open: boolean;
@@ -69,6 +71,9 @@ export function CommandPaletteV2({ open, onOpenChange }: CommandPaletteV2Props) 
   const [recentIds, setRecentIds] = useState<string[]>([]);
   const { theme, toggleTheme } = useTheme();
   const { isConnected, disconnectWallet } = useWallet();
+  const activeMarket = useMarketStore((state) => state.activeMarket);
+  const markets = useMarketStore((state) => state.markets);
+  const setActiveMarket = useMarketStore((state) => state.setActiveMarket);
 
   useEffect(() => {
     const raw = localStorage.getItem(RECENT_KEY);
@@ -86,8 +91,23 @@ export function CommandPaletteV2({ open, onOpenChange }: CommandPaletteV2Props) 
   }, [recentIds]);
 
   const commands = useMemo<CommandItem[]>(
-    () => [
-      {
+    () => {
+      const marketCommands: CommandItem[] = markets.map((market) => ({
+        id: `market-${market.symbol}`,
+        label: `Switch to ${market.symbol}`,
+        icon: <BarChart3 className="h-4 w-4" />,
+        shortcut: market.symbol === activeMarket ? "Active" : undefined,
+        action: () => {
+          setActiveMarket(market.symbol);
+          navigate("/terminal");
+          toast.success(`Focused ${market.symbol}`);
+        },
+        keywords: [market.symbol, market.name, "market", "switch"],
+        category: "Markets",
+      }));
+
+      return [
+        {
         id: "go-terminal",
         label: "Go to Trading Terminal",
         icon: <Home className="h-4 w-4" />,
@@ -128,7 +148,7 @@ export function CommandPaletteV2({ open, onOpenChange }: CommandPaletteV2Props) 
         label: "Open Portfolio Analytics",
         icon: <Scale className="h-4 w-4" />,
         shortcut: "A P",
-        action: () => navigate("/portfolio"),
+        action: () => navigate("/portfolio#performance"),
         keywords: ["analytics", "risk", "correlation", "rebalance"],
         category: "Insights",
       },
@@ -137,9 +157,59 @@ export function CommandPaletteV2({ open, onOpenChange }: CommandPaletteV2Props) 
         label: "Open Trade Journal",
         icon: <BookText className="h-4 w-4" />,
         shortcut: "A J",
-        action: () => navigate("/portfolio"),
+        action: () => navigate("/portfolio#journal"),
         keywords: ["journal", "notes", "trade log"],
         category: "Insights",
+      },
+      {
+        id: "focus-trade-form",
+        label: `Focus ${activeMarket} Trade Form`,
+        icon: <Zap className="h-4 w-4" />,
+        shortcut: "B / S",
+        action: () => {
+          navigate("/terminal");
+          window.setTimeout(() => {
+            dispatchTerminalAction({ type: "focus-trade-form" });
+          }, 50);
+        },
+        keywords: ["trade", "form", "focus", "size", "order"],
+        category: "Actions",
+      },
+      {
+        id: "buy-market-order",
+        label: `Prepare Buy Market Order for ${activeMarket}`,
+        icon: <Zap className="h-4 w-4" />,
+        action: () => {
+          navigate("/terminal");
+          window.setTimeout(() => {
+            dispatchTerminalAction({
+              type: "prepare-order",
+              side: "buy",
+              orderType: "market",
+              focusField: "size",
+            });
+          }, 50);
+        },
+        keywords: ["buy", "market", "order", activeMarket],
+        category: "Actions",
+      },
+      {
+        id: "sell-limit-order",
+        label: `Prepare Sell Limit Order for ${activeMarket}`,
+        icon: <Zap className="h-4 w-4" />,
+        action: () => {
+          navigate("/terminal");
+          window.setTimeout(() => {
+            dispatchTerminalAction({
+              type: "prepare-order",
+              side: "sell",
+              orderType: "limit",
+              focusField: "price",
+            });
+          }, 50);
+        },
+        keywords: ["sell", "limit", "order", activeMarket],
+        category: "Actions",
       },
       {
         id: "toggle-theme",
@@ -202,8 +272,20 @@ export function CommandPaletteV2({ open, onOpenChange }: CommandPaletteV2Props) 
         keywords: ["wallet", "disconnect", "logout"],
         category: "Wallet",
       },
-    ],
-    [disconnectWallet, isConnected, navigate, onOpenChange, theme, toggleTheme]
+      ...marketCommands,
+    ];
+    },
+    [
+      activeMarket,
+      disconnectWallet,
+      isConnected,
+      markets,
+      navigate,
+      onOpenChange,
+      setActiveMarket,
+      theme,
+      toggleTheme,
+    ]
   );
 
   const recentCommands = useMemo(

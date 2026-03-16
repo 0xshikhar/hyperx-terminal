@@ -74,37 +74,43 @@ export function MarketSelector() {
             className="w-full rounded-md border border-border bg-card px-3 py-2 text-sm"
           />
           <div className="max-h-56 space-y-1 overflow-auto">
-            {filteredMarkets.map((market: MarketSnapshot) => (
-              <button
-                key={market.symbol}
-                onClick={() => {
-                  setActiveMarket(market.symbol);
-                  setIsOpen(false);
-                }}
-                className={cn(
-                  "flex w-full items-center justify-between rounded-md px-3 py-2 text-sm transition-colors",
-                  market.symbol === activeMarket
-                    ? "bg-muted text-foreground"
-                    : "text-muted-foreground hover:text-foreground"
-                )}
-              >
-                <div className="flex flex-col items-start">
-                  <span className="font-medium">{market.symbol}</span>
-                  <span className="text-[10px] uppercase">{market.name}</span>
-                </div>
-                <span
+            {filteredMarkets.length === 0 ? (
+              <div className="rounded-md border border-dashed border-border px-3 py-4 text-xs text-muted-foreground">
+                No markets matched "{search}". Try a symbol like `BTC` or `ETH`.
+              </div>
+            ) : (
+              filteredMarkets.map((market: MarketSnapshot) => (
+                <button
+                  key={market.symbol}
+                  onClick={() => {
+                    setActiveMarket(market.symbol);
+                    setIsOpen(false);
+                  }}
                   className={cn(
-                    "text-xs font-mono",
-                    market.changePercent24h >= 0
-                      ? "text-emerald-500"
-                      : "text-rose-500"
+                    "flex w-full items-center justify-between rounded-md px-3 py-2 text-sm transition-colors",
+                    market.symbol === activeMarket
+                      ? "bg-muted text-foreground"
+                      : "text-muted-foreground hover:text-foreground"
                   )}
                 >
-                  {market.changePercent24h >= 0 ? "+" : ""}
-                  {market.changePercent24h.toFixed(2)}%
-                </span>
-              </button>
-            ))}
+                  <div className="flex flex-col items-start">
+                    <span className="font-medium">{market.symbol}</span>
+                    <span className="text-[10px] uppercase">{market.name}</span>
+                  </div>
+                  <span
+                    className={cn(
+                      "text-xs font-mono",
+                      market.changePercent24h >= 0
+                        ? "text-emerald-500"
+                        : "text-rose-500"
+                    )}
+                  >
+                    {market.changePercent24h >= 0 ? "+" : ""}
+                    {market.changePercent24h.toFixed(2)}%
+                  </span>
+                </button>
+              ))
+            )}
           </div>
         </div>
       )}
