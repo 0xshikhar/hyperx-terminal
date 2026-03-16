@@ -17,6 +17,7 @@ import type {
   OrderSide,
   OrderType,
 } from "@hyperx/types/dex";
+import { toParadexMarketSymbol } from "@hyperx/types/common";
 import { ExtendedClient } from "./ExtendedClient.js";
 import { ParadexClient } from "./ParadexClient.js";
 
@@ -89,9 +90,7 @@ export class OrderRouter {
           
           price = remainingSize > 0 ? 0 : totalCost / size;
         } else if (client instanceof ParadexClient) {
-          const paradexMarket = market.toUpperCase().includes("-PERP")
-            ? market
-            : `${market}-PERP`;
+          const paradexMarket = toParadexMarketSymbol(market);
           const orderbook = await client.getOrderbook(paradexMarket);
           const levels =
             side === "buy" ? orderbook.asks : orderbook.bids;
