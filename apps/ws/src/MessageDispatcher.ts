@@ -65,7 +65,7 @@ class MessageDispatcher {
 
     // Publish to Redis for multi-instance support
     if (isPubSubEnabled()) {
-      publishMessage({
+      void publishMessage({
         channel,
         market,
         data,

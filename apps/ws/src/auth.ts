@@ -8,7 +8,10 @@
 import jwt from "jsonwebtoken";
 
 // JWT Secret (should match API server)
-const JWT_SECRET = process.env.JWT_SECRET || "your-secret-key";
+if (!process.env.JWT_SECRET) {
+  console.warn("WARNING: JWT_SECRET not set. WebSocket auth will reject all tokens.");
+}
+const JWT_SECRET = process.env.JWT_SECRET || "";
 
 export interface JWTPayload {
   userId: string;

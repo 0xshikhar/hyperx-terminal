@@ -14,6 +14,14 @@ let isEnabled = false;
 const messageCallbacks = new Set<(message: PubSubMessage) => void>();
 let subscriberRunning = false;
 
+function disableRedisPubSub(reason: string) {
+  if (isEnabled) {
+    console.warn(`Redis pub/sub disabled - ${reason}`);
+  }
+  redis = null;
+  isEnabled = false;
+}
+
 export function initRedisPubSub(): { enabled: boolean } {
   if (!UPSTASH_REDIS_REST_URL || !UPSTASH_REDIS_REST_TOKEN) {
     console.log("Redis pub/sub disabled - no credentials configured");
@@ -47,8 +55,13 @@ export async function publishMessage(message: PubSubMessage): Promise<void> {
   const channelKey = message.market 
     ? `${message.channel}:${message.market}`
     : message.channel;
-    
-  await redis.publish(channelKey, JSON.stringify(message));
+
+  try {
+    await redis.publish(channelKey, JSON.stringify(message));
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : "unknown Redis publish error";
+    disableRedisPubSub(`publish failed (${reason})`);
+  }
 }
 
 export function onPubSubMessage(
