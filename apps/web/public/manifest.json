@@ -1,0 +1,17 @@
+{
+  "name": "HyperX Terminal",
+  "short_name": "HyperX",
+  "description": "Starknet Perpetual Futures Trading Terminal — real-time order book, portfolio analytics, and cross-DEX execution.",
+  "start_url": "/terminal",
+  "display": "standalone",
+  "background_color": "#0a0f10",
+  "theme_color": "#0a0f10",
+  "icons": [
+    {
+      "src": "/apple-touch-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

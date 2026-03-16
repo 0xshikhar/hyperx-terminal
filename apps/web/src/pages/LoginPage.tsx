@@ -105,7 +105,7 @@ export function LoginPage() {
                 </h1>
               </div>
               <p className="font-mono text-sm text-muted-foreground">
-                Starknet Perpetual Futures Trading Terminal
+                The Starknet Perpetual Futures Terminal
               </p>
             </div>
 

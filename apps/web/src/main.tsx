@@ -42,6 +42,7 @@ export function AppRoot() {
 
   // Initialize services and auth
   useEffect(() => {
+    document.title = "HyperX Terminal — Starknet Perpetual Futures Trading Terminal";
     startClientServices();
     void initAuth();
   }, []);
