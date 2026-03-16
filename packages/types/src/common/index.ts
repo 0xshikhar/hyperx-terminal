@@ -14,6 +14,9 @@ export type AlertCondition = "ABOVE" | "BELOW" | "PERCENT_CHANGE";
 export type NotificationStatus = "unread" | "read";
 export type NotificationType = "price_alert" | "order_filled" | "liquidation" | "system";
 
+// Market symbol helpers
+export * from "./market.js";
+
 // Market and exchange enums
 export type TradeExchange = "EXTENDED" | "PARADEX" | "STARKZAP";
 export type MarketStatus = "active" | "paused" | "closed";
