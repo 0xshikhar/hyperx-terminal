@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { Cpu, Gauge, MemoryStick } from "lucide-react";
 import { PerformancePanel } from "@/components/monitoring/FPSCounter";
+import { IncidentConsole } from "@/components/monitoring/IncidentConsole";
 import { LatencyGraph, LatencyLegend } from "@/components/monitoring/LatencyGraph";
 import { useMemoryTracker } from "@/hooks/useMemoryTracker";
 import { useLatencyStore } from "@/store/latencyStore";
@@ -29,6 +30,8 @@ export function PerformanceDashboard() {
           <LatencyLegend />
         </div>
       </div>
+
+      <IncidentConsole compact />
 
       <div className="grid gap-3 md:grid-cols-3">
         <StatCard
@@ -80,6 +83,9 @@ export function PerformanceDashboard() {
         <p>Live telemetry: FPS, frame time, socket RTT, API RTT, and browser heap usage.</p>
         <p className="mt-1">
           Derived budgets: orderbook updates batch every 50ms in the store, while chart updates target one visible frame at roughly 16.7ms.
+        </p>
+        <p className="mt-1">
+          Incident console: feed freshness answers whether the screen is stale, while socket, render, and memory cards isolate transport, paint pressure, and heap growth.
         </p>
         {!isSupported && (
           <p className="mt-1 text-amber-400">

@@ -3,6 +3,8 @@ import { Blocks, Clock, Zap, Activity, Cpu } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { LatencyDisplay } from "@/components/monitoring/LatencyDisplay";
 import { useWebSocket } from "@/hooks/useWebSocket";
+import { useMarketStore } from "@/store/marketStore";
+import { useRuntimeHealthStore } from "@/store/runtimeHealthStore";
 
 type StatusData = {
   blockHeight?: number;
@@ -16,11 +18,15 @@ type StatusBarProps = {
 };
 
 export function StatusBar({ className, showDetails = true }: StatusBarProps) {
+  const activeMarket = useMarketStore((state) => state.activeMarket);
   const [status, setStatus] = useState<StatusData>({});
   const [timeAgo, setTimeAgo] = useState<number | null>(null);
   const [currentTime, setCurrentTime] = useState<string>("");
   const [systemLoad, setSystemLoad] = useState<number>(18);
   const { state: wsState, on, subscribe } = useWebSocket(true);
+  const reconnectCount = useRuntimeHealthStore((state) => state.reconnectCount);
+  const getMarketFeedHealth = useRuntimeHealthStore((state) => state.getMarketFeedHealth);
+  const feedHealth = getMarketFeedHealth(activeMarket);
 
   useEffect(() => {
     const unsubscribeStatus = on("status", (message) => {
@@ -143,6 +149,23 @@ export function StatusBar({ className, showDetails = true }: StatusBarProps) {
                 {systemLoad.toFixed(1)}%
               </span>
             </div>
+
+            <div className="hidden xl:flex items-center gap-2 text-muted-foreground">
+              <Activity
+                className={cn(
+                  "h-3 w-3",
+                  feedHealth.isFresh ? "text-terminal-green" : "text-terminal-yellow"
+                )}
+              />
+              <span className="font-mono text-[10px] uppercase tracking-wider">Feed</span>
+              <span className="font-mono text-foreground">
+                {feedHealth.isFresh
+                  ? `${activeMarket} live`
+                  : wsState === "connected"
+                    ? `${activeMarket} stale`
+                    : "paused"}
+              </span>
+            </div>
           </>
         )}
       </div>
@@ -150,6 +173,13 @@ export function StatusBar({ className, showDetails = true }: StatusBarProps) {
       <div className="flex items-center gap-6">
         {/* Latency */}
         <LatencyDisplay />
+
+        <div className="hidden lg:flex items-center gap-2 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+          <span>Reconnects</span>
+          <span className={cn("text-foreground", reconnectCount > 2 && "text-amber-400")}>
+            {reconnectCount}
+          </span>
+        </div>
         
         {/* Current time */}
         <div className="hidden md:flex items-center gap-2">

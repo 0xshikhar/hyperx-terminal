@@ -7,6 +7,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Activity, Zap, AlertTriangle } from "lucide-react";
+import { useRenderMetricsStore } from "@/store/renderMetricsStore";
 
 interface FPSData {
   fps: number;
@@ -28,6 +29,7 @@ function useFPSMonitor(): FPSData {
   const lastTimeRef = useRef(performance.now());
   const droppedFramesRef = useRef(0);
   const rafIdRef = useRef<number | null>(null);
+  const setMetrics = useRenderMetricsStore((state) => state.setMetrics);
 
   useEffect(() => {
     const updateFPS = () => {
@@ -54,6 +56,11 @@ function useFPSMonitor(): FPSData {
           isStable: fps >= 55 && frameTime <= 20,
       // _isStable is used in PerformancePanel component
         });
+        setMetrics({
+          fps: Math.min(fps, 60),
+          frameTime,
+          droppedFrames: droppedFramesRef.current,
+        });
 
         // Reset counters
         frameCountRef.current = 0;
@@ -70,7 +77,7 @@ function useFPSMonitor(): FPSData {
         cancelAnimationFrame(rafIdRef.current);
       }
     };
-  }, []);
+  }, [setMetrics]);
 
   return fpsData;
 }
