@@ -17,6 +17,7 @@ model User {
   privyUserId   String? @unique
   username  String?
   email     String?  @unique
+  tokenVersion Int   @default(0)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -32,6 +33,17 @@ model User {
   tradeHistory  TradeRecord[]
   auditLogs     AuditLog[]
   notifications Notification[]
+}
+
+model AuthNonce {
+  id          String   @id @default(uuid())
+  walletAddress String @unique
+  nonce       String
+  expiresAt   DateTime
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([expiresAt])
 }
 
 model UserPreferences {

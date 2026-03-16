@@ -8,6 +8,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { generateNonce, authenticateUser } from "../services/auth.service.js";
 import { env } from "../config/env.js";
+import { prisma } from "../db/client.js";
 
 const nonceRequestSchema = z.object({
   walletAddress: z.string().min(1),
@@ -17,6 +18,7 @@ const verifyRequestSchema = z.object({
   walletAddress: z.string().min(1),
   signature: z.array(z.string()),
   message: z.string().min(1),
+  chainId: z.string().min(1),
 });
 
 export async function authRoutes(app: FastifyInstance): Promise<void> {
@@ -31,7 +33,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       return { error: "invalid_request", message: "walletAddress is required" };
     }
 
-    const { nonce, message } = generateNonce(body.data.walletAddress);
+    const { nonce, message } = await generateNonce(body.data.walletAddress);
 
     return {
       nonce,
@@ -58,7 +60,8 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       const authResult = await authenticateUser(
         body.data.walletAddress,
         body.data.signature,
-        body.data.message
+        body.data.message,
+        body.data.chainId
       );
 
       if (!authResult) {
@@ -74,6 +77,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
         {
           userId: authResult.userId,
           walletAddress: authResult.walletAddress,
+          tokenVersion: authResult.tokenVersion,
         },
         {
           expiresIn: env.JWT_EXPIRES_IN,
@@ -113,13 +117,27 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
   app.post("/auth/refresh", async (req, reply) => {
     try {
       // Verify current token
-      const decoded = await req.jwtVerify<{ userId: string; walletAddress: string }>();
+      const decoded = await req.jwtVerify<{ userId: string; walletAddress: string; tokenVersion: number }>();
+
+      const user = await prisma.user.findUnique({
+        where: { id: decoded.userId },
+        select: { tokenVersion: true },
+      });
+
+      if (!user || user.tokenVersion !== decoded.tokenVersion) {
+        reply.status(401);
+        return {
+          error: "unauthorized",
+          message: "Invalid or expired token",
+        };
+      }
 
       // Generate new token
       const token = await reply.jwtSign(
         {
           userId: decoded.userId,
           walletAddress: decoded.walletAddress,
+          tokenVersion: decoded.tokenVersion,
         },
         {
           expiresIn: env.JWT_EXPIRES_IN,
@@ -150,6 +168,22 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
    * Logout and clear cookie
    */
   app.post("/auth/logout", async (req, reply) => {
+    try {
+      const decoded = await req.jwtVerify<{ userId: string; walletAddress: string; tokenVersion: number }>();
+
+      await prisma.user.updateMany({
+        where: {
+          id: decoded.userId,
+          tokenVersion: decoded.tokenVersion,
+        },
+        data: {
+          tokenVersion: { increment: 1 },
+        },
+      });
+    } catch {
+      // Ignore invalid tokens on logout; cookie clearing still applies.
+    }
+
     reply.clearCookie("token", { path: "/" });
     return { success: true };
   });

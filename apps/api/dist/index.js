@@ -11,9 +11,10 @@ import { requireAuth } from "./middleware/auth.js";
 import { authRoutes } from "./routes/auth.js";
 import { z } from "zod";
 import { getOrderRouter, createExtendedClient, createParadexClient, ExtendedClient, ParadexClient, } from "./dex/index.js";
+import { fromParadexMarketSymbol, normalizeMarketSymbol, toParadexMarketSymbol, } from "@hyperx/types/common";
 const PORT = Number(env.PORT ?? 3001);
 const app = Fastify({
-    logger: false,
+    logger: env.NODE_ENV !== "test",
 });
 // Register JWT plugin
 await app.register(jwt, {
@@ -31,7 +32,7 @@ await app.register(cookie, {
 const metricsBuffer = [];
 const MAX_METRICS = 200;
 await app.register(cors, {
-    origin: true,
+    origin: env.NODE_ENV === "production" ? process.env.CORS_ORIGIN?.split(",") ?? ["https://hyperx.app"] : true,
     credentials: true,
 });
 await app.register(helmet);
@@ -41,8 +42,17 @@ await authRoutes(app);
 await app.register(async (instance) => {
     await authRoutes(instance);
 }, { prefix: "/api" });
-app.get("/health", async () => ({ ok: true }));
-app.get("/api/health", async () => ({ ok: true }));
+async function dbHealthy() {
+    try {
+        await prisma.$queryRaw `SELECT 1`;
+        return true;
+    }
+    catch {
+        return false;
+    }
+}
+app.get("/health", async () => ({ ok: true, db: await dbHealthy() }));
+app.get("/api/health", async () => ({ ok: true, db: await dbHealthy() }));
 const metricsSchema = z.object({
     metrics: z.array(z.object({
         name: z.string(),
@@ -99,11 +109,14 @@ app.get("/api/markets", async () => ({ markets }));
 // Helper to get authenticated user from JWT
 async function getAuthedUser(req, reply) {
     try {
-        await requireAuth(req, reply);
-        return req.user ? await prisma.user.findUnique({
+        const authenticated = await requireAuth(req, reply);
+        if (!authenticated || !req.user) {
+            return null;
+        }
+        return await prisma.user.findUnique({
             where: { id: req.user.userId },
             include: { preferences: true },
-        }) : null;
+        });
     }
     catch {
         return null;
@@ -129,6 +142,45 @@ app.get("/api/me", async (req, reply) => {
                 }
                 : null,
         },
+    };
+});
+function deriveAccountSummary(positions) {
+    const marginUsed = positions.reduce((total, position) => total + position.margin, 0);
+    const unrealizedPnl = positions.reduce((total, position) => total + position.pnl, 0);
+    const notionalExposure = positions.reduce((total, position) => total + position.entryPrice * position.size, 0);
+    const balance = notionalExposure;
+    const available = Math.max(balance - marginUsed, 0);
+    return {
+        balance,
+        available,
+        marginUsed,
+        unrealizedPnl,
+    };
+}
+async function loadCurrentPositions() {
+    if (paradexClient) {
+        try {
+            const raw = await paradexClient.getPositions();
+            return raw
+                .map((pos) => mapParadexPosition(pos))
+                .sort((a, b) => b.openedAt.localeCompare(a.openedAt));
+        }
+        catch (error) {
+            console.error("Failed to fetch Paradex positions:", error);
+        }
+    }
+    return seedPositions.map((pos) => {
+        const { pnl, pnlPercent } = computePnl(pos);
+        return { ...pos, pnl, pnlPercent };
+    });
+}
+app.get("/api/account", async (req, reply) => {
+    const user = await getAuthedUser(req, reply);
+    if (!user)
+        return { error: "missing_wallet_address" };
+    const positions = await loadCurrentPositions();
+    return {
+        account: deriveAccountSummary(positions),
     };
 });
 const preferencesSchema = z.object({
@@ -332,7 +384,7 @@ app.post("/api/orders", async (req, reply) => {
                     ? "LIMIT"
                     : "MARKET";
             const order = await paradexClient.createOrder({
-                market: toParadexMarket(body.data.market),
+                market: toParadexMarketSymbol(body.data.market),
                 side: body.data.side === "buy" ? "BUY" : "SELL",
                 type: paradexType,
                 size: body.data.size,
@@ -350,6 +402,39 @@ app.post("/api/orders", async (req, reply) => {
     }
     const id = `${body.data.market}-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
     return { id };
+});
+app.delete("/api/orders/:id", async (req, reply) => {
+    const idSchema = z.object({ id: z.string().min(1) });
+    const params = idSchema.safeParse(req.params);
+    if (!params.success) {
+        reply.status(400);
+        return { error: "invalid_order_id" };
+    }
+    if (paradexClient) {
+        try {
+            await paradexClient.cancelOrder(params.data.id);
+            return { success: true };
+        }
+        catch (error) {
+            reply.status(500);
+            return { error: "cancel_failed", message: error.message };
+        }
+    }
+    return { success: true };
+});
+app.delete("/api/orders", async (req, reply) => {
+    const market = req.query.market;
+    if (paradexClient) {
+        try {
+            const result = await paradexClient.cancelAllOrders(market ? toParadexMarketSymbol(market) : undefined);
+            return result;
+        }
+        catch (error) {
+            reply.status(500);
+            return { error: "cancel_all_failed", message: error.message };
+        }
+    }
+    return { canceled: 0 };
 });
 const PAGE_SIZE = 20;
 const seedPositions = [
@@ -383,13 +468,25 @@ function computePnl(position) {
     const pnlPercent = (pnl / position.margin) * 100;
     return { pnl, pnlPercent };
 }
-function toParadexMarket(market) {
-    if (market.toUpperCase().includes("-PERP"))
-        return market;
-    return `${market}-PERP`;
-}
-function fromParadexMarket(market) {
-    return market.replace(/-PERP$/i, "");
+function normalizeDexMarket(exchange, market) {
+    const marketData = market;
+    const symbolSource = marketData.market ??
+        marketData.symbol ??
+        marketData.baseCurrency ??
+        marketData.base_currency ??
+        "";
+    const quoteSource = marketData.quoteCurrency ??
+        marketData.quote_currency ??
+        "";
+    const rawSymbol = symbolSource && quoteSource ? `${symbolSource}-${quoteSource}` : symbolSource;
+    const canonicalSymbol = exchange.toLowerCase() === "paradex"
+        ? fromParadexMarketSymbol(rawSymbol)
+        : normalizeMarketSymbol(rawSymbol);
+    return {
+        ...marketData,
+        symbol: canonicalSymbol,
+        market: canonicalSymbol,
+    };
 }
 function pickValue(source, keys) {
     for (const key of keys) {
@@ -434,7 +531,7 @@ function toIsoTimestamp(value) {
 }
 function mapParadexPosition(raw) {
     const marketRaw = pickString(raw, ["market", "symbol"]);
-    const market = fromParadexMarket(marketRaw);
+    const market = fromParadexMarketSymbol(marketRaw);
     const sideRaw = pickString(raw, ["side", "position_side"]);
     const side = sideRaw.toUpperCase() === "SHORT" ? "short" : "long";
     const sizeRaw = pickNumber(raw, ["size", "position_size", "positionSize"], 0);
@@ -495,7 +592,7 @@ function normalizeOrderStatus(statusRaw) {
 }
 function mapParadexOrder(raw) {
     const marketRaw = pickString(raw, ["market", "symbol"]);
-    const market = fromParadexMarket(marketRaw);
+    const market = fromParadexMarketSymbol(marketRaw);
     const sideRaw = pickString(raw, ["side"]);
     const side = sideRaw.toUpperCase() === "SELL" ? "sell" : "buy";
     const typeRaw = pickString(raw, ["type"]);
@@ -509,7 +606,7 @@ function mapParadexOrder(raw) {
 }
 function mapParadexTrade(raw) {
     const marketRaw = pickString(raw, ["market", "symbol"]);
-    const market = fromParadexMarket(marketRaw);
+    const market = fromParadexMarketSymbol(marketRaw);
     const sideRaw = pickString(raw, ["side"]);
     const side = sideRaw.toUpperCase() === "SELL" ? "sell" : "buy";
     const size = pickNumber(raw, ["size", "quantity", "qty"], 0);
@@ -522,7 +619,7 @@ function mapParadexTrade(raw) {
 }
 function mapParadexFunding(raw) {
     const marketRaw = pickString(raw, ["market", "symbol"]);
-    const market = fromParadexMarket(marketRaw);
+    const market = fromParadexMarketSymbol(marketRaw);
     const rate = pickNumber(raw, ["fundingRate", "funding_rate", "rate"], 0);
     const payment = pickNumber(raw, ["payment", "fundingPayment", "funding_payment"], 0);
     const time = toIsoTimestamp(pickValue(raw, ["time", "timestamp", "paid_at", "paidAt"]));
@@ -530,29 +627,14 @@ function mapParadexFunding(raw) {
     return { id, market, rate, payment, time };
 }
 app.get("/api/positions", async (req, reply) => {
-    if (paradexClient) {
-        try {
-            const raw = await paradexClient.getPositions();
-            const positions = raw
-                .map((pos) => mapParadexPosition(pos))
-                .sort((a, b) => b.openedAt.localeCompare(a.openedAt));
-            return { positions };
-        }
-        catch (error) {
-            console.error("Failed to fetch Paradex positions:", error);
-        }
-    }
-    const positions = seedPositions.map((pos) => {
-        const { pnl, pnlPercent } = computePnl(pos);
-        return { ...pos, pnl, pnlPercent };
-    });
+    const positions = await loadCurrentPositions();
     return { positions };
 });
 app.get("/api/orders", async (req, reply) => {
     const market = req.query.market;
     if (paradexClient) {
         try {
-            const raw = await paradexClient.getOpenOrders(market ? toParadexMarket(market) : undefined);
+            const raw = await paradexClient.getOpenOrders(market ? toParadexMarketSymbol(market) : undefined);
             const orders = raw.map((order) => mapParadexOrder(order));
             return { orders };
         }
@@ -568,7 +650,7 @@ app.get("/api/trades", async (req, reply) => {
     const market = query.market;
     if (paradexClient) {
         try {
-            const paradexMarket = toParadexMarket(market || "BTC-USD");
+            const paradexMarket = toParadexMarketSymbol(market || "BTC-USD");
             const tradesResponse = await paradexClient.getTrades(paradexMarket, PAGE_SIZE);
             const items = tradesResponse.trades.map((trade) => mapParadexTrade(trade));
             return { items, total: items.length };
@@ -587,7 +669,7 @@ app.get("/api/funding", async (req, reply) => {
     const market = query.market;
     if (paradexClient) {
         try {
-            const paradexMarket = market ? toParadexMarket(market) : undefined;
+            const paradexMarket = market ? toParadexMarketSymbol(market) : undefined;
             const fundingResponse = await paradexClient.getFundingPayments(paradexMarket, PAGE_SIZE);
             const items = fundingResponse.payments.map((payment) => mapParadexFunding(payment));
             return { items, total: items.length };
@@ -651,12 +733,18 @@ app.get("/api/dex/markets", async () => {
             const client = dexClients.get(exchangeName);
             if (client instanceof ParadexClient) {
                 const markets = await client.getMarkets();
-                allMarkets.push({ exchange: exchangeName, markets });
+                allMarkets.push({
+                    exchange: exchangeName,
+                    markets: markets.map((market) => normalizeDexMarket(exchangeName, market)),
+                });
                 continue;
             }
             if (client instanceof ExtendedClient) {
                 const markets = await client.getMarkets();
-                allMarkets.push({ exchange: exchangeName, markets });
+                allMarkets.push({
+                    exchange: exchangeName,
+                    markets: markets.map((market) => normalizeDexMarket(exchangeName, market)),
+                });
                 continue;
             }
             allMarkets.push({

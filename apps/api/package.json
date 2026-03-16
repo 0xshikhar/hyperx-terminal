@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "set -a; [ -f ../../.env ] && . ../../.env; set +a; XDG_CACHE_HOME=./.cache prisma generate && node --import=tsx src/index.ts",
     "build": "set -a; [ -f ../../.env ] && . ../../.env; set +a; XDG_CACHE_HOME=./.cache prisma generate && tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
     "start": "node dist/index.js",
     "prisma:generate": "set -a; [ -f ../../.env ] && . ../../.env; set +a; XDG_CACHE_HOME=./.cache prisma generate",
     "prisma:migrate": "set -a; [ -f ../../.env ] && . ../../.env; set +a; XDG_CACHE_HOME=./.cache prisma migrate dev",

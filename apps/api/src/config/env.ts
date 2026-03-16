@@ -20,9 +20,11 @@ if (envPath) {
 const envSchema = z.object({
   NODE_ENV: z.string().optional(),
   PORT: z.string().optional(),
+  CORS_ORIGIN: z.string().optional(),
   DATABASE_URL: z.string().min(1),
   UPSTASH_REDIS_REST_URL: z.string().optional(),
   UPSTASH_REDIS_REST_TOKEN: z.string().optional(),
+  STARKNET_RPC_URL: z.string().optional(),
   // JWT Auth - optional for dev, but should be set in production
   JWT_SECRET: z.string().optional().default("dev-jwt-secret-change-in-production"),
   JWT_EXPIRES_IN: z.string().default("7d"),

@@ -4,20 +4,26 @@
  * Handles Starknet wallet authentication using nonces and JWT tokens
  */
 
-import { randomBytes, createHash } from "crypto";
-import type { FastifyRequest, FastifyReply } from "fastify";
-import { hash, ec, shortString, constants } from "starknet";
+import { randomBytes } from "crypto";
+import { RpcProvider, type Signature, type TypedData } from "starknet";
 import { prisma } from "../db/client.js";
 import { env } from "../config/env.js";
 
-// In-memory nonce store (use Redis in production)
-const nonceStore = new Map<string, { nonce: string; expiresAt: number }>();
-
 const NONCE_EXPIRY_MS = 5 * 60 * 1000; // 5 minutes
+
+const DEFAULT_STARKNET_RPC_URL =
+  env.NODE_ENV === "production"
+    ? "https://starknet-mainnet.public.blastapi.io/rpc/v0_7"
+    : "https://starknet-sepolia.public.blastapi.io/rpc/v0_7";
+
+const rpcProvider = new RpcProvider({
+  nodeUrl: env.STARKNET_RPC_URL ?? DEFAULT_STARKNET_RPC_URL,
+});
 
 export interface JWTPayload {
   userId: string;
   walletAddress: string;
+  tokenVersion: number;
   iat: number;
   exp: number;
 }
@@ -26,12 +32,13 @@ export interface AuthRequest {
   walletAddress: string;
   signature: string[]; // Starknet signature format [r, s]
   message: string;
+  chainId: string;
 }
 
 /**
  * Generate a cryptographically secure nonce for wallet authentication
  */
-export function generateNonce(walletAddress: string): { nonce: string; message: string } {
+export async function generateNonce(walletAddress: string): Promise<{ nonce: string; message: string }> {
   // Use a felt-friendly nonce size (<= 31 bytes) so it can be signed in typed data.
   const nonce = randomBytes(31).toString("hex");
   const timestamp = Date.now();
@@ -39,10 +46,18 @@ export function generateNonce(walletAddress: string): { nonce: string; message: 
   // Create a structured message following Starknet standards
   const message = `Sign this message to authenticate with HyperX Terminal\n\nWallet: ${walletAddress}\nNonce: ${nonce}\nTimestamp: ${timestamp}`;
   
-  // Store nonce with expiry
-  nonceStore.set(walletAddress.toLowerCase(), {
-    nonce,
-    expiresAt: Date.now() + NONCE_EXPIRY_MS,
+  // Store nonce in the database so it can be consumed across instances.
+  await prisma.authNonce.upsert({
+    where: { walletAddress: walletAddress.toLowerCase() },
+    update: {
+      nonce,
+      expiresAt: new Date(Date.now() + NONCE_EXPIRY_MS),
+    },
+    create: {
+      walletAddress: walletAddress.toLowerCase(),
+      nonce,
+      expiresAt: new Date(Date.now() + NONCE_EXPIRY_MS),
+    },
   });
   
   return { nonce, message };
@@ -51,20 +66,18 @@ export function generateNonce(walletAddress: string): { nonce: string; message: 
 /**
  * Verify that a nonce exists and hasn't expired
  */
-export function verifyNonce(walletAddress: string, expectedNonce: string): boolean {
+export async function verifyNonce(walletAddress: string, expectedNonce: string): Promise<boolean> {
   const key = walletAddress.toLowerCase();
-  const stored = nonceStore.get(key);
-  
-  if (!stored) return false;
-  if (stored.expiresAt < Date.now()) {
-    nonceStore.delete(key);
-    return false;
-  }
-  if (stored.nonce !== expectedNonce) return false;
-  
-  // Clean up after successful verification
-  nonceStore.delete(key);
-  return true;
+
+  const consumed = await prisma.authNonce.deleteMany({
+    where: {
+      walletAddress: key,
+      nonce: expectedNonce,
+      expiresAt: { gte: new Date() },
+    },
+  });
+
+  return consumed.count > 0;
 }
 
 /**
@@ -75,49 +88,53 @@ export function extractNonceFromMessage(message: string): string | null {
   return match ? match[1] : null;
 }
 
-/**
- * Compute Starknet message hash for signature verification
- * Following Starknet's standard message encoding
- */
-function computeMessageHash(message: string): string {
-  // Encode the message
-  const messageBytes = new TextEncoder().encode(message);
-  
-  // Compute hash using Starknet's pedersen hash
-  // Split message into felts if needed
-  const messageFelt = hash.computeHashOnElements([
-    BigInt("0x" + createHash("sha256").update(messageBytes).digest("hex").slice(0, 62)),
-  ]);
-  
-  return messageFelt;
+function extractTimestampFromMessage(message: string): number | null {
+  const match = message.match(/Timestamp: (\d+)/);
+  return match ? Number(match[1]) : null;
 }
 
-/**
- * Extract public key from wallet address
- * Note: In Starknet, the address is derived from the public key
- */
-async function getPublicKeyFromAddress(walletAddress: string): Promise<string | null> {
-  try {
-    // For Argent/Braavos wallets, the address IS the public key in many cases
-    // In production, you might need to query the wallet contract
-    // For now, we'll use the address as the public key
-    return walletAddress;
-  } catch (error) {
-    console.error("Failed to get public key:", error);
-    return null;
-  }
+function buildAuthTypedData(
+  walletAddress: string,
+  nonce: string,
+  timestamp: number,
+  chainId: string
+): TypedData {
+  return {
+    types: {
+      StarkNetDomain: [
+        { name: "name", type: "felt" },
+        { name: "version", type: "felt" },
+        { name: "chainId", type: "felt" },
+      ],
+      Auth: [
+        { name: "wallet", type: "felt" },
+        { name: "nonce", type: "felt" },
+        { name: "timestamp", type: "felt" },
+      ],
+    },
+    primaryType: "Auth",
+    domain: {
+      name: "HyperX",
+      version: "1",
+      chainId,
+    },
+    message: {
+      wallet: walletAddress,
+      nonce: `0x${nonce}`,
+      timestamp: String(timestamp),
+    },
+  } as TypedData;
 }
 
 /**
  * Verify Starknet signature using starknet.js
- * 
- * Starknet signatures are ECDSA signatures over the STARK curve
- * Format: [r, s] where r and s are big integers as hex strings
  */
 export async function verifyStarknetSignature(
-  message: string,
   signature: string[],
-  walletAddress: string
+  walletAddress: string,
+  nonce: string,
+  timestamp: number,
+  chainId: string
 ): Promise<boolean> {
   try {
     // Validate signature format
@@ -135,53 +152,13 @@ export async function verifyStarknetSignature(
       return false;
     }
 
-    // Convert to BigInt
-    let rBigInt: bigint;
-    let sBigInt: bigint;
+    const typedData = buildAuthTypedData(walletAddress, nonce, timestamp, chainId);
 
     try {
-      rBigInt = BigInt(r);
-      sBigInt = BigInt(s);
-    } catch (error) {
-      console.error("Invalid signature format: r or s is not a valid bigint");
-      return false;
-    }
-
-    // Validate signature values are within valid range
-    const starkCurveOrder = BigInt("3618502788666131213697322783095070105623107215331596699973092056135872020481");
-    if (rBigInt <= 0n || rBigInt >= starkCurveOrder) {
-      console.error("Invalid signature: r is out of range");
-      return false;
-    }
-    if (sBigInt <= 0n || sBigInt >= starkCurveOrder) {
-      console.error("Invalid signature: s is out of range");
-      return false;
-    }
-
-    // Compute message hash
-    const messageHash = computeMessageHash(message);
-
-    // Get public key from address
-    const publicKey = await getPublicKeyFromAddress(walletAddress);
-    if (!publicKey) {
-      console.error("Failed to get public key from address");
-      return false;
-    }
-
-    // Verify using starknet.js ec module
-    // The ec.verify function checks if the signature is valid for the given public key and hash
-    try {
-      const publicKeyBigInt = BigInt(publicKey);
-      const messageHashBigInt = BigInt(messageHash);
-
-      // Use starknet.js ec.starkCurve.verify for ECDSA verification
-      // Convert signature to hex format
-      const signatureHex = `0x${rBigInt.toString(16).padStart(64, "0")}${sBigInt.toString(16).padStart(64, "0")}`;
-      
-      const isValid = ec.starkCurve.verify(
-        messageHashBigInt.toString(),
-        signatureHex,
-        publicKeyBigInt.toString()
+      const isValid = await rpcProvider.verifyMessageInStarknet(
+        typedData,
+        signature as Signature,
+        walletAddress
       );
 
       if (isValid) {
@@ -207,8 +184,9 @@ export async function verifyStarknetSignature(
 export async function authenticateUser(
   walletAddress: string,
   signature: string[],
-  message: string
-): Promise<{ userId: string; walletAddress: string } | null> {
+  message: string,
+  chainId: string
+): Promise<{ userId: string; walletAddress: string; tokenVersion: number } | null> {
   // Validate wallet address format
   if (!walletAddress || !walletAddress.startsWith("0x")) {
     console.error("Invalid wallet address format");
@@ -222,13 +200,19 @@ export async function authenticateUser(
     return null;
   }
 
-  if (!verifyNonce(walletAddress, nonce)) {
+  const timestamp = extractTimestampFromMessage(message);
+  if (!timestamp) {
+    console.error("No timestamp found in message");
+    return null;
+  }
+
+  if (!(await verifyNonce(walletAddress, nonce))) {
     console.error("Nonce verification failed");
     return null;
   }
   
   // Verify signature (strict in production by default)
-  const isValid = await verifyStarknetSignature(message, signature, walletAddress);
+  const isValid = await verifyStarknetSignature(signature, walletAddress, nonce, timestamp, chainId);
   const isStrict = env.AUTH_STRICT === "true" || env.NODE_ENV === "production";
   if (!isValid) {
     if (isStrict) {
@@ -250,22 +234,6 @@ export async function authenticateUser(
   return {
     userId: user.id,
     walletAddress: user.walletAddress,
+    tokenVersion: user.tokenVersion,
   };
 }
-
-/**
- * Clean up expired nonces periodically
- */
-export function startNonceCleanup(): void {
-  setInterval(() => {
-    const now = Date.now();
-    for (const [key, value] of nonceStore.entries()) {
-      if (value.expiresAt < now) {
-        nonceStore.delete(key);
-      }
-    }
-  }, 60 * 1000); // Run every minute
-}
-
-// Start cleanup on module load
-startNonceCleanup();
