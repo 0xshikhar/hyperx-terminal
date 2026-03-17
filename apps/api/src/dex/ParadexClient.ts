@@ -35,8 +35,6 @@ type ParadexResults<T> = {
   prev?: string;
 };
 
-type ParadexAccountInfo = Record<string, unknown>;
-
 export class ParadexClient {
   private baseUrl: string;
   private starknetAddress?: string;
