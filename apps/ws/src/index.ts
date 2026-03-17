@@ -6,7 +6,7 @@ import type { ParadexNetwork } from "@hyperx/types/common";
 import { getSubscriptionManager } from "./SubscriptionManager.js";
 import { getMessageDispatcher } from "./MessageDispatcher.js";
 import { authenticateConnection, requiresAuth, validateAccountChannel } from "./auth.js";
-import { initRedisPubSub, onPubSubMessage, isPubSubEnabled, startRedisSubscriber } from "./pubsub";
+import { initRedisPubSub, onPubSubMessage, isPubSubEnabled, startRedisSubscriber } from "./pubsub.js";
 import { initParadexWsBridge } from "./paradexWs.js";
 
 const PORT = Number(process.env.PORT ?? 3002);
