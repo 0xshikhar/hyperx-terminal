@@ -162,9 +162,9 @@ export async function verifyStarknetSignature(
       );
 
       if (isValid) {
-        console.log(`Signature verified successfully for wallet: ${walletAddress}`);
+        console.log(`Signature verified successfully for wallet: ${walletAddress.slice(0, 6)}…`);
       } else {
-        console.error(`Signature verification failed for wallet: ${walletAddress}`);
+        console.error(`Signature verification failed for wallet: ${walletAddress.slice(0, 6)}…`);
       }
 
       return isValid;

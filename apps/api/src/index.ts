@@ -394,7 +394,7 @@ app.get("/api/alerts", async (req, reply) => {
   });
 
   return {
-    alerts: alerts.map((alert: any) => ({
+    alerts: alerts.map((alert) => ({
       id: alert.id,
       market: alert.market,
       condition: alert.condition,
@@ -483,7 +483,7 @@ app.get("/api/notifications", async (req, reply) => {
   });
 
   return {
-    notifications: notifications.map((n: any) => ({
+    notifications: notifications.map((n) => ({
       id: n.id,
       title: n.title,
       message: n.message,
@@ -889,7 +889,6 @@ app.get("/api/orders", async (req, _reply) => {
 
 app.get("/api/trades", async (req, _reply) => {
   const query = req.query as { page?: string; market?: string };
-  const _page = Number(query.page) || 1;
   const market = query.market;
   const network = getParadexNetwork(req);
   const client = getParadexClient(network);
@@ -914,8 +913,7 @@ app.get("/api/trades", async (req, _reply) => {
 });
 
 app.get("/api/funding", async (req, _reply) => {
-  const query = req.query as { page?: string; market?: string };
-  const _page = Number(query.page) || 1;
+  const query = req.query as { market?: string };
   const market = query.market;
   const network = getParadexNetwork(req);
   const client = getParadexClient(network);
