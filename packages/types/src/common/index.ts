@@ -22,7 +22,15 @@ export type TradeExchange = "EXTENDED" | "PARADEX" | "STARKZAP";
 export type MarketStatus = "active" | "paused" | "closed";
 export type CandleInterval = "1m" | "5m" | "15m" | "1h" | "4h" | "1d" | "1w";
 
-// DEX related
+export const CANDLE_INTERVAL_SECONDS: Record<CandleInterval, number> = {
+  "1m": 60,
+  "5m": 300,
+  "15m": 900,
+  "1h": 3600,
+  "4h": 14400,
+  "1d": 86400,
+  "1w": 604800,
+};
 export type SupportedNetwork = "mainnet" | "sepolia";
 export type ParadexNetwork = "testnet" | "mainnet";
 export type DEXOrderStatus = "pending" | "open" | "filled" | "partial" | "canceled" | "failed";

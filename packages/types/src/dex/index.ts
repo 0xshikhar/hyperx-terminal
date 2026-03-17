@@ -182,6 +182,17 @@ export interface ParadexBalance {
   total: string;
 }
 
+export interface ParadexAccount {
+  accountValue?: string;
+  buyingPower?: string;
+  marginUsed?: string;
+  availableMargin?: string;
+  unrealizedPnl?: string;
+  equity?: string;
+  status?: string;
+  [key: string]: unknown;
+}
+
 export interface ParadexCreateOrderRequest {
   market: string;
   side: "BUY" | "SELL";

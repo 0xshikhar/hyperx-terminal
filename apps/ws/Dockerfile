@@ -22,7 +22,16 @@ FROM node:22-alpine AS production
 
 WORKDIR /app
 
-COPY --from=builder /app /app
+RUN npm install -g pnpm
+
+COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
+COPY apps/ws/package.json ./apps/ws/
+COPY packages/types/package.json ./packages/types/
+
+RUN pnpm install --frozen-lockfile --prod
+
+COPY --from=builder /app/apps/ws/dist ./apps/ws/dist
+COPY --from=builder /app/packages/types/dist ./packages/types/dist
 
 EXPOSE 3002
 

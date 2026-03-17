@@ -13,6 +13,7 @@ import type {
   ParadexTrade,
   ParadexPosition,
   ParadexBalance,
+  ParadexAccount,
   ParadexCreateOrderRequest,
 } from "@hyperx/types/dex";
 
@@ -613,7 +614,7 @@ export class ParadexClient {
 
   // Account APIs
 
-  async getAccount(): Promise<ParadexAccountInfo> {
+  async getAccount(): Promise<ParadexAccount> {
     if (!this.starknetAddress) {
       throw new Error("API credentials required");
     }
