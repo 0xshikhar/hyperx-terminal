@@ -117,7 +117,7 @@ export function mockWebSocket(): MockWebSocketInstance {
 export class MockWebSocketServer {
   private clients: MockWebSocketInstance[] = [];
   
-  constructor(_url = "wss://test.example.com") {}
+  constructor() {}
   
   connect(): MockWebSocketInstance {
     const client = mockWebSocket();
