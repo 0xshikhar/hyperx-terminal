@@ -1,5 +1,5 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import { redis } from "../cache/redisClient";
+import { redis } from "../cache/redisClient.js";
 
 type RateLimitOptions = {
   maxPerMinute: number;

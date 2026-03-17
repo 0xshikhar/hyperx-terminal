@@ -6,9 +6,9 @@ import jwt from "@fastify/jwt";
 import cookie from "@fastify/cookie";
 import { AlertCondition } from "@prisma/client";
 import type { MetricPayload } from "@hyperx/types/api";
-import { env } from "./config/env";
-import { prisma } from "./db/client";
-import { registerRateLimit } from "./middleware/rateLimit";
+import { env } from "./config/env.js";
+import { prisma } from "./db/client.js";
+import { registerRateLimit } from "./middleware/rateLimit.js";
 import { requireAuth, type JWTPayload } from "./middleware/auth.js";
 import { authRoutes } from "./routes/auth.js";
 import { z } from "zod";
@@ -21,10 +21,12 @@ import {
   ParadexClient,
 } from "./dex/index.js";
 import type { RouteRequest } from "@hyperx/types/dex";
+import type { ParadexAccount } from "@hyperx/types/dex";
 import {
   fromParadexMarketSymbol,
   normalizeMarketSymbol,
   toParadexMarketSymbol,
+  CANDLE_INTERVAL_SECONDS,
 } from "@hyperx/types/common";
 import type { ParadexNetwork } from "@hyperx/types/common";
 
@@ -139,15 +141,6 @@ app.get("/api/markets", async (req) => {
 
 const candleIntervalSchema = z.enum(["1m", "5m", "15m", "1h", "4h", "1d"]);
 
-const candleIntervalSeconds: Record<z.infer<typeof candleIntervalSchema>, number> = {
-  "1m": 60,
-  "5m": 300,
-  "15m": 900,
-  "1h": 3600,
-  "4h": 14400,
-  "1d": 86400,
-};
-
 const marketCandlesQuerySchema = z.object({
   interval: candleIntervalSchema.optional(),
   limit: z.coerce.number().int().min(1).max(500).optional(),
@@ -169,7 +162,7 @@ app.get("/api/markets/:market/candles", async (req, reply) => {
   const interval = query.data.interval ?? "1m";
   const limit = query.data.limit ?? 120;
   const to = Math.floor(Date.now() / 1000);
-  const from = to - candleIntervalSeconds[interval] * limit;
+  const from = to - CANDLE_INTERVAL_SECONDS[interval] * limit;
 
   const network = getParadexNetwork(req);
   const candleClient = getParadexClient(network) ?? getParadexMarketClient(network);
@@ -299,7 +292,35 @@ app.get("/api/me", async (req, reply) => {
   };
 });
 
-function deriveAccountSummary(positions: Array<{ entryPrice: number; size: number; margin: number; pnl: number }>) {
+function extractAccountSummary(
+  account: ParadexAccount | null,
+  positions: Array<{ entryPrice: number; size: number; margin: number; pnl: number }>
+) {
+  if (account) {
+    const parseNum = (v: unknown): number => {
+      if (typeof v === "number") return v;
+      if (typeof v === "string") {
+        const n = Number(v);
+        return Number.isFinite(n) ? n : 0;
+      }
+      return 0;
+    };
+
+    const accountValue = parseNum(account.accountValue ?? account.account_value ?? account.equity);
+    const marginUsed = parseNum(account.marginUsed ?? account.margin_used ?? (account.accountValue != null ? undefined : positions.reduce((t, p) => t + p.margin, 0)));
+    const unrealizedPnl = parseNum(account.unrealizedPnl ?? account.unrealized_pnl ?? account.unrealizedPnlUsd);
+
+    if (accountValue > 0) {
+      const finalMarginUsed = marginUsed > 0 ? marginUsed : positions.reduce((t, p) => t + p.margin, 0);
+      return {
+        balance: accountValue,
+        available: Math.max(accountValue - finalMarginUsed, 0),
+        marginUsed: finalMarginUsed,
+        unrealizedPnl: unrealizedPnl || positions.reduce((t, p) => t + p.pnl, 0),
+      };
+    }
+  }
+
   const marginUsed = positions.reduce((total, position) => total + position.margin, 0);
   const unrealizedPnl = positions.reduce((total, position) => total + position.pnl, 0);
   const notionalExposure = positions.reduce((total, position) => total + position.entryPrice * position.size, 0);
@@ -321,8 +342,16 @@ app.get("/api/account", async (req, reply) => {
   const network = getParadexNetwork(req);
   const client = getParadexClient(network);
 
+  let account: ParadexAccount | null = null;
   let positions: Array<{ entryPrice: number; size: number; margin: number; pnl: number }> = [];
+
   if (client) {
+    try {
+      account = await client.getAccount();
+    } catch (error) {
+      console.error("Failed to fetch Paradex account:", error);
+    }
+
     try {
       const raw = await client.getPositions();
       positions = raw
@@ -334,7 +363,7 @@ app.get("/api/account", async (req, reply) => {
   }
 
   return {
-    account: deriveAccountSummary(positions),
+    account: extractAccountSummary(account, positions),
   };
 });
 
@@ -944,6 +973,7 @@ const dexClients = new Map<string, ExtendedClient | ParadexClient>();
 let extendedClient: ExtendedClient | null = null;
 const paradexClients = new Map<ParadexNetwork, ParadexClient | null>();
 const paradexMarketClients = new Map<ParadexNetwork, ParadexClient | null>();
+const paradexOnboardingStatus = new Map<ParadexNetwork, { checked: boolean; onboarded: boolean; error?: string }>();
 
 function resolveParadexUrl(network: ParadexNetwork): string {
   if (network === "mainnet") {
@@ -1007,6 +1037,30 @@ if (env.EXTENDED_API_KEY && env.EXTENDED_API_SECRET) {
   orderRouter.registerExchange("extended", extendedClient);
   dexClients.set("extended", extendedClient);
 }
+
+async function checkParadexOnboarding(network: ParadexNetwork) {
+  const client = paradexClients.get(network);
+  if (!client) {
+    paradexOnboardingStatus.set(network, { checked: true, onboarded: false, error: "no_client" });
+    return;
+  }
+  try {
+    const account = await client.getAccount();
+    const status = account.status?.toUpperCase();
+    if (status === "NOT_ONBOARDED") {
+      paradexOnboardingStatus.set(network, { checked: true, onboarded: false });
+      console.warn(`Paradex ${network} account is NOT_ONBOARDED — call /onboarding first`);
+    } else {
+      paradexOnboardingStatus.set(network, { checked: true, onboarded: true });
+    }
+  } catch (error) {
+    paradexOnboardingStatus.set(network, { checked: true, onboarded: false, error: (error as Error).message });
+    console.error(`Failed to check Paradex ${network} onboarding:`, (error as Error).message);
+  }
+}
+
+void checkParadexOnboarding("testnet");
+void checkParadexOnboarding("mainnet");
 
 // DEX Market routes
 app.get("/api/dex/markets", async (_req) => {
@@ -1095,6 +1149,13 @@ app.get("/api/dex/paradex/balances", async (req, reply) => {
     reply.status(500);
     return { error: "paradex_balances_failed", message: (error as Error).message };
   }
+});
+
+app.get("/api/dex/paradex/onboarding-status", async (req) => {
+  const network = getParadexNetwork(req);
+  const status = paradexOnboardingStatus.get(network);
+  if (!status) return { network, checked: false, onboarded: false };
+  return { network, ...status };
 });
 
 // DEX Order routes
