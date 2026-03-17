@@ -20,13 +20,13 @@ let activeTrackerCount = 0;
 export function useMemoryTracker(sampleSize = 30) {
   const [samples, setSamples] = useState<MemorySample[]>([]);
   const mountedRef = useRef(false);
-  const [mountedComponents, setMountedComponents] = useState(activeTrackerCount);
+  const [mountedComponents, setMountedComponents] = useState(() => activeTrackerCount);
 
   useEffect(() => {
     if (!mountedRef.current) {
       mountedRef.current = true;
       activeTrackerCount += 1;
-      setMountedComponents(activeTrackerCount);
+      setMountedComponents(activeTrackerCount); // eslint-disable-line react-hooks/set-state-in-effect
     }
 
     const collect = () => {
@@ -48,10 +48,10 @@ export function useMemoryTracker(sampleSize = 30) {
     return () => {
       if (mountedRef.current) {
         mountedRef.current = false;
-        activeTrackerCount = Math.max(0, activeTrackerCount - 1);
-        setMountedComponents(activeTrackerCount);
-      }
-      window.clearInterval(interval);
+      activeTrackerCount = Math.max(0, activeTrackerCount - 1);
+      setMountedComponents(activeTrackerCount);
+    }
+    window.clearInterval(interval);
     };
   }, [sampleSize]);
 

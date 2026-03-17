@@ -61,15 +61,15 @@ export function useCandleStream(market: string, interval: CandleInterval) {
     refetchOnWindowFocus: false,
   });
 
-  const historicalCandles = candleData?.candles ?? [];
+  const historicalCandles = useMemo(() => candleData?.candles ?? [], [candleData?.candles]);
 
   useEffect(() => {
-    setCandles([]);
+    setCandles([]); // eslint-disable-line react-hooks/set-state-in-effect
   }, [normalizedMarket, interval]);
 
   useEffect(() => {
     if (historicalCandles.length > 0) {
-      setCandles(historicalCandles);
+      setCandles(historicalCandles); // eslint-disable-line react-hooks/set-state-in-effect
     }
   }, [historicalCandles]);
 
@@ -98,7 +98,7 @@ export function useCandleStream(market: string, interval: CandleInterval) {
     };
   }, [normalizedMarket, interval, network]);
 
-  const series = candles.length > 0 ? candles : [];
+  const series = useMemo(() => candles.length > 0 ? candles : [], [candles]);
   const latest = useMemo(() => series[series.length - 1] ?? null, [series]);
 
   const feedHealth = getMarketFeedHealth(normalizedMarket);

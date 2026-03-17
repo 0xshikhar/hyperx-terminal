@@ -7,7 +7,9 @@ function getInitialNetwork(): ParadexNetwork {
   try {
     const stored = localStorage.getItem(STORAGE_KEY);
     if (stored === "testnet" || stored === "mainnet") return stored;
-  } catch {}
+  } catch {
+    // localStorage unavailable (SSR or private browsing)
+  }
   return "testnet";
 }
 
@@ -21,7 +23,7 @@ type NetworkState = {
 export const useNetworkStore = create<NetworkState>()((set) => ({
   network: getInitialNetwork(),
   setNetwork: (network) => {
-    try { localStorage.setItem(STORAGE_KEY, network); } catch {}
+    try { localStorage.setItem(STORAGE_KEY, network); } catch { /* localStorage unavailable */ }
     set({ network, isTestnet: network === "testnet", isMainnet: network === "mainnet" });
   },
   get isTestnet() { return false; },
