@@ -83,7 +83,7 @@ export function CardSkeleton({
           <Skeleton 
             key={i} 
             className="h-4"
-            style={{ width: `${Math.random() * 40 + 60}%` }}
+            style={{ width: `${((i * 137 + 50) % 40) + 60}%` }}
           />
         ))}
       </div>

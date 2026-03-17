@@ -33,10 +33,22 @@ export function Navbar() {
             <span className="text-foreground">X</span>
           </span>
           <span className="font-mono text-[10px] text-muted-foreground border border-border/50 px-1.5 py-0.5 rounded">
-            v2.0
+            v1.1
           </span>
         </Link>
-        
+        <div className="relative group flex items-center gap-1 font-mono text-[10px] text-primary/80 border border-primary/30 px-1.5 py-0.5 rounded bg-primary/5 cursor-help">
+          <span className="relative flex h-1.5 w-1.5">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+            <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500"></span>
+          </span>
+          <span>Railway Server</span>
+
+          <div className="absolute top-full left-0 mt-2 w-72 p-3 bg-card border border-border rounded-lg shadow-xl shadow-black/80 invisible opacity-0 group-hover:visible group-hover:opacity-100 transition-all duration-200 z-50 font-sans text-xs text-foreground font-normal leading-normal normal-case">
+            <div className="font-semibold text-primary mb-1">Backend Hosted on Railway</div>
+            We use a Railway server as our backend. If the server is in sleep/idle mode, it may take a few seconds to wake up and fetch data (such as charts) when you first load the landing page.
+          </div>
+        </div>
+
         {/* Navigation */}
         <nav className="hidden items-center gap-1 md:flex">
           {navItems.map((item) => {
@@ -63,7 +75,7 @@ export function Navbar() {
           })}
         </nav>
       </div>
-      
+
       {/* Right side actions */}
       <div className="flex items-center gap-3">
         <NetworkToggle />
@@ -81,15 +93,15 @@ export function Navbar() {
           />
           <span className="font-mono text-[10px] text-muted-foreground uppercase tracking-wider">
             {connectionState === "connected"
-                  ? "Feed Online"
+              ? "Feed Online"
               : connectionState === "connecting"
                 ? reconnectPlan
-                  ? `Retry ${Math.max(0, Math.ceil((reconnectPlan.reconnectAt - Date.now()) / 1000))}s`
-                      : "Feed Recovering"
-                    : "Feed Offline"}
+                  ? `Retry ${Math.max(0, Math.ceil((reconnectPlan.reconnectAt - Date.now()) / 1000))}s` // eslint-disable-line react-hooks/purity
+                  : "Feed Recovering"
+                : "Feed Offline"}
           </span>
         </div>
-        
+
         <NotificationBell />
         <AlertBell />
         <ConnectWalletButton />

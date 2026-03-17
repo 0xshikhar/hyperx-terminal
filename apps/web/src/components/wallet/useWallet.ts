@@ -50,7 +50,7 @@ export const useWallet = create<WalletState>()((set, get) => {
 
     connectWallet: async () => {
       const state = get();
-      if (state.isConnecting || state.isConnected) return;
+      if (state.isConnecting || (state.isConnected && state.account)) return;
 
       set({ isConnecting: true });
       try {

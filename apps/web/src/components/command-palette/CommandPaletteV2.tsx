@@ -68,23 +68,22 @@ const scoreCommand = (command: CommandItem, terms: string[]) => {
 export function CommandPaletteV2({ open, onOpenChange }: CommandPaletteV2Props) {
   const navigate = useNavigate();
   const [search, setSearch] = useState("");
-  const [recentIds, setRecentIds] = useState<string[]>([]);
+  const [recentIds, setRecentIds] = useState<string[]>(() => {
+    try {
+      const raw = localStorage.getItem(RECENT_KEY);
+      if (!raw) return [];
+      const parsed = JSON.parse(raw) as string[];
+      return parsed.slice(0, RECENT_LIMIT);
+    } catch {
+      localStorage.removeItem(RECENT_KEY);
+      return [];
+    }
+  });
   const { theme, toggleTheme } = useTheme();
   const { isConnected, disconnectWallet } = useWallet();
   const activeMarket = useMarketStore((state) => state.activeMarket);
   const markets = useMarketStore((state) => state.markets);
   const setActiveMarket = useMarketStore((state) => state.setActiveMarket);
-
-  useEffect(() => {
-    const raw = localStorage.getItem(RECENT_KEY);
-    if (!raw) return;
-    try {
-      const parsed = JSON.parse(raw) as string[];
-      setRecentIds(parsed.slice(0, RECENT_LIMIT));
-    } catch {
-      localStorage.removeItem(RECENT_KEY);
-    }
-  }, []);
 
   useEffect(() => {
     localStorage.setItem(RECENT_KEY, JSON.stringify(recentIds));

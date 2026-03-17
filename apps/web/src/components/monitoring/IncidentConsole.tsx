@@ -60,7 +60,7 @@ export function IncidentConsole({ compact = false }: IncidentConsoleProps) {
             : "Offline",
       helper:
         connectionState === "connecting" && reconnectPlan
-          ? `Retry ${reconnectPlan.attempt} in ${Math.max(0, Math.ceil((reconnectPlan.reconnectAt - Date.now()) / 1000))}s`
+          ? `Retry ${reconnectPlan.attempt} in ${Math.max(0, Math.ceil((reconnectPlan.reconnectAt - Date.now()) / 1000))}s` // eslint-disable-line react-hooks/purity
           : reconnectCount > 0
             ? `${reconnectCount} reconnects this session`
             : "Stable session",
@@ -105,7 +105,7 @@ export function IncidentConsole({ compact = false }: IncidentConsoleProps) {
   if (connectionState === "connected" && lastPongAt) {
     cards[0] = {
       ...cards[0],
-      helper: `Last pong ${Math.max(0, Math.round((Date.now() - lastPongAt) / 1000))}s ago`,
+      helper: `Last pong ${Math.max(0, Math.round((Date.now() - lastPongAt) / 1000))}s ago`, // eslint-disable-line react-hooks/purity
     };
   }
 

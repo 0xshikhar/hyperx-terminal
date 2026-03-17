@@ -17,17 +17,16 @@ export function TradeJournal() {
   const [market, setMarket] = useState(positions[0]?.market ?? "BTC-USD");
   const [note, setNote] = useState("");
   const [tags, setTags] = useState("");
-  const [entries, setEntries] = useState<JournalEntry[]>([]);
-
-  useEffect(() => {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return;
+  const [entries, setEntries] = useState<JournalEntry[]>(() => {
     try {
-      setEntries(JSON.parse(raw) as JournalEntry[]);
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return [];
+      return JSON.parse(raw) as JournalEntry[];
     } catch {
       localStorage.removeItem(STORAGE_KEY);
+      return [];
     }
-  }, []);
+  });
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(entries));

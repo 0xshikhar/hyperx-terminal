@@ -1,3 +1,5 @@
+/* eslint-disable react-refresh/only-export-components */
+
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, CheckCircle, AlertCircle, Info, AlertTriangle } from "lucide-react";
@@ -93,7 +95,7 @@ export function ToastContainer({ position = "top-right" }: ToastContainerProps) 
   useEffect(() => {
     const listener = (newToasts: Toast[]) => setLocalToasts(newToasts);
     listeners.push(listener);
-    setLocalToasts([...toasts]);
+    setLocalToasts([...toasts]); // eslint-disable-line react-hooks/set-state-in-effect
     return () => {
       listeners = listeners.filter((l) => l !== listener);
     };

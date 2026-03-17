@@ -35,7 +35,6 @@ export function TradingChart({ interval }: TradingChartProps) {
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const lastTimeRef = useRef<UTCTimestamp | null>(null);
-  const [overlayVersion, setOverlayVersion] = useState(0);
   const [showNoData, setShowNoData] = useState(false);
   const {
     lines,
@@ -98,10 +97,18 @@ export function TradingChart({ interval }: TradingChartProps) {
     [candles, highs, lows]
   );
 
-  const drawLines = useMemo(() => {
-    if (candles.length === 0) return [];
+  const [drawLines, setDrawLines] = useState<Array<{ id: string; x1: number; y1: number; x2: number; y2: number; color: string }>>([]);
+  const [overlayTrigger, setOverlayTrigger] = useState(0);
+
+  useEffect(() => {
+    if (candles.length === 0) {
+      setDrawLines([]); // eslint-disable-line react-hooks/set-state-in-effect
+      return;
+    }
     const chart = chartRef.current;
     const series = seriesRef.current;
+    const containerHeight = containerRef.current?.clientHeight || 1;
+    const containerWidth = containerRef.current?.clientWidth || 1;
     const minPrice = Math.min(...lows);
     const maxPrice = Math.max(...highs);
     const firstTime = candles[0]?.time ?? 0;
@@ -109,27 +116,29 @@ export function TradingChart({ interval }: TradingChartProps) {
     const toY = (price: number) => {
       const y = series?.priceToCoordinate(price);
       if (typeof y === "number") {
-        return (y / (containerRef.current?.clientHeight || 1)) * 100;
+        return (y / containerHeight) * 100;
       }
       return ((maxPrice - price) / (maxPrice - minPrice || 1)) * 100;
     };
     const toX = (time: number) => {
       const x = chart?.timeScale().timeToCoordinate(time as UTCTimestamp);
       if (typeof x === "number") {
-        return (x / (containerRef.current?.clientWidth || 1)) * 100;
+        return (x / containerWidth) * 100;
       }
       return ((time - firstTime) / (lastTime - firstTime || 1)) * 100;
     };
 
-    return lines.map((line: DrawingLine) => ({
-      id: line.id,
-      x1: toX(line.startTime),
-      y1: toY(line.startPrice),
-      x2: toX(line.endTime ?? line.startTime),
-      y2: toY(line.type === "horizontal" ? line.startPrice : line.endPrice ?? line.startPrice),
-      color: line.color,
-    }));
-  }, [candles, highs, lines, lows, overlayVersion]);
+    setDrawLines(
+      lines.map((line: DrawingLine) => ({
+        id: line.id,
+        x1: toX(line.startTime),
+        y1: toY(line.startPrice),
+        x2: toX(line.endTime ?? line.startTime),
+        y2: toY(line.type === "horizontal" ? line.startPrice : line.endPrice ?? line.startPrice),
+        color: line.color,
+      }))
+    );
+  }, [candles, highs, lines, lows, overlayTrigger]);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -179,7 +188,7 @@ export function TradingChart({ interval }: TradingChartProps) {
       lastValueVisible: true,
     });
 
-    const notifyOverlay = () => setOverlayVersion((value) => value + 1);
+    const notifyOverlay = () => setOverlayTrigger((value) => value + 1);
     chart.timeScale().subscribeVisibleLogicalRangeChange(notifyOverlay);
 
     chartRef.current = chart;
@@ -209,12 +218,12 @@ export function TradingChart({ interval }: TradingChartProps) {
 
   useEffect(() => {
     lastTimeRef.current = null;
-    setShowNoData(false);
+    setShowNoData(false); // eslint-disable-line react-hooks/set-state-in-effect
   }, [activeMarket, interval]);
 
   useEffect(() => {
     if (candles.length > 0) {
-      setShowNoData(false);
+      setShowNoData(false); // eslint-disable-line react-hooks/set-state-in-effect
       return;
     }
     const timer = setTimeout(() => setShowNoData(true), 10_000);

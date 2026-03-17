@@ -26,12 +26,13 @@ function useFPSMonitor(): FPSData {
 
   // Refs to avoid re-renders during RAF loop
   const frameCountRef = useRef(0);
-  const lastTimeRef = useRef(performance.now());
+  const lastTimeRef = useRef(0);
   const droppedFramesRef = useRef(0);
   const rafIdRef = useRef<number | null>(null);
   const setMetrics = useRenderMetricsStore((state) => state.setMetrics);
 
   useEffect(() => {
+    lastTimeRef.current = performance.now();
     const updateFPS = () => {
       const now = performance.now();
       const delta = now - lastTimeRef.current;
@@ -178,13 +179,13 @@ function FPSSparkline({ fps }: { fps: number }) {
   const historyRef = useRef<number[]>([]);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  // Keep last 60 seconds of FPS data
-  if (historyRef.current.length > 60) {
-    historyRef.current.shift();
-  }
-  historyRef.current.push(fps);
-
   useEffect(() => {
+    // Keep last 60 seconds of FPS data
+    if (historyRef.current.length > 60) {
+      historyRef.current.shift();
+    }
+    historyRef.current.push(fps);
+
     const canvas = canvasRef.current;
     if (!canvas) return;
 

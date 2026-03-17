@@ -5,7 +5,7 @@
  * See docs/phase3/index.md for implementation details.
  */
 
-import { useState, useCallback } from "react";
+import { useState } from "react";
 import { CheckSquare, Square, X, Calculator } from "lucide-react";
 
 interface Position {
@@ -80,18 +80,15 @@ export function BatchOperations({
     clearSelection();
   };
 
-  const calculatePercentPrice = useCallback((pct: number, isSL: boolean) => {
-    // Calculate aggregate entry and current prices
+  const calculatePercentPrice = (pct: number, isSL: boolean) => {
     const totalSize = selectedPositions.reduce((s, p) => s + p.size, 0);
     const avgEntry = selectedPositions.reduce(
       (s, p) => s + p.entryPrice * p.size, 
       0
     ) / totalSize;
-    
-    // For longs: SL is below entry, TP is above
-    // For shorts: SL is above entry, TP is below
+
     const isLong = selectedPositions[0]?.side === "long";
-    
+
     if (isSL) {
       return isLong 
         ? avgEntry * (1 - pct / 100)
@@ -101,7 +98,7 @@ export function BatchOperations({
         ? avgEntry * (1 + pct / 100)
         : avgEntry * (1 - pct / 100);
     }
-  }, [selectedPositions]);
+  };
 
   return (
     <div className="rounded-lg border border-border bg-card p-4 space-y-4">

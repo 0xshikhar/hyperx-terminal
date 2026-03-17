@@ -162,9 +162,9 @@ export function StatusBar({ className, showDetails = true }: StatusBarProps) {
               </span>
               <span className="font-mono text-foreground">
                 {reconnectPlan
-                  ? `${Math.max(0, Math.ceil((reconnectPlan.reconnectAt - Date.now()) / 1000))}s`
+                  ? `${Math.max(0, Math.ceil((reconnectPlan.reconnectAt - Date.now()) / 1000))}s` // eslint-disable-line react-hooks/purity
                   : lastPongAt
-                    ? `${Math.max(0, Math.round((Date.now() - lastPongAt) / 1000))}s`
+                    ? `${Math.max(0, Math.round((Date.now() - lastPongAt) / 1000))}s` // eslint-disable-line react-hooks/purity
                     : "--"}
               </span>
             </div>

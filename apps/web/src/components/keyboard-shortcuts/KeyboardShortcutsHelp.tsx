@@ -169,7 +169,7 @@ export function KeyboardShortcutsHelp({ open, onClose }: KeyboardShortcutsHelpPr
               {/* Footer */}
               <div className="border-t border-border/50 px-6 py-3 flex items-center justify-between text-xs text-muted-foreground bg-secondary/30">
                 <span className="font-mono">Press <Key className="inline-flex">?</Key> to toggle this help</span>
-                <span className="font-mono">HyperX Terminal v2.0</span>
+                <span className="font-mono">HyperX Terminal v1.1</span>
               </div>
             </div>
           </motion.div>
