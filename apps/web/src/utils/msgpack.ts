@@ -106,24 +106,27 @@ export function decode(buffer: Uint8Array): unknown {
       case MSGPACK_TYPES.BOOL:
         return buffer[offset++] === 1;
         
-      case MSGPACK_TYPES.INT:
+      case MSGPACK_TYPES.INT: {
         const intVal = new DataView(buffer.buffer, buffer.byteOffset + offset, 4).getInt32(0, true);
         offset += 4;
         return intVal;
+      }
         
-      case MSGPACK_TYPES.FLOAT:
+      case MSGPACK_TYPES.FLOAT: {
         const floatVal = new DataView(buffer.buffer, buffer.byteOffset + offset, 8).getFloat64(0, true);
         offset += 8;
         return floatVal;
+      }
         
-      case MSGPACK_TYPES.STRING:
+      case MSGPACK_TYPES.STRING: {
         const strLen = new DataView(buffer.buffer, buffer.byteOffset + offset, 4).getUint32(0, true);
         offset += 4;
         const strBytes = buffer.slice(offset, offset + strLen);
         offset += strLen;
         return new TextDecoder().decode(strBytes);
+      }
         
-      case MSGPACK_TYPES.ARRAY:
+      case MSGPACK_TYPES.ARRAY: {
         const arrLen = new DataView(buffer.buffer, buffer.byteOffset + offset, 4).getUint32(0, true);
         offset += 4;
         const arr: unknown[] = [];
@@ -131,8 +134,9 @@ export function decode(buffer: Uint8Array): unknown {
           arr.push(decodeValue());
         }
         return arr;
+      }
         
-      case MSGPACK_TYPES.OBJECT:
+      case MSGPACK_TYPES.OBJECT: {
         const objLen = new DataView(buffer.buffer, buffer.byteOffset + offset, 4).getUint32(0, true);
         offset += 4;
         const obj: Record<string, unknown> = {};
@@ -142,6 +146,7 @@ export function decode(buffer: Uint8Array): unknown {
           obj[key] = value;
         }
         return obj;
+      }
         
       default:
         throw new Error(`Unknown msgpack type: ${type}`);
@@ -295,7 +300,6 @@ export function benchmark(data: unknown): { json: number; msgpack: number; ratio
   
   // Log sizes for debugging (will be tree-shaken in production if not used)
   if (import.meta.env.DEV) {
-    // eslint-disable-next-line no-console
     console.log(`JSON: ${jsonSize} bytes, Msgpack: ${mpSize} bytes, Ratio: ${(jsonSize / mpSize).toFixed(2)}x`);
   }
   
