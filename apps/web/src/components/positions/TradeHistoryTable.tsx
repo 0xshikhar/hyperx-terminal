@@ -23,7 +23,7 @@ const formatTime = (value: string) => new Date(value).toLocaleTimeString();
 export function TradeHistoryTable() {
   const [page, setPage] = useState(1);
   const network = useNetworkStore((s) => s.network);
-  const { data, isLoading } = useQuery<{ items: TradeHistoryDto[]; total: number }>({
+  const { data, isLoading, isError, refetch } = useQuery<{ items: TradeHistoryDto[]; total: number }>({
     queryKey: ["trade-history", page, network],
     queryFn: () => listTradeHistory(page),
     staleTime: 60_000,
@@ -38,6 +38,16 @@ export function TradeHistoryTable() {
     <div className="rounded-md border border-border bg-background">
       {isLoading ? (
         <div className="px-3 py-8 text-xs text-muted-foreground">Loading history…</div>
+      ) : isError ? (
+        <div className="flex flex-col items-center gap-2 px-3 py-8">
+          <p className="text-xs text-rose-400">Failed to load history</p>
+          <button
+            onClick={() => refetch()}
+            className="rounded border border-border px-3 py-1 text-xs text-muted-foreground hover:text-foreground"
+          >
+            Retry
+          </button>
+        </div>
       ) : items.length === 0 ? (
         <div className="px-3 py-8 text-xs text-muted-foreground">No trades yet.</div>
       ) : (

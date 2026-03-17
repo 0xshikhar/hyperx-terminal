@@ -36,6 +36,7 @@ export function TradingChart({ interval }: TradingChartProps) {
   const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const lastTimeRef = useRef<UTCTimestamp | null>(null);
   const [overlayVersion, setOverlayVersion] = useState(0);
+  const [showNoData, setShowNoData] = useState(false);
   const {
     lines,
     startDrawing,
@@ -208,7 +209,17 @@ export function TradingChart({ interval }: TradingChartProps) {
 
   useEffect(() => {
     lastTimeRef.current = null;
+    setShowNoData(false);
   }, [activeMarket, interval]);
+
+  useEffect(() => {
+    if (candles.length > 0) {
+      setShowNoData(false);
+      return;
+    }
+    const timer = setTimeout(() => setShowNoData(true), 10_000);
+    return () => clearTimeout(timer);
+  }, [candles.length, activeMarket, interval]);
 
   useEffect(() => {
     const series = seriesRef.current;
@@ -295,7 +306,7 @@ export function TradingChart({ interval }: TradingChartProps) {
 
       {candles.length === 0 && (
         <div className="absolute inset-0 flex items-center justify-center bg-[#091416]/75 text-xs text-[#7e8c91]">
-          Waiting for candle data...
+          {showNoData ? "No candle data available for this market." : "Waiting for candle data..."}
         </div>
       )}
 

@@ -23,7 +23,7 @@ const formatTime = (value: string) => new Date(value).toLocaleTimeString();
 export function FundingHistoryTable() {
   const [page, setPage] = useState(1);
   const network = useNetworkStore((s) => s.network);
-  const { data, isLoading } = useQuery<{ items: FundingHistoryDto[]; total: number }>({
+  const { data, isLoading, isError, refetch } = useQuery<{ items: FundingHistoryDto[]; total: number }>({
     queryKey: ["funding-history", page, network],
     queryFn: () => listFundingHistory(page),
     staleTime: 60_000,
@@ -38,6 +38,16 @@ export function FundingHistoryTable() {
     <div className="rounded-md border border-border bg-background">
       {isLoading ? (
         <div className="px-3 py-8 text-xs text-muted-foreground">Loading funding…</div>
+      ) : isError ? (
+        <div className="flex flex-col items-center gap-2 px-3 py-8">
+          <p className="text-xs text-rose-400">Failed to load history</p>
+          <button
+            onClick={() => refetch()}
+            className="rounded border border-border px-3 py-1 text-xs text-muted-foreground hover:text-foreground"
+          >
+            Retry
+          </button>
+        </div>
       ) : items.length === 0 ? (
         <div className="px-3 py-8 text-xs text-muted-foreground">No funding history yet.</div>
       ) : (

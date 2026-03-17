@@ -93,7 +93,11 @@ export function MarketSelector() {
       </div>
 
       <div className="mt-4 min-h-0 flex-1 space-y-2 overflow-auto pr-1">
-        {filteredMarkets.length === 0 ? (
+        {markets.length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-border/70 px-3 py-8 text-xs text-muted-foreground">
+            Loading markets…
+          </div>
+        ) : filteredMarkets.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-border/70 px-3 py-4 text-xs text-muted-foreground">
             No markets matched "{search}". Try `BTC`, `ETH`, or `STRK`.
           </div>
