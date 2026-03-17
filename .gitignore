@@ -19,3 +19,5 @@ apps/web/coverage
 apps/ws/node_modules
 apps/ws/dist
 apps/ws/.cache
+
+.vercel
