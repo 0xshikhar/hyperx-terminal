@@ -1,30 +1,20 @@
-import { Flame, TrendingUp } from "lucide-react";
+import { TrendingUp } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { getLeaderboard } from "@/services/apiClient/leaderboard.api";
-import { useWallet } from "@/components/wallet/useWallet";
 
 export function LeaderboardPage() {
-  const { address: connectedAddress } = useWallet();
-  const currentWallet = connectedAddress || "0x59045071c2216c948340eedfd23193f21d1c64fdbe6f51983fae9c34e12152";
-
   const { data, isLoading } = useQuery({
     queryKey: ["leaderboard"],
     queryFn: getLeaderboard,
-    refetchInterval: 10000, // Refresh every 10s for real-time feel
+    refetchInterval: 10000,
   });
 
-  const leadersCount = data?.leadersCount ?? 5;
-  const avgWinRate = data?.avgWinRate ?? "81.2%";
-  const bestPnL = data?.bestPnL ?? "$184.2K";
-  const performanceShape = data?.performanceShape ?? "+46.4%";
-  const executionStyle = data?.executionStyle ?? "Ultra Fast";
-  const leaderboardList = data?.leaderboard ?? [
-    { rank: 1, trader: currentWallet, pnl: 184242.8, winRate: 94, trades: 342, badge: "Creator & Principal Engineer" },
-    { rank: 2, trader: "0xA932Fa52C887F4b3Eeb078FB336ed7191baf42F4", pnl: 42112.4, winRate: 82, trades: 184 },
-    { rank: 3, trader: "0xB19A0f5ab28b5ea78a5887f1e022a4a0a35d51d9A0", pnl: 32190.1, winRate: 79, trades: 141 },
-    { rank: 4, trader: "0xC38D932193335f012d3fe3526b394fa3f5708bD9", pnl: 28840.6, winRate: 77, trades: 138 },
-    { rank: 5, trader: "0xD41B660cec4ed89ffc5ec683b5c4a0a35d51d1B6", pnl: 22590.2, winRate: 74, trades: 121 },
-  ];
+  const leaderboardList = data?.leaderboard ?? [];
+  const leadersCount = data?.leadersCount ?? 0;
+  const avgWinRate = data?.avgWinRate ?? "—";
+  const bestPnL = data?.bestPnL ?? "—";
+  const performanceShape = data?.performanceShape ?? "—";
+  const executionStyle = data?.executionStyle ?? "—";
 
   return (
     <div className="flex min-h-0 flex-col gap-4 px-4 py-4 md:px-5 lg:px-6">
@@ -38,7 +28,7 @@ export function LeaderboardPage() {
             </span>
           </div>
           <p className="mt-2 max-w-2xl text-sm text-[#7e8c91]">
-            Real-time rankings calculated directly from database records. Top-performing traders are ranked based on overall PnL, execution consistency, and win rates.
+            Rankings will appear here once trade history is recorded per user. There is no demo feed.
           </p>
         </div>
 
@@ -53,15 +43,15 @@ export function LeaderboardPage() {
         <div className="rounded-[18px] border border-[#213136] bg-[#091416]">
           <div className="flex items-center justify-between border-b border-[#152327] px-4 py-3">
             <h2 className="text-sm font-semibold text-[#dde5e7]">Rankings</h2>
-            <div className="flex items-center gap-2 text-xs text-[#7e8c91]">
-              <Flame className="h-4 w-4 text-[#53d8c8]" />
-              Live DB feed snapshot
-            </div>
           </div>
           <div className="divide-y divide-[#152327]">
             {isLoading ? (
               <div className="p-8 text-center text-xs font-mono text-[#7e8c91]">
-                Querying database statistics...
+                Loading leaderboard…
+              </div>
+            ) : leaderboardList.length === 0 ? (
+              <div className="p-8 text-center text-sm text-[#7e8c91]">
+                No ranked traders yet.
               </div>
             ) : (
               leaderboardList.map((row) => (
@@ -78,7 +68,7 @@ export function LeaderboardPage() {
                           : row.trader}
                       </span>
                       {row.badge && (
-                        <span className="inline-flex items-center gap-1 rounded bg-[#0b2428] border border-[#53d8c8]/40 px-2 py-0.5 text-[9px] font-mono font-semibold text-[#53d8c8] shadow-sm shadow-[#53d8c8]/20 animate-pulse-glow">
+                        <span className="inline-flex items-center gap-1 rounded bg-[#0b2428] border border-[#53d8c8]/40 px-2 py-0.5 text-[9px] font-mono font-semibold text-[#53d8c8]">
                           {row.badge}
                         </span>
                       )}
@@ -105,22 +95,20 @@ export function LeaderboardPage() {
           <SidePanel
             title="Performance Shape"
             value={performanceShape}
-            helper="Measuring risk-adjusted volatility ratios across all active markets."
+            helper="Risk-adjusted volatility once live trade records exist."
           />
           <SidePanel
             title="Execution Style"
             value={executionStyle}
-            helper="DEX smart contract latency profile of the leading algorithmic accounts."
+            helper="Filled from recorded trades, not a static demo string."
           />
           <div className="rounded-[18px] border border-[#213136] bg-[#091416] p-4">
             <div className="flex items-center gap-2 text-sm font-semibold text-[#dde5e7]">
               <TrendingUp className="h-4 w-4 text-[#53d8c8]" />
-              Architect Note
+              Status
             </div>
             <div className="mt-3 space-y-2 text-xs text-[#7e8c91] leading-relaxed">
-              <p>• Engineered with a Fastify REST layer + custom Prisma schema aggregates.</p>
-              <p>• Features real-time responsive updates using client-side query caching.</p>
-              <p>• Displays live proof-of-concept Starknet trading platform capabilities.</p>
+              <p>Leaderboard data is empty until per-user Paradex sessions and trade records are wired.</p>
             </div>
           </div>
         </div>
