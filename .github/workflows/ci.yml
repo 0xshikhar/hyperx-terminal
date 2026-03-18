@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main, develop]
+    branches: [main, master, develop]
   pull_request:
-    branches: [main, develop]
+    branches: [main, master, develop]
 
 jobs:
   # Lint and Type Check
@@ -31,6 +31,26 @@ jobs:
         
       - name: Type check
         run: pnpm typecheck
+
+  # Demo fixtures must not leak into production source
+  grep-demo-fakes:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fail if demo wallet / badge leak outside demoWallet.ts
+        run: |
+          set -euo pipefail
+          leaks=$(grep -R --include='*.ts' --include='*.tsx' -n "0x59045071" apps/web/src apps/api/src apps/ws/src || true)
+          leaks=$(printf "%s\n" "$leaks" | grep -v "apps/api/src/demoWallet.ts" | grep -v "^$" || true)
+          if [ -n "$leaks" ]; then
+            echo "Demo wallet address leaked outside apps/api/src/demoWallet.ts:"
+            echo "$leaks"
+            exit 1
+          fi
+          if grep -R --include='*.ts' --include='*.tsx' -n "Creator & Principal Engineer" apps/web/src apps/api/src apps/ws/src; then
+            echo "Demo leaderboard badge is still in production source"
+            exit 1
+          fi
 
   # Test Web Frontend
   test-web:
@@ -105,6 +125,23 @@ jobs:
         env:
           DATABASE_URL: postgresql://test:test@localhost:5432/test
           JWT_SECRET: test-secret
+
+  test-ws:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 10
+      - name: Install dependencies
+        run: pnpm install
+      - name: Test WS
+        run: pnpm test:ws
 
   # Build Check
   build:
