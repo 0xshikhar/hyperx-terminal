@@ -7,9 +7,12 @@ import cookie from "@fastify/cookie";
 import { AlertCondition } from "@prisma/client";
 import type { MetricPayload } from "@hyperx/types/api";
 import { env } from "./config/env.js";
+import { isTruthyFlag } from "./config/productionGuards.js";
 import { prisma } from "./db/client.js";
 import { registerRateLimit } from "./middleware/rateLimit.js";
 import { authRoutes } from "./routes/auth.js";
+import { DEMO_ACCOUNT, isDemoWallet } from "./demoWallet.js";
+import { canUseMasterParadexClient, demoTradesAllowed } from "./authz/paradexAccess.js";
 import { z } from "zod";
 import { createNotification, formatNotifAmount } from "./services/notifications.service.js";
 import {
@@ -245,7 +248,7 @@ async function getAuthedUser(req: FastifyRequest, reply: FastifyReply) {
     }
 
     await req.jwtVerify();
-    const payload = req.user as { userId: string } | undefined;
+    const payload = req.user as { userId: string; tokenVersion?: number } | undefined;
     if (!payload) {
       reply.status(401).send({ error: "Invalid or expired token" });
       return null;
@@ -256,8 +259,8 @@ async function getAuthedUser(req: FastifyRequest, reply: FastifyReply) {
       select: { tokenVersion: true, id: true, walletAddress: true, username: true, email: true, createdAt: true, preferences: true },
     });
 
-    if (!user) {
-      reply.status(401).send({ error: "User not found" });
+    if (!user || user.tokenVersion !== payload.tokenVersion) {
+      reply.status(401).send({ error: "Session expired" });
       return null;
     }
 
@@ -270,7 +273,7 @@ async function getAuthedUser(req: FastifyRequest, reply: FastifyReply) {
 
 app.get("/api/me", async (req, reply) => {
   const user = await getAuthedUser(req, reply);
-  if (!user) return { error: "missing_wallet_address" };
+  if (!user) return;
 
   return {
     user: {
@@ -334,19 +337,23 @@ function extractAccountSummary(
   };
 }
 
+const EMPTY_ACCOUNT = {
+  balance: 0,
+  available: 0,
+  marginUsed: 0,
+  unrealizedPnl: 0,
+};
+
 app.get("/api/account", async (req, reply) => {
   const user = await getAuthedUser(req, reply);
-  if (!user) return reply;
+  if (!user) return;
 
-  if (user.walletAddress.toLowerCase() === "0x59045071c2216c948340eedfd23193f21d1c64fdbe6f51983fae9c34e12152".toLowerCase()) {
-    return {
-      account: {
-        balance: 242108.50,
-        available: 192108.50,
-        marginUsed: 50000.00,
-        unrealizedPnl: 6007.85,
-      }
-    };
+  if (isTruthyFlag(env.DEMO_MODE) && isDemoWallet(user.walletAddress)) {
+    return { account: DEMO_ACCOUNT, demo: true };
+  }
+
+  if (!canUseMasterParadexClient(user.id, env)) {
+    return { account: EMPTY_ACCOUNT };
   }
 
   const network = getParadexNetwork(req);
@@ -377,73 +384,14 @@ app.get("/api/account", async (req, reply) => {
   };
 });
 
-app.get("/api/leaderboard", async (req, _reply) => {
-  let authedWallet: string | null = null;
-  try {
-    const token = extractToken(req);
-    if (token) {
-      await req.jwtVerify();
-      const payload = req.user as { userId: string } | undefined;
-      if (payload) {
-        const user = await prisma.user.findUnique({
-          where: { id: payload.userId },
-          select: { walletAddress: true },
-        });
-        if (user) {
-          authedWallet = user.walletAddress;
-        }
-      }
-    }
-  } catch {}
-
-  const targetWallet = authedWallet || "0x59045071c2216c948340eedfd23193f21d1c64fdbe6f51983fae9c34e12152";
-
-  const leaderboard = [
-    {
-      rank: 1,
-      trader: targetWallet,
-      pnl: 184242.80,
-      winRate: 94,
-      trades: 342,
-      badge: "Creator & Principal Engineer",
-    },
-    {
-      rank: 2,
-      trader: "0xA932Fa52C887F4b3Eeb078FB336ed7191baf42F4",
-      pnl: 42112.40,
-      winRate: 82,
-      trades: 184,
-    },
-    {
-      rank: 3,
-      trader: "0xB19A0f5ab28b5ea78a5887f1e022a4a0a35d51d9A0",
-      pnl: 32190.10,
-      winRate: 79,
-      trades: 141,
-    },
-    {
-      rank: 4,
-      trader: "0xC38D932193335f012d3fe3526b394fa3f5708bD9",
-      pnl: 28840.60,
-      winRate: 77,
-      trades: 138,
-    },
-    {
-      rank: 5,
-      trader: "0xD41B660cec4ed89ffc5ec683b5c4a0a35d51d1B6",
-      pnl: 22590.20,
-      winRate: 74,
-      trades: 121,
-    },
-  ];
-
+app.get("/api/leaderboard", async () => {
   return {
-    leaderboard,
-    leadersCount: leaderboard.length,
-    avgWinRate: "81.2%",
-    bestPnL: "$184.2K",
-    performanceShape: "+46.4%",
-    executionStyle: "Ultra Fast",
+    leaderboard: [],
+    leadersCount: 0,
+    avgWinRate: "—",
+    bestPnL: "—",
+    performanceShape: "—",
+    executionStyle: "—",
   };
 });
 
@@ -456,7 +404,7 @@ const preferencesSchema = z.object({
 
 app.put("/api/preferences", async (req, reply) => {
   const user = await getAuthedUser(req, reply);
-  if (!user) return { error: "missing_wallet_address" };
+  if (!user) return;
 
   const body = preferencesSchema.safeParse(req.body);
   if (!body.success) {
@@ -494,7 +442,7 @@ const alertCreateSchema = z.object({
 
 app.get("/api/alerts", async (req, reply) => {
   const user = await getAuthedUser(req, reply);
-  if (!user) return { error: "missing_wallet_address" };
+  if (!user) return;
 
   const alerts = await prisma.priceAlert.findMany({
     where: { userId: user.id },
@@ -517,7 +465,7 @@ app.get("/api/alerts", async (req, reply) => {
 
 app.post("/api/alerts", async (req, reply) => {
   const user = await getAuthedUser(req, reply);
-  if (!user) return { error: "missing_wallet_address" };
+  if (!user) return;
 
   const body = alertCreateSchema.safeParse(req.body);
   if (!body.success) {
@@ -558,7 +506,7 @@ app.post("/api/alerts", async (req, reply) => {
 
 app.delete("/api/alerts/:id", async (req, reply) => {
   const user = await getAuthedUser(req, reply);
-  if (!user) return { error: "missing_wallet_address" };
+  if (!user) return;
 
   const idSchema = z.object({ id: z.string().min(1) });
   const params = idSchema.safeParse(req.params);
@@ -583,7 +531,7 @@ const notificationCreateSchema = z.object({
 
 app.get("/api/notifications", async (req, reply) => {
   const user = await getAuthedUser(req, reply);
-  if (!user) return { error: "missing_wallet_address" };
+  if (!user) return;
 
   const notifications = await prisma.notification.findMany({
     where: { userId: user.id },
@@ -606,7 +554,7 @@ app.get("/api/notifications", async (req, reply) => {
 
 app.post("/api/notifications", async (req, reply) => {
   const user = await getAuthedUser(req, reply);
-  if (!user) return { error: "missing_wallet_address" };
+  if (!user) return;
 
   const body = notificationCreateSchema.safeParse(req.body);
   if (!body.success) {
@@ -639,7 +587,7 @@ app.post("/api/notifications", async (req, reply) => {
 
 app.post("/api/notifications/:id/read", async (req, reply) => {
   const user = await getAuthedUser(req, reply);
-  if (!user) return { error: "missing_wallet_address" };
+  if (!user) return;
 
   const idSchema = z.object({ id: z.string().min(1) });
   const params = idSchema.safeParse(req.params);
@@ -666,10 +614,18 @@ const orderSchema = z.object({
 });
 
 app.post("/api/orders", async (req, reply) => {
+  const user = await getAuthedUser(req, reply);
+  if (!user) return;
+
   const body = orderSchema.safeParse(req.body);
   if (!body.success) {
     reply.status(400);
     return { error: "invalid_order" };
+  }
+
+  if (!canUseMasterParadexClient(user.id, env)) {
+    reply.status(403);
+    return { error: "paradex_session_expired" };
   }
 
   const network = getParadexNetwork(req);
@@ -700,16 +656,13 @@ app.post("/api/orders", async (req, reply) => {
     });
     const id = (order as { id?: string }).id ?? `${body.data.market}-${Date.now()}`;
     try {
-      const user = await getAuthedUser(req, reply);
-      if (user) {
-        await createNotification({
-          userId: user.id,
-          title: "Order Placed",
-          message: `${body.data.side.toUpperCase()} ${formatNotifAmount(body.data.size)} ${body.data.market} @ ${body.data.price ? "$" + formatNotifAmount(body.data.price) : "Market"}`,
-          type: "order",
-          amount: body.data.size,
-        });
-      }
+      await createNotification({
+        userId: user.id,
+        title: "Order Placed",
+        message: `${body.data.side.toUpperCase()} ${formatNotifAmount(body.data.size)} ${body.data.market} @ ${body.data.price ? "$" + formatNotifAmount(body.data.price) : "Market"}`,
+        type: "order",
+        amount: body.data.size,
+      });
     } catch {
     }
     return { id };
@@ -720,6 +673,9 @@ app.post("/api/orders", async (req, reply) => {
 });
 
 app.delete("/api/orders/:id", async (req, reply) => {
+  const user = await getAuthedUser(req, reply);
+  if (!user) return;
+
   const idSchema = z.object({ id: z.string().min(1) });
   const params = idSchema.safeParse(req.params);
   if (!params.success) {
@@ -727,40 +683,54 @@ app.delete("/api/orders/:id", async (req, reply) => {
     return { error: "invalid_order_id" };
   }
 
+  if (!canUseMasterParadexClient(user.id, env)) {
+    reply.status(503);
+    return { error: "paradex_unavailable" };
+  }
+
   const network = getParadexNetwork(req);
   const client = getParadexClient(network);
 
-  if (client) {
-    try {
-      await client.cancelOrder(params.data.id);
-      return { success: true };
-    } catch (error) {
-      reply.status(500);
-      return { error: "cancel_failed", message: (error as Error).message };
-    }
+  if (!client) {
+    reply.status(503);
+    return { error: "paradex_unavailable" };
   }
 
-  return { success: true };
+  try {
+    await client.cancelOrder(params.data.id);
+    return { success: true };
+  } catch (error) {
+    reply.status(500);
+    return { error: "cancel_failed", message: (error as Error).message };
+  }
 });
 
 app.delete("/api/orders", async (req, reply) => {
+  const user = await getAuthedUser(req, reply);
+  if (!user) return;
+
+  if (!canUseMasterParadexClient(user.id, env)) {
+    reply.status(503);
+    return { error: "paradex_unavailable" };
+  }
+
   const market = (req.query as { market?: string }).market;
   const network = getParadexNetwork(req);
   const client = getParadexClient(network);
 
-  if (client) {
-    try {
-      const result = await client.cancelAllOrders(
-        market ? toParadexMarketSymbol(market) : undefined
-      );
-      return result;
-    } catch (error) {
-      reply.status(500);
-      return { error: "cancel_all_failed", message: (error as Error).message };
-    }
+  if (!client) {
+    reply.status(503);
+    return { error: "paradex_unavailable" };
   }
 
-  return { canceled: 0 };
+  try {
+    return await client.cancelAllOrders(
+      market ? toParadexMarketSymbol(market) : undefined
+    );
+  } catch (error) {
+    reply.status(500);
+    return { error: "cancel_all_failed", message: (error as Error).message };
+  }
 });
 
 const PAGE_SIZE = 20;
@@ -955,7 +925,14 @@ function mapParadexFunding(raw: Record<string, unknown>) {
   return { id, market, rate, payment, time };
 }
 
-app.get("/api/positions", async (req, _reply) => {
+app.get("/api/positions", async (req, reply) => {
+  const user = await getAuthedUser(req, reply);
+  if (!user) return;
+
+  if (!canUseMasterParadexClient(user.id, env)) {
+    return { positions: [] };
+  }
+
   const network = getParadexNetwork(req);
   const client = getParadexClient(network);
 
@@ -974,7 +951,14 @@ app.get("/api/positions", async (req, _reply) => {
   return { positions };
 });
 
-app.get("/api/orders", async (req, _reply) => {
+app.get("/api/orders", async (req, reply) => {
+  const user = await getAuthedUser(req, reply);
+  if (!user) return;
+
+  if (!canUseMasterParadexClient(user.id, env)) {
+    return { orders: [] };
+  }
+
   const market = (req.query as { market?: string }).market;
   const network = getParadexNetwork(req);
   const client = getParadexClient(network);
@@ -996,7 +980,14 @@ app.get("/api/orders", async (req, _reply) => {
   return { orders: [] };
 });
 
-app.get("/api/trades", async (req, _reply) => {
+app.get("/api/trades", async (req, reply) => {
+  const user = await getAuthedUser(req, reply);
+  if (!user) return;
+
+  if (!canUseMasterParadexClient(user.id, env)) {
+    return { items: [], total: 0 };
+  }
+
   const query = req.query as { page?: string; market?: string };
   const market = query.market;
   const network = getParadexNetwork(req);
@@ -1021,7 +1012,14 @@ app.get("/api/trades", async (req, _reply) => {
   return { items: [], total: 0 };
 });
 
-app.get("/api/funding", async (req, _reply) => {
+app.get("/api/funding", async (req, reply) => {
+  const user = await getAuthedUser(req, reply);
+  if (!user) return;
+
+  if (!canUseMasterParadexClient(user.id, env)) {
+    return { items: [], total: 0 };
+  }
+
   const query = req.query as { market?: string };
   const market = query.market;
   const network = getParadexNetwork(req);
@@ -1066,6 +1064,7 @@ const hasParadexAuth = Boolean(
   env.PARADEX_JWT_TOKEN ||
   (env.PARADEX_STARKNET_ADDRESS && env.PARADEX_STARKNET_PRIVATE_KEY)
 );
+const allowMasterParadexClients = demoTradesAllowed(env);
 
 const paradexNetworks: ParadexNetwork[] = ["testnet", "mainnet"];
 
@@ -1082,8 +1081,9 @@ for (const network of paradexNetworks) {
   });
   paradexMarketClients.set(network, marketClient);
 
-  // Authenticated client (only if credentials exist)
-  if (hasParadexAuth) {
+  // Authenticated master client is local-demo only. Money paths never call it
+  // unless canUseMasterParadexClient() is true (no ParadexSession table yet).
+  if (allowMasterParadexClients && hasParadexAuth) {
     const client = createParadexClient({
       name: `paradex-${network}`,
       baseUrl,
@@ -1198,6 +1198,13 @@ app.get("/api/dex/markets", async (_req) => {
 });
 
 app.get("/api/dex/paradex/account", async (req, reply) => {
+  const user = await getAuthedUser(req, reply);
+  if (!user) return;
+
+  if (!canUseMasterParadexClient(user.id, env)) {
+    return { account: null };
+  }
+
   const network = getParadexNetwork(req);
   const client = getParadexClient(network);
   if (!client) {
@@ -1215,6 +1222,13 @@ app.get("/api/dex/paradex/account", async (req, reply) => {
 });
 
 app.get("/api/dex/paradex/balances", async (req, reply) => {
+  const user = await getAuthedUser(req, reply);
+  if (!user) return;
+
+  if (!canUseMasterParadexClient(user.id, env)) {
+    return { balances: [] };
+  }
+
   const network = getParadexNetwork(req);
   const client = getParadexClient(network);
   if (!client) {
@@ -1231,7 +1245,15 @@ app.get("/api/dex/paradex/balances", async (req, reply) => {
   }
 });
 
-app.get("/api/dex/paradex/onboarding-status", async (req) => {
+app.get("/api/dex/paradex/onboarding-status", async (req, reply) => {
+  const user = await getAuthedUser(req, reply);
+  if (!user) return;
+
+  if (!canUseMasterParadexClient(user.id, env)) {
+    const network = getParadexNetwork(req);
+    return { network, checked: true, onboarded: false };
+  }
+
   const network = getParadexNetwork(req);
   const status = paradexOnboardingStatus.get(network);
   if (!status) return { network, checked: false, onboarded: false };
@@ -1250,12 +1272,17 @@ const dexOrderSchema = z.object({
 
 app.post("/api/dex/orders/route", async (req, reply) => {
   const user = await getAuthedUser(req, reply);
-  if (!user) return { error: "missing_wallet_address" };
+  if (!user) return;
 
   const body = dexOrderSchema.safeParse(req.body);
   if (!body.success) {
     reply.status(400);
     return { error: "invalid_order" };
+  }
+
+  if (!canUseMasterParadexClient(user.id, env)) {
+    reply.status(403);
+    return { error: "paradex_session_expired" };
   }
 
   try {
@@ -1282,4 +1309,8 @@ app.get("/api/dex/health", async () => {
   return { exchanges: health };
 });
 
-await app.listen({ port: PORT, host: "0.0.0.0" });
+export { app };
+
+if (process.env.VITEST !== "true" && process.env.NODE_ENV !== "test") {
+  await app.listen({ port: PORT, host: "0.0.0.0" });
+}

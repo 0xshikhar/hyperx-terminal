@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import dotenv from "dotenv";
 import { z } from "zod";
+import { enforceProductionGuards } from "./productionGuards.js";
 
 const envCandidates = [
   path.resolve(process.cwd(), ".env"),
@@ -30,6 +31,9 @@ const envSchema = z.object({
   JWT_EXPIRES_IN: z.string().default("7d"),
   COOKIE_SECRET: z.string().optional(),
   AUTH_STRICT: z.string().optional().default("false"),
+  DEMO_MODE: z.string().optional().default("false"),
+  DEMO_ALLOW_TRADES: z.string().optional().default("false"),
+  FF_ALLOW_MASTER_KEY: z.string().optional().default("false"),
   // Extended DEX
   EXTENDED_API_KEY: z.string().optional(),
   EXTENDED_API_SECRET: z.string().optional(),
@@ -49,10 +53,6 @@ const envSchema = z.object({
 
 const parsed = envSchema.parse(process.env);
 
-// Warn if using default JWT_SECRET in production
-if (parsed.JWT_SECRET === "dev-jwt-secret-change-in-production" && parsed.NODE_ENV === "production") {
-  console.error("⚠️  WARNING: Using default JWT_SECRET in production! Set JWT_SECRET environment variable.");
-  process.exit(1);
-}
+enforceProductionGuards(parsed);
 
 export const env = parsed;
