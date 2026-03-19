@@ -1,0 +1,19 @@
+name = "hyperx-bff"
+main = "src/index.ts"
+compatibility_date = "2026-09-01"
+compatibility_flags = ["nodejs_compat"]
+
+[durable_objects]
+bindings = [
+  { name = "CLIENT_HUB", class_name = "ClientHub" },
+  { name = "MARKET_ROOM", class_name = "MarketRoom" },
+  { name = "ACCOUNT_HUB", class_name = "AccountHub" }
+]
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["ClientHub", "MarketRoom", "AccountHub"]
+
+[vars]
+JWT_SECRET = "dev-jwt-secret-change-in-production"
+INGEST_HMAC_SECRET = "dev-jwt-secret-change-in-production"
