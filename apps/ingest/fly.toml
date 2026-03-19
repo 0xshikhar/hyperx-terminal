@@ -1,0 +1,17 @@
+app = "hyperx-ingest"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  FLUSH_INTERVAL_MS = "50"
+  ENABLE_MAINNET_INGEST = "false"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"
+  cpu_kind = "shared"
+  cpus = 1
+  auto_stop_machines = false
+  min_machines_running = 1
