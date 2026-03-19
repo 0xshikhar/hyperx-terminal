@@ -6,4 +6,5 @@
 
 export { ExtendedClient, createExtendedClient } from "./ExtendedClient.js";
 export { ParadexClient, createParadexClient } from "./ParadexClient.js";
+export { ParadexUserClient } from "./ParadexUserClient.js";
 export { OrderRouter, getOrderRouter, resetOrderRouter } from "./OrderRouter.js";
