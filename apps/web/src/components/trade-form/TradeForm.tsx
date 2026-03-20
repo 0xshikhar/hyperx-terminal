@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useMarketStore } from "@/store/marketStore";
 import { cn } from "@/lib/utils";
 import { placeOrder } from "@/services/apiClient/orders.api";
+import type { PlaceOrderPayload } from "@/services/apiClient/orders.api";
 import { getAccountSummary } from "@/services/apiClient/account.api";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -11,6 +12,9 @@ import { addTerminalActionListener } from "@/lib/terminalActions";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { useOrdersStore } from "@/store/ordersStore";
 import { useWallet } from "@/components/wallet/useWallet";
+import { useNetworkStore } from "@/store/networkStore";
+import { getParadexSigner } from "@/services/paradex/l2Signer";
+import { toParadexMarketSymbol } from "@hyperx/types/common";
 import { WalletConnectDialog } from "@/components/wallet/WalletConnectDialog";
 import { useQuery } from "@tanstack/react-query";
 
@@ -92,9 +96,11 @@ export function TradeForm({ onSubmit }: TradeFormProps) {
     lastPrice: market?.lastPrice,
   });
 
+  const walletAccount = useWallet((state) => state.account);
+
   const submit = async () => {
     if (isSubmitting || !isValid) return;
-    const order: TradeOrder = {
+    const order: PlaceOrderPayload = {
       market: activeMarket,
       side,
       type: orderType,
@@ -113,14 +119,47 @@ export function TradeForm({ onSubmit }: TradeFormProps) {
         acknowledgeOrder(optimisticOrderId, optimisticOrderId);
         toast.success("Order submitted");
       } else {
+        const signer = getParadexSigner(walletAccount);
+        if (signer) {
+          try {
+            const network = useNetworkStore.getState().network;
+            const chainId =
+              network === "mainnet"
+                ? "PRIVATE_SN_PARADEX_MAINNET"
+                : "PRIVATE_SN_PARADEX_SEPOLIA";
+            const signed = await signer.signOrder({
+              market: toParadexMarketSymbol(activeMarket),
+              side: side === "buy" ? "BUY" : "SELL",
+              orderType:
+                orderType === "limit"
+                  ? "LIMIT"
+                  : orderType === "stop"
+                    ? "STOP_MARKET"
+                    : "MARKET",
+              size,
+              price: orderType === "limit" ? price : undefined,
+              chainId,
+            });
+            order.signature = signed.signature;
+            order.signatureTimestamp = signed.signatureTimestamp;
+          } catch (e) {
+            console.warn("Client signing skipped or failed:", e);
+          }
+        }
         const placed = await placeOrder(order);
         acknowledgeOrder(optimisticOrderId, placed.id);
         toast.success(`Order submitted (${placed.id})`);
       }
       resetForm();
-    } catch {
-      rejectOrder(optimisticOrderId, "Submission failed");
-      toast.error("Order submission failed");
+    } catch (err: unknown) {
+      const errorMsg =
+        (err as { response?: { data?: { error?: string; message?: string } } })
+          ?.response?.data?.message ||
+        (err as { response?: { data?: { error?: string } } })?.response?.data
+          ?.error ||
+        "Order submission failed";
+      rejectOrder(optimisticOrderId, errorMsg);
+      toast.error(errorMsg);
     } finally {
       setIsSubmitting(false);
     }
