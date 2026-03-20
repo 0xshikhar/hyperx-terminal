@@ -77,17 +77,17 @@ export class WSClient {
     this.setState("connecting");
     this.emitConnectionEvent({ type: "connect_start", timestamp: Date.now() });
     
-    // Append JWT token to URL for authentication
     const token = getToken();
-    const url = token ? `${this.url}?token=${token}` : this.url;
-    
-    const ws = new WebSocket(url);
+    const ws = new WebSocket(this.url);
 
     ws.onopen = () => {
       if (this.ws !== ws) return;
       this.reconnectAttempts = 0;
       this.setState("connected");
       this.emitConnectionEvent({ type: "open", timestamp: Date.now() });
+      if (token) {
+        ws.send(JSON.stringify({ type: "auth", token }));
+      }
       this.resubscribeAll();
     };
 
