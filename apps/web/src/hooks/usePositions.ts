@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { usePositionsStore } from "@/store/positionsStore";
 import { useWallet } from "@/components/wallet/useWallet";
+import { useNetworkStore } from "@/store/networkStore";
 
 export function usePositions() {
   const positions = usePositionsStore((state) => state.positions);
@@ -10,11 +11,13 @@ export function usePositions() {
   const applyDelta = usePositionsStore((state) => state.applyDelta);
   const fetchPositions = usePositionsStore((state) => state.fetchPositions);
   const isWalletConnected = useWallet((state) => state.isConnected);
+  const isPaperWallet = useWallet((state) => state.isPaperWallet);
+  const isPaperTrading = useNetworkStore((s) => s.isPaperTrading) || isPaperWallet;
   
   useEffect(() => {
-    if (!isWalletConnected) return;
+    if (!isWalletConnected || isPaperTrading) return;
     fetchPositions();
-  }, [fetchPositions, isWalletConnected]);
+  }, [fetchPositions, isWalletConnected, isPaperTrading]);
   
   return { positions, isLoading, error, setSnapshot, applyDelta, fetchPositions };
 }

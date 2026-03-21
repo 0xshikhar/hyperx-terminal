@@ -21,12 +21,14 @@ import { RecentTrades } from "@/components/recent-trades/RecentTrades";
 import { TradeForm } from "@/components/trade-form/TradeForm";
 import { PositionsTabs } from "@/components/positions/PositionsTabs";
 import { useVimNavigation } from "@/hooks/useVimNavigation";
+import { usePaperTradingSync } from "@/hooks/usePaperTradingSync";
 import type { CandleInterval } from "@/services/wsClient";
 
 const INTERVALS: CandleInterval[] = ["1m", "5m", "15m", "1h", "4h", "1d"];
 
 export function TerminalPage() {
   useVimNavigation();
+  usePaperTradingSync();
   const { activeMarket, markets, setActiveMarket } = useMarketStore();
   const connectionState = useRuntimeHealthStore((state) => state.connectionState);
   const getMarketFeedHealth = useRuntimeHealthStore((state) => state.getMarketFeedHealth);
