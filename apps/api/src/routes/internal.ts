@@ -69,7 +69,7 @@ export function verifyHmacSignature(
 }
 
 export async function internalRoutes(app: FastifyInstance) {
-  app.post("/internal/ticks", async (req, reply) => {
+  app.post("/internal/ticks", { logLevel: "warn" }, async (req, reply) => {
     const hmacSecret = process.env.INGEST_HMAC_SECRET || env.JWT_SECRET;
     const sigHeader = req.headers["x-hyperx-ingest"] as string | undefined;
     const tsHeader = req.headers["x-hyperx-timestamp"] as string | undefined;

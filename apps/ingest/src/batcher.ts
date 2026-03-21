@@ -52,8 +52,8 @@ export class TickBatcher {
   constructor(options: BatcherOptions) {
     this.targetUrl = options.targetUrl.replace(/\/+$/, "");
     this.hmacSecret = options.hmacSecret;
-    this.flushIntervalMs = options.flushIntervalMs ?? 50;
-    this.maxBatchSize = options.maxBatchSize ?? 200;
+    this.flushIntervalMs = options.flushIntervalMs ?? 1000;
+    this.maxBatchSize = options.maxBatchSize ?? 500;
   }
 
   public push(tick: MarketTick) {

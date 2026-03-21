@@ -63,10 +63,11 @@ apiClient.interceptors.response.use(
       const pathname = window.location.pathname;
       const url = error.config?.url ?? "";
       const isAuthRoute = pathname === "/login" || pathname === "/onboard";
+      const isTerminalRoute = pathname.startsWith("/terminal");
       const isAuthRequest = url.includes("/auth/");
       const isMetricsRequest = url.includes("/metrics");
 
-      if (!isAuthRoute && !isAuthRequest && !isMetricsRequest) {
+      if (!isAuthRoute && !isTerminalRoute && !isAuthRequest && !isMetricsRequest) {
         window.location.href = "/login";
       }
     }

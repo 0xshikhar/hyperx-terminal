@@ -4,7 +4,7 @@ import { ParadexIngestBridge } from "./paradexBridge.js";
 
 const TARGET_API_URL = process.env.TARGET_API_URL || "http://localhost:3001";
 const INGEST_HMAC_SECRET = process.env.INGEST_HMAC_SECRET || process.env.JWT_SECRET || "dev-jwt-secret-change-in-production";
-const FLUSH_INTERVAL_MS = Number(process.env.FLUSH_INTERVAL_MS ?? 50);
+const FLUSH_INTERVAL_MS = Number(process.env.FLUSH_INTERVAL_MS ?? 1000);
 
 console.log(`[IngestDaemon] Booting with Target: ${TARGET_API_URL}, Flush: ${FLUSH_INTERVAL_MS}ms`);
 
