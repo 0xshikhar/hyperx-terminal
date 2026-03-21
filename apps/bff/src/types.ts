@@ -59,7 +59,7 @@ export interface ClientHubRpc {
 }
 
 export interface MarketRoomRpc {
-  subscribe(hubId: string): Promise<unknown>;
+  subscribe(hubId: string, market?: string, network?: "testnet" | "mainnet"): Promise<unknown>;
   unsubscribe(hubId: string): Promise<void>;
   applyTicks(ticks: MarketTick[]): Promise<void>;
 }

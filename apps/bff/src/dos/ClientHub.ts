@@ -118,7 +118,7 @@ export class ClientHub extends DurableObject<Env> implements ClientHubRpc {
                 await acctDo.subscribe(this.hubId, userId);
               } else {
                 const roomDo = this.env.MARKET_ROOM.get(this.env.MARKET_ROOM.idFromName(`market:${network}:${ch.market || "all"}`)) as unknown as MarketRoomRpc;
-                const snapshot = await roomDo.subscribe(this.hubId);
+                const snapshot = await roomDo.subscribe(this.hubId, ch.market, network as "testnet" | "mainnet");
                 if (snapshot) {
                   ws.send(JSON.stringify(snapshot));
                 }
