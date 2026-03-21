@@ -53,15 +53,30 @@ export async function listMarkets(): Promise<MarketSummary[]> {
       .map(toMarketSummary)
       .filter((item): item is MarketSummary => item !== null);
 
-    if (normalized.length > 0) {
-      return normalized;
+    const seen = new Set<string>();
+    const deduped: MarketSummary[] = [];
+    for (const m of normalized) {
+      if (!seen.has(m.symbol)) {
+        seen.add(m.symbol);
+        deduped.push(m);
+      }
+    }
+
+    if (deduped.length > 0) {
+      return deduped;
     }
   } catch {
     // Fall back to legacy /markets response.
   }
 
   const response = await apiClient.get<{ markets: MarketSummary[] }>("/markets");
-  return response.data.markets;
+  const seen = new Set<string>();
+  return (response.data?.markets ?? []).filter((m) => {
+    const sym = normalizeMarketSymbol(m.symbol);
+    if (seen.has(sym)) return false;
+    seen.add(sym);
+    return true;
+  });
 }
 
 export async function getMarketCandles(

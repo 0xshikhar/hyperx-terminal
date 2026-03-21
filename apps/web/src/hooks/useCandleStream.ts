@@ -28,10 +28,20 @@ const updateFromTicker = (
   message: TickerMessage,
   interval: CandleInterval
 ) => {
-  if (candles.length === 0) return candles;
   const seconds = intervalSeconds[interval];
-  const latest = candles[candles.length - 1];
   const bucket = Math.floor(message.timestamp / 1000 / seconds) * seconds;
+  if (candles.length === 0) {
+    return [
+      {
+        time: bucket,
+        open: message.lastPrice,
+        high: message.lastPrice,
+        low: message.lastPrice,
+        close: message.lastPrice,
+      },
+    ];
+  }
+  const latest = candles[candles.length - 1];
   if (bucket === latest.time) {
     const high = Math.max(latest.high, message.lastPrice);
     const low = Math.min(latest.low, message.lastPrice);

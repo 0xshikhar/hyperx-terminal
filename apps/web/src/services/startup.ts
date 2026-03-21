@@ -78,25 +78,36 @@ async function hydrateMarkets() {
       existing.map((market) => [normalizeMarketSymbol(market.symbol), market])
     );
     const markets = await listMarkets();
-    const normalized = markets.map((market) => {
-      const snapshot = existingBySymbol.get(market.symbol);
-      const symbol = normalizeMarketSymbol(market.symbol);
-      return {
-        symbol,
-        venueSymbol: market.venueSymbol,
-        displaySymbol: market.displaySymbol,
-        name: market.name,
-        lastPrice: market.lastPrice ?? snapshot?.lastPrice ?? 0,
-        changePercent24h: market.changePercent24h ?? snapshot?.changePercent24h ?? 0,
-        volume24h: market.volume24h ?? snapshot?.volume24h ?? 0,
-        openInterest: market.openInterest ?? snapshot?.openInterest ?? 0,
-        fundingRate: market.fundingRate ?? snapshot?.fundingRate ?? 0,
-      };
-    });
+    const seen = new Set<string>();
+    const normalized = markets
+      .map((market) => {
+        const symbol = normalizeMarketSymbol(market.symbol);
+        const snapshot = existingBySymbol.get(symbol);
+        return {
+          symbol,
+          venueSymbol: market.venueSymbol ?? `${symbol}-PERP`,
+          displaySymbol: market.displaySymbol ?? symbol,
+          name: market.name || symbol.split("-")[0],
+          lastPrice: market.lastPrice ?? snapshot?.lastPrice ?? 0,
+          changePercent24h: market.changePercent24h ?? snapshot?.changePercent24h ?? 0,
+          volume24h: market.volume24h ?? snapshot?.volume24h ?? 0,
+          openInterest: market.openInterest ?? snapshot?.openInterest ?? 0,
+          fundingRate: market.fundingRate ?? snapshot?.fundingRate ?? 0,
+        };
+      })
+      .filter((m) => {
+        if (seen.has(m.symbol)) return false;
+        seen.add(m.symbol);
+        return true;
+      });
+
     if (normalized.length > 0) {
       useMarketStore.getState().setMarkets(normalized);
+      if (!useMarketStore.getState().activeMarket) {
+        useMarketStore.getState().setActiveMarket(normalized[0].symbol);
+      }
     }
   } catch {
-    // API market bootstrap failed, using empty state.
+    // API market bootstrap failed, using defaults in store.
   }
 }
