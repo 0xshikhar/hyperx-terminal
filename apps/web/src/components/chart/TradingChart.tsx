@@ -35,6 +35,7 @@ export function TradingChart({ interval }: TradingChartProps) {
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const lastTimeRef = useRef<UTCTimestamp | null>(null);
+  const lastCountRef = useRef<number>(0);
   const [showNoData, setShowNoData] = useState(false);
   const {
     lines,
@@ -244,7 +245,9 @@ export function TradingChart({ interval }: TradingChartProps) {
           close: candle.close,
         }) as CandlestickData
     );
-    const shouldFitContent = lastTimeRef.current === null;
+    const prevCount = lastCountRef.current;
+    lastCountRef.current = candles.length;
+    const shouldFitContent = lastTimeRef.current === null || (candles.length > 5 && prevCount <= 2);
 
     series.setData(nextData);
     lastTimeRef.current = candles[candles.length - 1]?.time as UTCTimestamp;
