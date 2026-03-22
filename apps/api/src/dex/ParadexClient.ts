@@ -359,6 +359,11 @@ export class ParadexClient {
     return this.unwrapResults<ParadexMarket>(data);
   }
 
+  async getMarketsSummary(market = "ALL"): Promise<Array<Record<string, unknown>>> {
+    const data = await this.request<unknown>(`/v1/markets/summary?market=${market}`);
+    return this.unwrapResults<Record<string, unknown>>(data);
+  }
+
   async getMarket(market: string): Promise<ParadexMarket> {
     return this.request<ParadexMarket>(`/v1/markets/${market}`);
   }

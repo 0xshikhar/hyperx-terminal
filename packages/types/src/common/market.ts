@@ -13,7 +13,9 @@ function sanitizeMarketSymbol(symbol: string): string {
 
 function splitMarketSymbol(symbol: string): MarketSymbolParts {
   const cleaned = sanitizeMarketSymbol(symbol);
-  const withoutPerp = cleaned.replace(MARKET_SUFFIX_PATTERN, "");
+  const withoutPerp = cleaned
+    .replace(/[-_]PERP[-_]USD$/i, "-USD")
+    .replace(MARKET_SUFFIX_PATTERN, "");
   const pieces = withoutPerp.split("-").filter(Boolean);
 
   if (pieces.length < 2) {
@@ -58,5 +60,5 @@ export function toParadexMarketSymbol(symbol: string): string {
 
 export function toMarketDisplaySymbol(symbol: string): string {
   const { base, quote } = splitMarketSymbol(symbol);
-  return `${base}/${normalizeQuoteForVenue(normalizeQuoteForInternal(quote))}`;
+  return `${base}-${normalizeQuoteForInternal(quote)}`;
 }

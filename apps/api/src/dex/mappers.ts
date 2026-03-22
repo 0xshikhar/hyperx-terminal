@@ -5,18 +5,20 @@ import {
 
 export function normalizeDexMarket<T extends object>(exchange: string, market: T) {
   const marketData = market as Record<string, unknown>;
-  const symbolSource =
+  const explicitSymbol =
     (marketData.market as string | undefined) ??
-    (marketData.symbol as string | undefined) ??
+    (marketData.symbol as string | undefined);
+  const baseCurrency =
     (marketData.baseCurrency as string | undefined) ??
     (marketData.base_currency as string | undefined) ??
     "";
-  const quoteSource =
+  const quoteCurrency =
     (marketData.quoteCurrency as string | undefined) ??
     (marketData.quote_currency as string | undefined) ??
     "";
   const rawSymbol =
-    symbolSource && quoteSource ? `${symbolSource}-${quoteSource}` : symbolSource;
+    explicitSymbol ||
+    (baseCurrency && quoteCurrency ? `${baseCurrency}-${quoteCurrency}` : baseCurrency);
   const canonicalSymbol =
     exchange.toLowerCase() === "paradex"
       ? fromParadexMarketSymbol(rawSymbol)
