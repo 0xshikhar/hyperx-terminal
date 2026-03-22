@@ -17,6 +17,7 @@ import { getParadexSigner } from "@/services/paradex/l2Signer";
 import { toParadexMarketSymbol } from "@hyperx/types/common";
 import { WalletConnectDialog } from "@/components/wallet/WalletConnectDialog";
 import { useQuery } from "@tanstack/react-query";
+import { usePaperTradingStore } from "@/store/paperTradingStore";
 
 export type TradeOrder = {
   market: string;
@@ -41,10 +42,16 @@ export function TradeForm({ onSubmit }: TradeFormProps) {
   const acknowledgeOrder = useOrdersStore((state) => state.acknowledgeOrder);
   const rejectOrder = useOrdersStore((state) => state.rejectOrder);
   const isWalletConnected = useWallet((state) => state.isConnected);
+  const isPaperWallet = useWallet((state) => state.isPaperWallet);
+  const isPaperTrading = useNetworkStore((s) => s.isPaperTrading) || isPaperWallet;
+  const canTrade = isWalletConnected || isPaperTrading;
+  const paperBalance = usePaperTradingStore((s) => s.balance);
+  const paperPositions = usePaperTradingStore((s) => s.positions);
+  const paperPosition = paperPositions.find((p) => p.market === activeMarket);
   const { data: accountData } = useQuery({
     queryKey: ["account-summary"],
     queryFn: getAccountSummary,
-    enabled: isWalletConnected,
+    enabled: isWalletConnected && !isPaperTrading,
     staleTime: 30_000,
   });
   const account = accountData ?? null;
@@ -112,8 +119,30 @@ export function TradeForm({ onSubmit }: TradeFormProps) {
       leverage,
     };
     setIsSubmitting(true);
-    const optimisticOrderId = createOptimisticOrder(order, market?.lastPrice);
+    const effectivePrice = market?.lastPrice || Number(price) || Number(stopPrice) || 100;
+    const optimisticOrderId = createOptimisticOrder(order, effectivePrice);
     try {
+      if (isPaperTrading) {
+        const res = usePaperTradingStore.getState().executeOrder(
+          {
+            market: activeMarket,
+            side,
+            type: orderType,
+            size,
+            price: orderType === "limit" ? price : undefined,
+            stopPrice: orderType === "stop" ? stopPrice : undefined,
+            leverage,
+          },
+          effectivePrice
+        );
+        acknowledgeOrder(optimisticOrderId, res.orderId);
+        toast.success(
+          `⚡ Paper ${orderType.toUpperCase()} ${res.status}: ${side.toUpperCase()} ${size} ${activeMarket} @ $${res.price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+        );
+        resetForm();
+        return;
+      }
+
       if (onSubmit) {
         await onSubmit(order);
         acknowledgeOrder(optimisticOrderId, optimisticOrderId);
@@ -157,6 +186,7 @@ export function TradeForm({ onSubmit }: TradeFormProps) {
           ?.response?.data?.message ||
         (err as { response?: { data?: { error?: string } } })?.response?.data
           ?.error ||
+        (err instanceof Error ? err.message : null) ||
         "Order submission failed";
       rejectOrder(optimisticOrderId, errorMsg);
       toast.error(errorMsg);
@@ -170,7 +200,7 @@ export function TradeForm({ onSubmit }: TradeFormProps) {
   }, [activeMarket]);
 
   useEffect(() => {
-    if (!isWalletConnected) return;
+    if (!canTrade) return;
 
     return addTerminalActionListener((action) => {
       if (action.type === "focus-trade-form" || action.type === "focus-size-input") {
@@ -203,10 +233,10 @@ export function TradeForm({ onSubmit }: TradeFormProps) {
         window.setTimeout(() => targetRef.current?.focus(), 0);
       }
     });
-  }, [isWalletConnected]);
+  }, [canTrade]);
 
   useEffect(() => {
-    if (!isWalletConnected) return;
+    if (!canTrade) return;
 
     const shortcuts = [
       {
@@ -325,21 +355,27 @@ export function TradeForm({ onSubmit }: TradeFormProps) {
           <div className="flex items-center justify-between">
             <span className="text-[#6b6b74]">Available to Trade</span>
             <span className="font-mono text-white">
-              {isWalletConnected && account
-                ? `${account.available.toFixed(2)} USDC`
-                : isWalletConnected
-                  ? "Loading..."
-                  : "Wallet not connected"}
+              {isPaperTrading
+                ? `${paperBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USDC`
+                : isWalletConnected && account
+                  ? `${account.available.toFixed(2)} USDC`
+                  : isWalletConnected
+                    ? "Loading..."
+                    : "Wallet not connected"}
             </span>
           </div>
           <div className="flex items-center justify-between">
             <span className="text-[#6b6b74]">Current Position</span>
             <span className="font-mono text-white">
-              {isWalletConnected && account
-                ? `${(account.balance - account.available).toFixed(2)} USDC`
-                : isWalletConnected
-                  ? "Loading..."
-                  : "Wallet not connected"}
+              {isPaperTrading
+                ? paperPosition
+                  ? `${paperPosition.side.toUpperCase()} ${paperPosition.size} (${paperPosition.pnl >= 0 ? "+" : ""}$${paperPosition.pnl.toFixed(2)})`
+                  : "None"
+                : isWalletConnected && account
+                  ? `${(account.balance - account.available).toFixed(2)} USDC`
+                  : isWalletConnected
+                    ? "Loading..."
+                    : "Wallet not connected"}
             </span>
           </div>
         </div>
@@ -361,8 +397,16 @@ export function TradeForm({ onSubmit }: TradeFormProps) {
             <button
               className="rounded bg-[#1a1a1e] px-3 py-2 text-xs text-[#6b6b74] hover:bg-[#252529]"
               onClick={() => {
-                if (account && market?.lastPrice) {
-                  const maxSize = account.available / (market.lastPrice / leverage);
+                const priceRef = market?.lastPrice || (orderType === "limit" ? Number(price) : 0);
+                if (priceRef <= 0) return;
+                if (isPaperTrading) {
+                  const maxNotional = paperBalance * leverage;
+                  const maxSize = maxNotional / priceRef;
+                  setSize(maxSize.toFixed(4));
+                  return;
+                }
+                if (account) {
+                  const maxSize = account.available / (priceRef / leverage);
                   setSize(maxSize.toFixed(4));
                 }
               }}
@@ -426,15 +470,15 @@ export function TradeForm({ onSubmit }: TradeFormProps) {
           <InfoRow label="Est. Entry Price" value={market?.lastPrice ? `$${market.lastPrice.toFixed(2)}` : "--"} />
           <InfoRow 
             label="Liq. Price" 
-            value={isWalletConnected && liquidationEstimate ? `$${liquidationEstimate.toFixed(2)}` : "Wallet not connected"} 
+            value={liquidationEstimate ? `$${liquidationEstimate.toFixed(2)}` : "--"} 
           />
           <InfoRow 
-            label="Margin Used" 
-            value={isWalletConnected && margin ? `$${margin.toFixed(2)}` : "Wallet not connected"}
+            label="Margin" 
+            value={margin ? `$${margin.toFixed(2)}` : "--"}
           />
           <InfoRow 
             label="Notional" 
-            value={isWalletConnected && notional ? `$${notional.toFixed(2)}` : "Wallet not connected"}
+            value={notional ? `$${notional.toFixed(2)}` : "--"}
           />
           <InfoRow 
             label="Slippage" 
@@ -468,34 +512,46 @@ export function TradeForm({ onSubmit }: TradeFormProps) {
           </div>
         </div>
 
+        {isPaperTrading && (
+          <div className="flex items-center justify-between rounded-md border border-cyan-500/30 bg-cyan-500/10 px-3 py-1.5 text-xs text-cyan-300">
+            <span className="flex items-center gap-1.5 font-medium">
+              <span className="h-2 w-2 rounded-full bg-cyan-400 animate-pulse" />
+              Paper Trading Active
+            </span>
+            <span className="font-mono text-[10px] uppercase tracking-wider text-cyan-400/80">
+              ${paperBalance.toLocaleString(undefined, { maximumFractionDigits: 0 })} Avail
+            </span>
+          </div>
+        )}
+
         <div className="grid grid-cols-2 gap-2 pt-2">
           <button
             onClick={() => {
-              if (!isWalletConnected) {
-                setWalletPromptOpen(true);
+              if (!canTrade) {
+                useWallet.getState().setModalOpen(true);
                 return;
               }
               setSide("buy");
               setConfirmOpen(true);
             }}
-            disabled={isSubmitting || (isWalletConnected ? !isValid : false)}
+            disabled={isSubmitting || (canTrade ? !isValid : false)}
             className="rounded bg-[#00d084] px-4 py-3 text-sm font-semibold text-black transition-colors hover:bg-[#00e090] disabled:opacity-50"
           >
-            Buy / Long
+            {isPaperTrading ? "Paper Buy / Long" : "Buy / Long"}
           </button>
           <button
             onClick={() => {
-              if (!isWalletConnected) {
-                setWalletPromptOpen(true);
+              if (!canTrade) {
+                useWallet.getState().setModalOpen(true);
                 return;
               }
               setSide("sell");
               setConfirmOpen(true);
             }}
-            disabled={isSubmitting || (isWalletConnected ? !isValid : false)}
+            disabled={isSubmitting || (canTrade ? !isValid : false)}
             className="rounded bg-[#ff4757] px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-[#ff5e6c] disabled:opacity-50"
           >
-            Sell / Short
+            {isPaperTrading ? "Paper Sell / Short" : "Sell / Short"}
           </button>
         </div>
       </div>
@@ -504,7 +560,9 @@ export function TradeForm({ onSubmit }: TradeFormProps) {
       <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <DialogContent className="border-[#2a2a2e] bg-[#0d0d0f]">
           <DialogHeader>
-            <DialogTitle className="text-white">Confirm Order</DialogTitle>
+            <DialogTitle className="text-white">
+              {isPaperTrading ? "⚡ Confirm Paper Order (Simulated)" : "Confirm Order"}
+            </DialogTitle>
           </DialogHeader>
           <div className="space-y-2 text-sm">
             <div className="flex items-center justify-between">

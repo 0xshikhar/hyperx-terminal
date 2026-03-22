@@ -1,8 +1,12 @@
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { cn } from "@/lib/utils";
 import { useOrdersStore } from "@/store/ordersStore";
+import { useNetworkStore } from "@/store/networkStore";
+import { usePaperTradingStore } from "@/store/paperTradingStore";
 import { Button } from "@/components/ui/button";
 import { useWallet } from "@/components/wallet/useWallet";
+import { toast } from "sonner";
+import { X } from "lucide-react";
 import {
   Table,
   TableBody,
@@ -16,16 +20,24 @@ const formatNumber = (value: number, fractionDigits = 2) =>
   value.toLocaleString(undefined, { maximumFractionDigits: fractionDigits });
 
 export function OpenOrdersTable() {
-  const orders = useOrdersStore((state) => state.openOrders);
+  const isPaperTrading = useNetworkStore((s) => s.isPaperTrading);
+  const realOrders = useOrdersStore((state) => state.openOrders);
   const fetchOrders = useOrdersStore((state) => state.fetchOrders);
   const isLoading = useOrdersStore((state) => state.isLoading);
   const error = useOrdersStore((state) => state.error);
   const isWalletConnected = useWallet((state) => state.isConnected);
 
+  const paperOrders = usePaperTradingStore((s) => s.openOrders);
+  const cancelPaperOrder = usePaperTradingStore((s) => s.cancelOrder);
+
+  const orders = useMemo(() => {
+    return isPaperTrading ? paperOrders : realOrders;
+  }, [isPaperTrading, paperOrders, realOrders]);
+
   useEffect(() => {
-    if (!isWalletConnected) return;
+    if (!isWalletConnected || isPaperTrading) return;
     void fetchOrders();
-  }, [fetchOrders, isWalletConnected]);
+  }, [fetchOrders, isWalletConnected, isPaperTrading]);
 
   const counts = orders.reduce(
     (acc, order) => {
@@ -38,76 +50,109 @@ export function OpenOrdersTable() {
   return (
     <div className="space-y-3">
       <div className="grid gap-3 md:grid-cols-4">
-        <LifecycleCard label="Pending" value={counts.pending ?? 0} helper="Optimistic submits awaiting acknowledgement" />
-        <LifecycleCard label="Working" value={(counts.open ?? 0) + (counts.partially_filled ?? 0)} helper="Live orders still impacting execution state" />
-        <LifecycleCard label="Terminal" value={(counts.filled ?? 0) + (counts.cancelled ?? 0)} helper="Recently completed or cancelled orders retained for context" />
-        <LifecycleCard label="Rejected" value={counts.rejected ?? 0} helper="Submission failures and invalid transitions" />
+        <LifecycleCard
+          label="Pending"
+          value={counts.pending ?? 0}
+          helper={isPaperTrading ? "Simulated orders queued" : "Optimistic submits awaiting acknowledgement"}
+        />
+        <LifecycleCard
+          label="Working"
+          value={(counts.open ?? 0) + (counts.partially_filled ?? 0)}
+          helper={isPaperTrading ? "Open paper limit orders" : "Live orders still impacting execution state"}
+        />
+        <LifecycleCard
+          label="Terminal"
+          value={(counts.filled ?? 0) + (counts.cancelled ?? 0)}
+          helper="Recently completed or cancelled orders"
+        />
+        <LifecycleCard
+          label="Rejected"
+          value={counts.rejected ?? 0}
+          helper="Submission failures and invalid transitions"
+        />
       </div>
 
       <div className="rounded-md border border-border bg-background">
-      {isLoading ? (
-        <div className="px-3 py-8 text-xs text-muted-foreground">Loading open orders…</div>
-      ) : error ? (
-        <div className="flex items-center justify-between gap-3 px-3 py-6 text-xs">
-          <div className="text-muted-foreground">
-            Failed to refresh open orders from the API. Showing the last local snapshot instead.
+        {!isPaperTrading && isLoading ? (
+          <div className="px-3 py-8 text-xs text-muted-foreground">Loading open orders…</div>
+        ) : !isPaperTrading && error ? (
+          <div className="flex items-center justify-between gap-3 px-3 py-6 text-xs">
+            <div className="text-muted-foreground">
+              Failed to refresh open orders from the API. Showing the last local snapshot instead.
+            </div>
+            <Button size="sm" variant="outline" onClick={() => void fetchOrders()}>
+              Retry
+            </Button>
           </div>
-          <Button size="sm" variant="outline" onClick={() => void fetchOrders()}>
-            Retry
-          </Button>
-        </div>
-      ) : orders.length === 0 ? (
-        <div className="px-3 py-8 text-xs text-muted-foreground">
-          No active or recent orders. Submitted orders will stay visible here long enough to explain pending, partial, rejection, and cancellation paths.
-        </div>
-      ) : (
-        <Table className="text-xs">
-          <TableHeader>
-            <TableRow>
-              <TableHead>Market</TableHead>
-              <TableHead>Side</TableHead>
-              <TableHead>Type</TableHead>
-              <TableHead>Price</TableHead>
-              <TableHead>Size</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Progress</TableHead>
-              <TableHead>Source</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {orders.map((order) => (
-              <TableRow key={order.id}>
-                <TableCell className="font-semibold">{order.market}</TableCell>
-                <TableCell
-                  className={cn(
-                    "uppercase",
-                    order.side === "buy" ? "text-emerald-400" : "text-rose-400"
-                  )}
-                >
-                  {order.side}
-                </TableCell>
-                <TableCell className="uppercase">{order.type}</TableCell>
-                <TableCell>{formatNumber(order.price, order.price >= 1000 ? 2 : 4)}</TableCell>
-                <TableCell>{formatNumber(order.size, 4)}</TableCell>
-                <TableCell className={cn("uppercase", statusClass(order.status))}>
-                  {order.status.replace("_", " ")}
-                  {order.rejectReason && (
-                    <div className="mt-1 max-w-[180px] normal-case text-rose-400">
-                      {order.rejectReason}
-                    </div>
-                  )}
-                </TableCell>
-                <TableCell className="font-mono text-muted-foreground">
-                  {formatNumber(order.filledSize, 4)} / {formatNumber(order.size, 4)}
-                </TableCell>
-                <TableCell className="text-muted-foreground">
-                  {order.source === "optimistic" ? "Local" : "Exchange"}
-                </TableCell>
+        ) : orders.length === 0 ? (
+          <div className="px-3 py-8 text-center text-xs text-muted-foreground">
+            {isPaperTrading
+              ? "No working paper orders. Place a Limit order to see simulated pending fills."
+              : "No active or recent orders."}
+          </div>
+        ) : (
+          <Table className="text-xs">
+            <TableHeader>
+              <TableRow>
+                <TableHead>Market</TableHead>
+                <TableHead>Side</TableHead>
+                <TableHead>Type</TableHead>
+                <TableHead>Price</TableHead>
+                <TableHead>Size</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Progress</TableHead>
+                <TableHead>Source</TableHead>
+                <TableHead className="text-right">Action</TableHead>
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      )}
+            </TableHeader>
+            <TableBody>
+              {orders.map((order) => (
+                <TableRow key={order.id}>
+                  <TableCell className="font-semibold">{order.market}</TableCell>
+                  <TableCell
+                    className={cn(
+                      "uppercase",
+                      order.side === "buy" ? "text-emerald-400" : "text-rose-400"
+                    )}
+                  >
+                    {order.side}
+                  </TableCell>
+                  <TableCell className="uppercase">{order.type}</TableCell>
+                  <TableCell>{formatNumber(order.price, order.price >= 1000 ? 2 : 4)}</TableCell>
+                  <TableCell>{formatNumber(order.size, 4)}</TableCell>
+                  <TableCell className={cn("uppercase", statusClass(order.status))}>
+                    {order.status.replace("_", " ")}
+                    {order.rejectReason && (
+                      <div className="mt-1 max-w-[180px] normal-case text-rose-400">
+                        {order.rejectReason}
+                      </div>
+                    )}
+                  </TableCell>
+                  <TableCell className="font-mono text-muted-foreground">
+                    {formatNumber(order.filledSize, 4)} / {formatNumber(order.size, 4)}
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {isPaperTrading ? "Paper Sim" : order.source === "optimistic" ? "Local" : "Exchange"}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    {isPaperTrading && (order.status === "open" || order.status === "pending") && (
+                      <button
+                        onClick={() => {
+                          cancelPaperOrder(order.id);
+                          toast.info(`Cancelled paper order ${order.id}`);
+                        }}
+                        className="inline-flex items-center gap-1 rounded border border-border px-2 py-0.5 text-[10px] text-muted-foreground hover:text-foreground"
+                      >
+                        <X className="h-2.5 w-2.5" />
+                        Cancel
+                      </button>
+                    )}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
       </div>
     </div>
   );
