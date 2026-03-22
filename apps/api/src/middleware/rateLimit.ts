@@ -12,6 +12,15 @@ export async function registerRateLimit(app: FastifyInstance, options: RateLimit
     if (req.url === "/health" || req.url.startsWith("/api/health")) return;
 
     const ip = req.ip ?? "unknown";
+    if (
+      process.env.NODE_ENV !== "production" ||
+      ip === "127.0.0.1" ||
+      ip === "::1" ||
+      ip === "localhost" ||
+      ip === "unknown"
+    ) {
+      return;
+    }
     const walletHeader = req.headers["x-wallet-address"];
     const wallet = typeof walletHeader === "string" ? walletHeader.toLowerCase() : "";
     const key = wallet ? `wallet:${wallet}` : `ip:${ip}`;

@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "set -a; [ -f ../../.env ] && . ../../.env; set +a; XDG_CACHE_HOME=./.cache prisma generate && node --import=tsx src/index.ts",
+    "dev": "set -a; [ -f ../../.env ] && . ../../.env; set +a; XDG_CACHE_HOME=./.cache prisma generate && tsx watch src/index.ts",
     "build": "set -a; [ -f ../../.env ] && . ../../.env; set +a; XDG_CACHE_HOME=./.cache prisma generate && tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint .",
