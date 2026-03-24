@@ -92,7 +92,7 @@ export function WalletStatus({ address: propAddress }: WalletStatusProps) {
         </button>
 
         {isOpen && (
-          <div className="absolute right-0 top-full mt-2 w-64 rounded-xl border border-[#213136] bg-[#0c181b] p-2 shadow-2xl z-50 animate-in fade-in-50 zoom-in-95">
+          <div className="absolute right-0 top-full mt-2 w-64 rounded-xl border border-[#213136] bg-[#0c181b] p-2 shadow-2xl z-50 animate-in fade-in-0 duration-75">
             <div className="p-2 border-b border-[#18262a]">
               <div className="flex items-center justify-between">
                 <span className="text-[10px] font-bold uppercase tracking-wider text-cyan-400">
