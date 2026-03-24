@@ -104,10 +104,15 @@ export function initParadexWsBridge(options: InitOptions) {
     const market = fromParadexMarket(String(data.symbol ?? data.market ?? ""));
     if (!market) return;
 
+    const markPrice = toNumber(data.mark_price);
+    const oraclePrice = toNumber(data.underlying_price ?? data.mark_price);
+    const lastTraded = toNumber(data.last_traded_price ?? data.last_price);
+    const lastPrice = markPrice > 0 ? markPrice : oraclePrice > 0 ? oraclePrice : lastTraded;
+
     const message: ServerMessage = {
       type: "ticker",
       market,
-      lastPrice: toNumber(data.last_traded_price ?? data.last_price),
+      lastPrice,
       changePercent24h: toNumber(
         data.price_change_rate_24h ?? data.change_percent_24h
       ),

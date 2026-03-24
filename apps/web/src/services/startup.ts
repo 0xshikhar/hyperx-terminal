@@ -89,6 +89,8 @@ async function hydrateMarkets() {
           displaySymbol: market.displaySymbol ?? symbol,
           name: market.name || symbol.split("-")[0],
           lastPrice: market.lastPrice ?? snapshot?.lastPrice ?? 0,
+          markPrice: market.markPrice ?? snapshot?.markPrice ?? market.lastPrice ?? 0,
+          oraclePrice: market.oraclePrice ?? snapshot?.oraclePrice ?? market.lastPrice ?? 0,
           changePercent24h: market.changePercent24h ?? snapshot?.changePercent24h ?? 0,
           volume24h: market.volume24h ?? snapshot?.volume24h ?? 0,
           openInterest: market.openInterest ?? snapshot?.openInterest ?? 0,

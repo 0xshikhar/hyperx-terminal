@@ -41,6 +41,8 @@ export function TerminalPage() {
   const change24h = market?.changePercent24h ?? 0;
   const isPositive = change24h >= 0;
   const displayPrice = market?.lastPrice ?? 0;
+  const markPrice = market?.markPrice ?? displayPrice;
+  const oraclePrice = market?.oraclePrice ?? displayPrice;
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-[#081214] text-[#d8dfe1]">
@@ -102,8 +104,8 @@ export function TerminalPage() {
               </div>
 
               <div className="grid gap-3 text-xs md:grid-cols-2 xl:grid-cols-6">
-                <MarketStat label="Mark" value={`$${formatPrice(displayPrice)}`} />
-                <MarketStat label="Oracle" value={`$${formatPrice(displayPrice * 1.0004)}`} />
+                <MarketStat label="Mark" value={`$${formatPrice(markPrice)}`} />
+                <MarketStat label="Oracle" value={`$${formatPrice(oraclePrice)}`} />
                 <MarketStat
                   label="24h Change"
                   value={`${isPositive ? "+" : ""}${change24h.toFixed(2)}%`}

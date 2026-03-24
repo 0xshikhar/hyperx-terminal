@@ -21,11 +21,11 @@ const marketCandlesQuerySchema = z.object({
 });
 
 const DEFAULT_MARKET_PRICES: Record<string, number> = {
-  "BTC-USD": 76045.9,
-  "ETH-USD": 2640.5,
-  "HYPE-USD": 24.8,
-  "SOL-USD": 188.4,
-  "STRK-USD": 0.46,
+  "BTC-USD": 76400.0,
+  "ETH-USD": 2440.0,
+  "HYPE-USD": 79.5,
+  "SOL-USD": 100.0,
+  "STRK-USD": 0.04,
 };
 
 function generateFallbackCandles(
@@ -84,14 +84,22 @@ export async function marketRoutes(app: FastifyInstance) {
           const rawMarket = (m.market ?? m.symbol ?? "") as string;
           const symbol = fromParadexMarketSymbol(rawMarket);
           const summary = summaryMap.get(symbol);
-          const lastPrice = Number(
-            summary?.last_traded_price ??
-            summary?.mark_price ??
-            m.lastPrice ??
-            m.indexPrice ??
-            DEFAULT_MARKET_PRICES[symbol] ??
-            0
-          );
+
+          const markPrice = Number(summary?.mark_price ?? 0);
+          const oraclePrice = Number(summary?.underlying_price ?? summary?.mark_price ?? 0);
+          const lastTradedPrice = Number(summary?.last_traded_price ?? 0);
+
+          // In perpetual futures, mark_price and underlying_price track the real index oracle
+          // Avoid stale or outlier testnet trades by prioritizing mark/oracle prices
+          const lastPrice =
+            markPrice > 0
+              ? markPrice
+              : oraclePrice > 0
+              ? oraclePrice
+              : lastTradedPrice > 0
+              ? lastTradedPrice
+              : Number(m.lastPrice ?? m.indexPrice ?? DEFAULT_MARKET_PRICES[symbol] ?? 0);
+
           const rawChange = Number(
             summary?.price_change_rate_24h ??
             summary?.change_percent_24h ??
@@ -120,6 +128,8 @@ export async function marketRoutes(app: FastifyInstance) {
             symbol,
             name: (m.name ?? m.baseCurrency ?? symbol ?? "") as string,
             lastPrice,
+            markPrice: markPrice > 0 ? markPrice : lastPrice,
+            oraclePrice: oraclePrice > 0 ? oraclePrice : lastPrice,
             changePercent24h: Math.round(changePercent24h * 100) / 100,
             volume24h: Math.round(volume24h * 100) / 100,
             openInterest: Math.round(openInterest * 100) / 100,

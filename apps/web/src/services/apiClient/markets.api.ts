@@ -11,6 +11,8 @@ export type MarketSummary = {
   displaySymbol?: string;
   name: string;
   lastPrice?: number;
+  markPrice?: number;
+  oraclePrice?: number;
   changePercent24h?: number;
   volume24h?: number;
   openInterest?: number;
@@ -39,10 +41,41 @@ function toMarketSummary(market: Record<string, unknown>): MarketSummary | null 
     venueSymbol: symbolRaw || `${baseCurrency}-${quoteCurrency}` || undefined,
     displaySymbol: toMarketDisplaySymbol(symbol),
     name: base ? base.charAt(0) + base.slice(1).toLowerCase() : symbol,
+    lastPrice: typeof market.lastPrice === "number" ? market.lastPrice : undefined,
+    markPrice: typeof market.markPrice === "number" ? market.markPrice : undefined,
+    oraclePrice: typeof market.oraclePrice === "number" ? market.oraclePrice : undefined,
+    changePercent24h: typeof market.changePercent24h === "number" ? market.changePercent24h : undefined,
+    volume24h: typeof market.volume24h === "number" ? market.volume24h : undefined,
+    openInterest: typeof market.openInterest === "number" ? market.openInterest : undefined,
+    fundingRate: typeof market.fundingRate === "number" ? market.fundingRate : undefined,
   };
 }
 
 export async function listMarkets(): Promise<MarketSummary[]> {
+  try {
+    const response = await apiClient.get<{ markets: MarketSummary[] }>("/markets");
+    if (response.data?.markets && response.data.markets.length > 0) {
+      const seen = new Set<string>();
+      return response.data.markets
+        .map((m) => {
+          const sym = normalizeMarketSymbol(m.symbol);
+          return {
+            ...m,
+            symbol: sym,
+            displaySymbol: toMarketDisplaySymbol(sym),
+            name: m.name || sym.split("-")[0],
+          };
+        })
+        .filter((m) => {
+          if (seen.has(m.symbol)) return false;
+          seen.add(m.symbol);
+          return true;
+        });
+    }
+  } catch (err) {
+    console.warn("Failed to fetch /markets, falling back to /dex/markets:", err);
+  }
+
   try {
     const response = await apiClient.get<{
       exchanges: string[];
@@ -61,22 +94,10 @@ export async function listMarkets(): Promise<MarketSummary[]> {
         deduped.push(m);
       }
     }
-
-    if (deduped.length > 0) {
-      return deduped;
-    }
+    return deduped;
   } catch {
-    // Fall back to legacy /markets response.
+    return [];
   }
-
-  const response = await apiClient.get<{ markets: MarketSummary[] }>("/markets");
-  const seen = new Set<string>();
-  return (response.data?.markets ?? []).filter((m) => {
-    const sym = normalizeMarketSymbol(m.symbol);
-    if (seen.has(sym)) return false;
-    seen.add(sym);
-    return true;
-  });
 }
 
 export async function getMarketCandles(
