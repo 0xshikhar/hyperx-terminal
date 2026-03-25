@@ -6,7 +6,7 @@ import type {
   SubscribableChannel,
   WSChannel,
 } from "./channelTypes";
-import { serverMessageSchema } from "./messageParser";
+import { parseServerMessage } from "./fastMessageParser";
 import { getToken } from "../auth.service";
 
 export type ConnectionState = "connecting" | "connected" | "disconnected" | "error";
@@ -94,11 +94,9 @@ export class WSClient {
     ws.onmessage = (event) => {
       if (this.ws !== ws) return;
       const raw = typeof event.data === "string" ? event.data : "";
-      try {
-        const parsed = serverMessageSchema.parse(JSON.parse(raw)) as ServerMessage;
+      const parsed = parseServerMessage(raw);
+      if (parsed) {
         this.dispatch(parsed);
-      } catch {
-        return;
       }
     };
 
