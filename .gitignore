@@ -21,3 +21,6 @@ apps/ws/dist
 apps/ws/.cache
 
 .vercel
+
+#  bff
+/apps/bff/.wrangler

@@ -1,13 +1,45 @@
+import { memo } from "react";
 import { FixedSizeList, type ListChildComponentProps } from "react-window";
 import { useMarketStore } from "@/store/marketStore";
 import { RecentTradeRow } from "@/components/recent-trades/RecentTradeRow";
 import { useRecentTrades } from "@/hooks/useRecentTrades";
 import { useRuntimeHealthStore } from "@/store/runtimeHealthStore";
 import { cn } from "@/lib/utils";
+import type { Trade } from "@/store/tradeStore";
 
 type RecentTradesProps = {
   embedded?: boolean;
 };
+
+/**
+ * Stable virtualized row renderer declared outside the parent component.
+ *
+ * CRITICAL PERFORMANCE PATTERN:
+ * If this component is declared inside `RecentTrades`, every parent re-render creates
+ * a brand-new function reference. react-window treats different function references as
+ * different component types, destroying all existing DOM nodes, running unmount/mount cycles,
+ * and causing catastrophic layout thrash on every trade arrival.
+ */
+const RecentTradeRowRenderer = memo(({ index, style, data }: ListChildComponentProps<Trade[]>) => {
+  const trade = data[index];
+  if (!trade) return null;
+  return (
+    <div style={style}>
+      <RecentTradeRow
+        side={trade.side}
+        price={trade.price}
+        size={trade.size}
+        timestamp={trade.timestamp}
+        time={trade.time}
+      />
+    </div>
+  );
+});
+
+RecentTradeRowRenderer.displayName = "RecentTradeRowRenderer";
+
+const getTradeItemKey = (index: number, data: Trade[]) =>
+  data[index]?.id ?? `${data[index]?.timestamp ?? index}-${index}`;
 
 export function RecentTrades({ embedded = false }: RecentTradesProps) {
   const activeMarket = useMarketStore((s) => s.activeMarket);
@@ -16,21 +48,6 @@ export function RecentTrades({ embedded = false }: RecentTradesProps) {
   const getMarketFeedHealth = useRuntimeHealthStore((state) => state.getMarketFeedHealth);
   const feedHealth = getMarketFeedHealth(activeMarket);
   const listHeight = embedded ? 420 : 256;
-
-  const Row = ({ index, style, data }: ListChildComponentProps<typeof listData>) => {
-    const trade = data[index];
-    return (
-      <div style={style}>
-        <RecentTradeRow
-          side={trade.side}
-          price={trade.price}
-          size={trade.size}
-          timestamp={trade.timestamp}
-          time={trade.time}
-        />
-      </div>
-    );
-  };
 
   return (
     <div
@@ -65,8 +82,9 @@ export function RecentTrades({ embedded = false }: RecentTradesProps) {
               itemCount={trades.length}
               itemSize={32}
               itemData={listData}
+              itemKey={getTradeItemKey}
             >
-              {Row}
+              {RecentTradeRowRenderer}
             </FixedSizeList>
           </div>
         ) : !feedHealth.isFresh ? (
@@ -85,8 +103,9 @@ export function RecentTrades({ embedded = false }: RecentTradesProps) {
             itemCount={trades.length}
             itemSize={32}
             itemData={listData}
+            itemKey={getTradeItemKey}
           >
-            {Row}
+            {RecentTradeRowRenderer}
           </FixedSizeList>
         )}
       </div>
