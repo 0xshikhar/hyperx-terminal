@@ -3,9 +3,10 @@
   "private": true,
   "packageManager": "pnpm@10.17.1",
   "scripts": {
-    "dev": "pnpm -r --filter=!@hyperx/ingest --parallel dev",
+    "dev": "pnpm -r --filter=!@hyperx/ingest --filter=!@hyperx/bff --parallel dev",
     "dev:all": "pnpm -r --parallel dev",
     "dev:ingest": "pnpm -C apps/ingest dev",
+    "dev:bff": "pnpm -C apps/bff dev",
     "dev:web": "pnpm -C apps/web dev",
     "dev:api": "pnpm -C apps/api dev",
     "dev:ws": "pnpm -C apps/ws dev",

@@ -36,6 +36,7 @@ export function TradingChart({ interval }: TradingChartProps) {
   const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const lastTimeRef = useRef<UTCTimestamp | null>(null);
   const lastCountRef = useRef<number>(0);
+  const lastSeriesKeyRef = useRef<string | null>(null);
   const [showNoData, setShowNoData] = useState(false);
   const {
     lines,
@@ -44,19 +45,49 @@ export function TradingChart({ interval }: TradingChartProps) {
     endDrawing,
   } = useDrawingTools();
 
-  const closes = useMemo(() => candles.map((candle) => candle.close), [candles]);
-  const highs = useMemo(() => candles.map((candle) => candle.high), [candles]);
-  const lows = useMemo(() => candles.map((candle) => candle.low), [candles]);
-  const syntheticVolumes = useMemo(
-    () => candles.map((candle) => Math.max(1, Math.abs(candle.close - candle.open) * 100)),
-    [candles]
-  );
-  const ema = useMemo(() => calculateEMA(closes, 20), [closes]);
-  const vwap = useMemo(
-    () => calculateVWAP(highs, lows, closes, syntheticVolumes),
-    [closes, highs, lows, syntheticVolumes]
-  );
-  const rsi = useMemo(() => calculateRSI(closes, 14), [closes]);
+  const {
+    highs,
+    lows,
+    latestEma,
+    latestVwap,
+    latestRsi,
+  } = useMemo(() => {
+    if (candles.length === 0) {
+      return {
+        highs: [] as number[],
+        lows: [] as number[],
+        latestEma: null,
+        latestVwap: null,
+        latestRsi: null,
+      };
+    }
+
+    const count = candles.length;
+    const closes = new Array<number>(count);
+    const highsArr = new Array<number>(count);
+    const lowsArr = new Array<number>(count);
+    const volumes = new Array<number>(count);
+
+    for (let i = 0; i < count; i++) {
+      const c = candles[i];
+      closes[i] = c.close;
+      highsArr[i] = c.high;
+      lowsArr[i] = c.low;
+      volumes[i] = Math.max(1, Math.abs(c.close - c.open) * 100);
+    }
+
+    const emaArr = calculateEMA(closes, 20);
+    const vwapArr = calculateVWAP(highsArr, lowsArr, closes, volumes);
+    const rsiArr = calculateRSI(closes, 14);
+
+    return {
+      highs: highsArr,
+      lows: lowsArr,
+      latestEma: emaArr[emaArr.length - 1] ?? null,
+      latestVwap: vwapArr[vwapArr.length - 1] ?? null,
+      latestRsi: rsiArr[rsiArr.length - 1] ?? null,
+    };
+  }, [candles]);
 
   const normalizeTime = (value: Time | null): number | null => {
     if (value === null) return null;
@@ -214,11 +245,14 @@ export function TradingChart({ interval }: TradingChartProps) {
       chartRef.current = null;
       seriesRef.current = null;
       lastTimeRef.current = null;
+      lastSeriesKeyRef.current = null;
     };
   }, []);
 
   useEffect(() => {
     lastTimeRef.current = null;
+    lastSeriesKeyRef.current = null;
+    lastCountRef.current = 0;
     setShowNoData(false); // eslint-disable-line react-hooks/set-state-in-effect
   }, [activeMarket, interval]);
 
@@ -235,6 +269,35 @@ export function TradingChart({ interval }: TradingChartProps) {
     const series = seriesRef.current;
     if (!series || candles.length === 0) return;
 
+    const currentKey = `${activeMarket}-${interval}`;
+    const prevCount = lastCountRef.current;
+    const lastTime = lastTimeRef.current;
+    const isNewSeries = lastSeriesKeyRef.current !== currentKey;
+    const latestCandle = candles[candles.length - 1];
+
+    // Check if we can stream via O(1) series.update() instead of O(N) series.setData()
+    const canUpdate =
+      !isNewSeries &&
+      lastTime !== null &&
+      latestCandle &&
+      candles.length >= prevCount &&
+      candles.length <= prevCount + 1 &&
+      (latestCandle.time as UTCTimestamp) >= lastTime;
+
+    if (canUpdate) {
+      series.update({
+        time: latestCandle.time as UTCTimestamp,
+        open: latestCandle.open,
+        high: latestCandle.high,
+        low: latestCandle.low,
+        close: latestCandle.close,
+      });
+      lastTimeRef.current = latestCandle.time as UTCTimestamp;
+      lastCountRef.current = candles.length;
+      return;
+    }
+
+    // Otherwise, perform initial or full bulk rebuild via series.setData()
     const nextData = candles.map(
       (candle) =>
         ({
@@ -245,17 +308,18 @@ export function TradingChart({ interval }: TradingChartProps) {
           close: candle.close,
         }) as CandlestickData
     );
-    const prevCount = lastCountRef.current;
-    lastCountRef.current = candles.length;
-    const shouldFitContent = lastTimeRef.current === null || (candles.length > 5 && prevCount <= 2);
+
+    const shouldFitContent = isNewSeries || lastTime === null || (candles.length > 5 && prevCount <= 2);
 
     series.setData(nextData);
-    lastTimeRef.current = candles[candles.length - 1]?.time as UTCTimestamp;
+    lastSeriesKeyRef.current = currentKey;
+    lastTimeRef.current = latestCandle.time as UTCTimestamp;
+    lastCountRef.current = candles.length;
 
     if (shouldFitContent) {
       chartRef.current?.timeScale().fitContent();
     }
-  }, [candles]);
+  }, [candles, activeMarket, interval]);
 
   const lastClose = candles[candles.length - 1]?.close;
   const previousClose = candles[candles.length - 2]?.close;
@@ -292,13 +356,13 @@ export function TradingChart({ interval }: TradingChartProps) {
           {lastClose?.toFixed(2) ?? "--"}
         </span>
         <span className="rounded-full border border-[#193338] bg-[#102125] px-2 py-0.5 text-[#8ea2a6]">
-          EMA 20 {ema[ema.length - 1]?.toFixed(2) ?? "--"}
+          EMA 20 {latestEma?.toFixed(2) ?? "--"}
         </span>
         <span className="rounded-full border border-[#193338] bg-[#102125] px-2 py-0.5 text-[#8ea2a6]">
-          VWAP {vwap[vwap.length - 1]?.toFixed(2) ?? "--"}
+          VWAP {latestVwap?.toFixed(2) ?? "--"}
         </span>
         <span className="rounded-full border border-[#193338] bg-[#102125] px-2 py-0.5 text-[#8ea2a6]">
-          RSI 14 {rsi[rsi.length - 1]?.toFixed(1) ?? "--"}
+          RSI 14 {latestRsi?.toFixed(1) ?? "--"}
         </span>
         {!connectionState || connectionState !== "connected" ? (
           <span
