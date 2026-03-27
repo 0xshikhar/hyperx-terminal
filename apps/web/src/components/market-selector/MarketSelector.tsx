@@ -1,11 +1,14 @@
 import { useMemo, useState } from "react";
 import { Activity, ChevronRight, Search, ShieldAlert } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useMarketStore, type MarketSnapshot } from "@/store/marketStore";
+import { useActiveMarket, useSetActiveMarket, useMarketStore, type MarketSnapshot } from "@/store/marketStore";
+import { useShallow } from "zustand/react/shallow";
 import { useRuntimeHealthStore } from "@/store/runtimeHealthStore";
 
 export function MarketSelector() {
-  const { activeMarket, markets, setActiveMarket } = useMarketStore();
+  const activeMarket = useActiveMarket();
+  const setActiveMarket = useSetActiveMarket();
+  const markets = useMarketStore(useShallow((s) => s.markets));
   const [search, setSearch] = useState("");
   const connectionState = useRuntimeHealthStore((state) => state.connectionState);
 

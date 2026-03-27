@@ -1,11 +1,13 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
-import { useMarketStore, type MarketSnapshot } from "@/store/marketStore";
+import { useSetActiveMarket, useMarketStore, type MarketSnapshot } from "@/store/marketStore";
+import { useShallow } from "zustand/react/shallow";
 
 export function MarketScreener() {
   const navigate = useNavigate();
-  const { markets, setActiveMarket } = useMarketStore();
+  const setActiveMarket = useSetActiveMarket();
+  const markets = useMarketStore(useShallow((s) => s.markets));
   const [query, setQuery] = useState("");
 
   const filteredMarkets = useMemo(() => {

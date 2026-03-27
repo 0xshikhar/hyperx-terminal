@@ -1,9 +1,12 @@
 import { useMemo } from "react";
 import { cn } from "@/lib/utils";
-import { useMarketStore } from "@/store/marketStore";
+import { useActiveMarket, useSetActiveMarket, useMarketStore } from "@/store/marketStore";
+import { useShallow } from "zustand/react/shallow";
 
 export function MarketTickerStrip() {
-  const { activeMarket, markets, setActiveMarket } = useMarketStore();
+  const activeMarket = useActiveMarket();
+  const setActiveMarket = useSetActiveMarket();
+  const markets = useMarketStore(useShallow((s) => s.markets));
 
   const sortedMarkets = useMemo(
     () => [...markets].sort((a, b) => a.symbol.localeCompare(b.symbol)),

@@ -14,7 +14,8 @@ import {
   Star,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useMarketStore } from "@/store/marketStore";
+import { useActiveMarket, useSetActiveMarket, useMarketStore } from "@/store/marketStore";
+import { useShallow } from "zustand/react/shallow";
 
 const TABS = [
   { id: "all", label: "All Markets" },
@@ -31,7 +32,9 @@ type SortDir = "asc" | "desc";
 
 export function MarketsPage() {
   const navigate = useNavigate();
-  const { activeMarket, markets, setActiveMarket } = useMarketStore();
+  const activeMarket = useActiveMarket();
+  const setActiveMarket = useSetActiveMarket();
+  const markets = useMarketStore(useShallow((s) => s.markets));
   const [activeTab, setActiveTab] = useState<TabId>("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [sortKey, setSortKey] = useState<SortKey>("volume");

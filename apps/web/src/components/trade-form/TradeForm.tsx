@@ -289,7 +289,64 @@ export function TradeForm({ onSubmit }: TradeFormProps) {
 
   return (
     <div id="terminal-trade-form" className="flex h-full flex-col bg-[#0d0d0f]">
-      <div className="grid grid-cols-3 gap-2 border-b border-[#1a2a2f] px-3 py-3">
+      {/* ── Inline Wallet CTA — when not connected ── */}
+      {!canTrade && (
+        <div className="flex flex-1 flex-col gap-3 p-4">
+          <div className="text-center pb-1">
+            <p className="text-xs font-medium uppercase tracking-widest text-[#506068]">Connect to Trade</p>
+          </div>
+
+          {/* Paper Wallet Option */}
+          <button
+            onClick={() => useWallet.getState().setModalOpen(true)}
+            className="group w-full rounded border-2 border-[#1a3d42] bg-[#0e252a] p-4 text-left transition-all hover:border-[#22d3ee]/50 hover:bg-[#102830]"
+          >
+            <div className="flex items-center gap-3">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded bg-[#0a3038] text-[#22d3ee] text-lg">
+                ⚡
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-semibold text-white">Paper Wallet</span>
+                  <span className="rounded-full bg-[#22d3ee]/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[#22d3ee]">
+                    Instant
+                  </span>
+                </div>
+                <p className="mt-0.5 text-xs text-[#506068]">
+                  $10,000 virtual USDC · No setup required
+                </p>
+              </div>
+            </div>
+          </button>
+
+          {/* Starknet Wallet Option */}
+          <button
+            onClick={() => useWallet.getState().setModalOpen(true)}
+            className="group w-full rounded border border-[#1a2830] bg-[#0d1a1e] p-4 text-left transition-all hover:border-[#2a3a44] hover:bg-[#111e23]"
+          >
+            <div className="flex items-center gap-3">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded bg-[#121e23] text-[#506068] text-lg">
+                🔑
+              </div>
+              <div>
+                <span className="text-sm font-semibold text-white">Starknet Wallet</span>
+                <p className="mt-0.5 text-xs text-[#506068]">
+                  Argent X · Braavos · Live trading
+                </p>
+              </div>
+            </div>
+          </button>
+
+          <p className="text-center text-[10px] text-[#2a3a44]">
+            Powered by Paradex · Starknet L2
+          </p>
+        </div>
+      )}
+
+      {/* ── Trade form — when connected ── */}
+      {canTrade && (
+        <>
+        <div className="grid grid-cols-3 gap-2 border-b border-[#1a2a2f] px-3 py-3">
         {(
           [
             { value: "cross", label: "Cross" },
@@ -637,6 +694,8 @@ export function TradeForm({ onSubmit }: TradeFormProps) {
         title="Connect to trade"
         description="Trading actions are disabled until you connect a Starknet wallet."
       />
+        </>
+      )}
     </div>
   );
 }

@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { useMarketStore } from "@/store/marketStore";
+import { useActiveMarket } from "@/store/marketStore";
 import { useNetworkStore } from "@/store/networkStore";
 import { usePaperTradingStore } from "@/store/paperTradingStore";
 import { useStarkzapBalance } from "@/hooks/useStarkzapBalance";
@@ -8,7 +8,7 @@ import { toast } from "sonner";
 import { RotateCcw, PlusCircle } from "lucide-react";
 
 export function AccountSummary() {
-  const { activeMarket } = useMarketStore();
+  const activeMarket = useActiveMarket();
   const network = useNetworkStore((s) => s.network);
   const isPaperTrading = useNetworkStore((s) => s.isPaperTrading);
 

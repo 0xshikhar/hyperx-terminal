@@ -80,7 +80,7 @@ export function StatusBar({ className, showDetails = true }: StatusBarProps) {
   return (
     <div
       className={cn(
-        "flex items-center justify-between border-t border-border bg-card/80 backdrop-blur-sm px-4 py-2 text-xs",
+        "flex items-center justify-between border-t border-border bg-[#080f12] px-4 py-1.5 text-xs",
         className
       )}
     >

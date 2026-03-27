@@ -21,7 +21,7 @@ export function Navbar() {
 
   return (
     <>
-      <header className="flex items-center justify-between border-b border-border/50 bg-card/50 backdrop-blur-sm px-4 py-2">
+      <header className="flex h-11 items-center justify-between border-b border-[#1a2830] bg-[#0a1216] px-4">
         <div className="flex items-center gap-6">
           {/* Logo */}
           <Link to="/terminal" className="flex items-center gap-2 group">

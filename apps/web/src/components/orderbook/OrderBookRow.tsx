@@ -18,24 +18,25 @@ export const OrderBookRow = memo(function OrderBookRow({
   isMine = false,
 }: OrderBookRowData) {
   return (
-    <div className="relative flex h-8 items-center justify-between px-2 text-xs font-mono">
+    <div className="relative flex h-8 items-center justify-between px-3 text-xs font-mono cursor-default hover:bg-[rgba(255,255,255,0.02)]">
       <OrderBookDepthBar percent={depthPercent} side={side} />
       <span
         className={cn(
-          side === "bid" ? "text-emerald-500" : "text-rose-500",
+          "price-cell relative z-10",
+          side === "bid" ? "text-[#00d084]" : "text-[#ff4757]",
           isMine && "font-semibold"
         )}
       >
-        {price.toLocaleString()}
+        {price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
       </span>
-      <span className={cn("text-muted-foreground", isMine && "text-foreground")}>
+      <span className={cn("relative z-10 tabular-nums text-[#8da0a4]", isMine && "text-foreground")}>
         {size.toFixed(4)}
       </span>
       {isMine && (
         <span
           className={cn(
             "absolute left-1 top-1/2 h-1.5 w-1.5 -translate-y-1/2 rounded-full",
-            side === "bid" ? "bg-emerald-400" : "bg-rose-400"
+            side === "bid" ? "bg-[#00d084]" : "bg-[#ff4757]"
           )}
         />
       )}
