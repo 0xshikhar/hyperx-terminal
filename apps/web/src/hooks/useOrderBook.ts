@@ -88,10 +88,11 @@ export function useOrderBook(market: string) {
   const bids = useOrderbookStore((state) => state.bids);
   const asks = useOrderbookStore((state) => state.asks);
   const openOrders = useOrdersStore((state) => state.openOrders);
-  const markets = useMarketStore((state) => state.markets);
-
-  const marketInfo = markets.find((m) => normalizeMarketSymbol(m.symbol) === normalizedMarket);
-  const centerPrice = marketInfo?.lastPrice || 76045.9;
+  const centerPrice = useMarketStore(
+    (state) =>
+      state.markets.find((m) => normalizeMarketSymbol(m.symbol) === normalizedMarket)?.lastPrice ||
+      76045.9
+  );
 
   useEffect(() => {
     useOrderbookStore.getState().setMarket(normalizedMarket);

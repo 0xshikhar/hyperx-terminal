@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { useShallow } from "zustand/react/shallow";
 import { normalizeMarketSymbol } from "@hyperx/types/common";
 
 export type MarketSnapshot = {
@@ -136,3 +137,55 @@ export const useMarketStore = create<MarketState>()((set) => ({
             return { markets: updated };
         }),
 }));
+
+export function useActiveMarket(): string {
+  return useMarketStore((s) => s.activeMarket);
+}
+
+export function useSetActiveMarket(): (symbol: string) => void {
+  return useMarketStore((s) => s.setActiveMarket);
+}
+
+export function useActiveMarketSummary(targetSymbol?: string) {
+  return useMarketStore(
+    useShallow((s) => {
+      const sym = targetSymbol || s.activeMarket;
+      const m = s.markets.find((item) => item.symbol === sym) ?? s.markets[0];
+      const change24h = m?.changePercent24h ?? 0;
+      return {
+        symbol: sym,
+        displaySymbol: m?.displaySymbol ?? m?.symbol ?? sym,
+        lastPrice: m?.lastPrice ?? 0,
+        changePercent24h: change24h,
+        isPositive: change24h >= 0,
+      };
+    })
+  );
+}
+
+export function useActiveMarketStats(targetSymbol?: string) {
+  return useMarketStore(
+    useShallow((s) => {
+      const sym = targetSymbol || s.activeMarket;
+      const m = s.markets.find((item) => item.symbol === sym) ?? s.markets[0];
+      const displayPrice = m?.lastPrice ?? 0;
+      const change24h = m?.changePercent24h ?? 0;
+      return {
+        displayPrice,
+        markPrice: m?.markPrice ?? displayPrice,
+        oraclePrice: m?.oraclePrice ?? displayPrice,
+        changePercent24h: change24h,
+        isPositive: change24h >= 0,
+        volume24h: m?.volume24h ?? 0,
+        openInterest: m?.openInterest ?? 0,
+        fundingRate: m?.fundingRate ?? 0,
+      };
+    })
+  );
+}
+
+export function useMarketSymbols(): string[] {
+  return useMarketStore(
+    useShallow((s) => s.markets.map((m) => m.symbol))
+  );
+}
