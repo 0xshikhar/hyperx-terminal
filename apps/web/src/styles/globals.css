@@ -54,90 +54,101 @@
 }
 
 :root {
-  --radius: 0.375rem;
+  --radius: 0.25rem; /* Sharp corners for trading UI */
   
   /* Dark terminal theme (default) */
   --background: #0a0a0f;
   --foreground: #e4e4e7;
-  --card: #111118;
+  --card: #0f1217;
   --card-foreground: #e4e4e7;
-  --popover: #111118;
+  --popover: #0f1217;
   --popover-foreground: #e4e4e7;
   --primary: #22d3ee;
   --primary-foreground: #0a0a0f;
-  --secondary: #1a1a24;
+  --secondary: #151a20;
   --secondary-foreground: #e4e4e7;
-  --muted: #1a1a24;
-  --muted-foreground: #71717a;
+  --muted: #151a20;
+  --muted-foreground: #64748b;
   --accent: #22d3ee;
   --accent-foreground: #0a0a0f;
-  --destructive: #f87171;
-  --border: #27272a;
-  --input: #27272a;
+  --destructive: #ef4444;
+  --border: #1e2a30;
+  --input: #1a2228;
   --ring: #22d3ee;
+  
+  /* Semantic trading colors — use these EVERYWHERE */
+  --color-buy: #00d084;        /* Long / Bid */
+  --color-sell: #ff4757;       /* Short / Ask */
+  --color-neutral: #22d3ee;    /* Cyan accent */
+  --color-warn: #f59e0b;       /* Warning / testnet */
+  --color-surface-0: #081214;  /* Deepest background */
+  --color-surface-1: #0d1a1e;  /* Panel background */
+  --color-surface-2: #111e23;  /* Elevated surface */
+  --color-surface-3: #172530;  /* Input / interactive */
+  --color-panel-border: #1a2f38; /* Panel separators */
   
   /* Chart colors */
   --chart-1: #22d3ee;
-  --chart-2: #34d399;
-  --chart-3: #fbbf24;
-  --chart-4: #f87171;
+  --chart-2: #00d084;
+  --chart-3: #f59e0b;
+  --chart-4: #ff4757;
   --chart-5: #a78bfa;
   
   /* Sidebar */
-  --sidebar: #0f0f15;
+  --sidebar: #0a0f14;
   --sidebar-foreground: #e4e4e7;
   --sidebar-primary: #22d3ee;
   --sidebar-primary-foreground: #0a0a0f;
-  --sidebar-accent: #1a1a24;
+  --sidebar-accent: #151a20;
   --sidebar-accent-foreground: #e4e4e7;
-  --sidebar-border: #27272a;
+  --sidebar-border: #1e2a30;
   --sidebar-ring: #22d3ee;
   
   /* Terminal accent colors */
-  --terminal-green: #34d399;
-  --terminal-red: #f87171;
-  --terminal-yellow: #fbbf24;
+  --terminal-green: #00d084;
+  --terminal-red: #ff4757;
+  --terminal-yellow: #f59e0b;
   --terminal-cyan: #22d3ee;
   --terminal-magenta: #e879f9;
   --terminal-blue: #60a5fa;
   --terminal-orange: #fb923c;
-  --terminal-gray: #71717a;
+  --terminal-gray: #64748b;
 }
 
 /* Terminal Dark Theme */
 .dark {
   --background: #0a0a0f;
   --foreground: #e4e4e7;
-  --card: #111118;
+  --card: #0f1217;
   --card-foreground: #e4e4e7;
-  --popover: #111118;
+  --popover: #0f1217;
   --popover-foreground: #e4e4e7;
   --primary: #22d3ee;
   --primary-foreground: #0a0a0f;
-  --secondary: #1a1a24;
+  --secondary: #151a20;
   --secondary-foreground: #e4e4e7;
-  --muted: #1a1a24;
-  --muted-foreground: #71717a;
+  --muted: #151a20;
+  --muted-foreground: #64748b;
   --accent: #22d3ee;
   --accent-foreground: #0a0a0f;
-  --destructive: #f87171;
-  --border: #27272a;
-  --input: #27272a;
+  --destructive: #ef4444;
+  --border: #1e2a30;
+  --input: #1a2228;
   --ring: #22d3ee;
   
   --chart-1: #22d3ee;
-  --chart-2: #34d399;
-  --chart-3: #fbbf24;
-  --chart-4: #f87171;
+  --chart-2: #00d084;
+  --chart-3: #f59e0b;
+  --chart-4: #ff4757;
   --chart-5: #a78bfa;
   
-  --sidebar: #0f0f15;
+  --sidebar: #0a0f14;
   --sidebar-foreground: #e4e4e7;
   --sidebar-primary: #22d3ee;
   --sidebar-primary-foreground: #0a0a0f;
-  --sidebar-accent: #1a1a24;
+  --sidebar-accent: #151a20;
   --sidebar-accent-foreground: #e4e4e7;
-  --sidebar-border: #27272a;
+  --sidebar-border: #1e2a30;
   --sidebar-ring: #22d3ee;
 }
 
@@ -147,170 +158,203 @@
   }
   
   html {
-    scroll-behavior: smooth;
+    /* NO scroll-behavior: smooth — programmatic scrolls must be instant in trading UIs */
+    scroll-behavior: auto;
   }
   
   body {
     @apply bg-background text-foreground antialiased;
     font-family: 'Inter', sans-serif;
+    font-size: 13px; /* Tighter base font for dense data */
+    line-height: 1.4;
     font-feature-settings: "cv02", "cv03", "cv04", "cv11";
   }
   
-  /* Monospace font for terminal-like elements */
+  /* Monospace font for all numeric/price data */
   .font-mono {
     font-family: 'JetBrains Mono', 'Fira Code', monospace;
-    font-feature-settings: "liga" 1, "calt" 1;
+    font-feature-settings: "liga" 1, "calt" 1, "tnum" 1; /* tabular numbers for price alignment */
   }
   
-  /* Custom scrollbar */
+  /* Custom scrollbar — thin and dark */
   ::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
+    width: 4px;
+    height: 4px;
   }
   
   ::-webkit-scrollbar-track {
-    background: var(--background);
+    background: transparent;
   }
   
   ::-webkit-scrollbar-thumb {
-    background: var(--muted);
-    border-radius: 3px;
+    background: #1e2a30;
+    border-radius: 2px;
   }
   
   ::-webkit-scrollbar-thumb:hover {
-    background: var(--muted-foreground);
+    background: #2a3a44;
   }
   
   /* Selection */
   ::selection {
-    background: rgba(34, 211, 238, 0.3);
+    background: rgba(34, 211, 238, 0.25);
     color: var(--foreground);
+  }
+  
+  /* Respect system reduced-motion preference */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
   }
 }
 
 @layer components {
   /* Terminal panel styling */
   .terminal-panel {
-    @apply bg-card border border-border rounded-md;
-    box-shadow: 0 0 20px rgba(34, 211, 238, 0.05),
-                0 0 40px rgba(34, 211, 238, 0.02),
-                inset 0 1px 0 rgba(255, 255, 255, 0.05);
+    @apply bg-card border border-border rounded-sm;
+    box-shadow: 0 0 0 1px rgba(30, 42, 48, 0.8);
   }
   
   /* Terminal header */
   .terminal-header {
-    @apply flex items-center justify-between px-3 py-2 border-b border-border bg-secondary/50;
+    @apply flex items-center justify-between px-3 py-2 border-b border-border;
+    background: var(--color-surface-1);
   }
   
   /* Terminal text */
   .terminal-text {
-    @apply font-mono text-sm;
+    @apply font-mono text-xs;
   }
   
   /* Price up */
   .price-up {
-    @apply text-[var(--terminal-green)];
-    text-shadow: 0 0 10px rgba(52, 211, 153, 0.3);
+    color: var(--terminal-green);
   }
   
   /* Price down */
   .price-down {
-    @apply text-[var(--terminal-red)];
-    text-shadow: 0 0 10px rgba(248, 113, 113, 0.3);
+    color: var(--terminal-red);
   }
   
-  /* Glowing border */
+  /* Glowing border — use sparingly */
   .glow-border {
-    box-shadow: 0 0 20px rgba(34, 211, 238, 0.15),
-                inset 0 1px 0 rgba(255, 255, 255, 0.1);
-  }
-  
-  /* Scanline effect */
-  .scanlines {
-    position: relative;
-  }
-  
-  .scanlines::before {
-    content: "";
-    position: absolute;
-    inset: 0;
-    background: repeating-linear-gradient(
-      0deg,
-      transparent,
-      transparent 2px,
-      rgba(0, 0, 0, 0.03) 2px,
-      rgba(0, 0, 0, 0.03) 4px
-    );
-    pointer-events: none;
-    z-index: 1;
+    box-shadow: 0 0 12px rgba(34, 211, 238, 0.12),
+                inset 0 1px 0 rgba(255, 255, 255, 0.04);
   }
   
   /* Data row hover */
   .data-row {
-    @apply transition-colors duration-150;
+    @apply transition-colors;
+    transition-duration: 80ms;
   }
   
   .data-row:hover {
-    @apply bg-secondary/80;
+    background: rgba(30, 42, 48, 0.6);
   }
   
   /* Status indicator */
   .status-dot {
-    @apply w-2 h-2 rounded-full;
-    box-shadow: 0 0 8px currentColor;
+    @apply w-2 h-2 rounded-full flex-shrink-0;
   }
   
   .status-dot.active {
-    @apply bg-[var(--terminal-green)];
+    background: var(--terminal-green);
+    box-shadow: 0 0 6px var(--terminal-green);
   }
   
   .status-dot.inactive {
-    @apply bg-[var(--terminal-red)];
+    background: var(--terminal-red);
+  }
+  
+  /* Price containment for high-frequency updates */
+  .price-cell {
+    contain: content;
+    will-change: contents;
+  }
+  
+  /* Depth bar — trading orderbook */
+  .depth-bar {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+  }
+  
+  .depth-bar-bid {
+    background: linear-gradient(to left, rgba(0, 208, 132, 0.12), transparent);
+  }
+  
+  .depth-bar-ask {
+    background: linear-gradient(to right, rgba(255, 71, 87, 0.12), transparent);
   }
   
   /* Button variants */
-  .btn-terminal {
-    @apply font-mono text-sm px-4 py-2 rounded border border-border bg-secondary 
-           hover:bg-secondary/80 hover:border-primary/50 transition-all duration-200;
+  .btn-buy {
+    background: var(--color-buy);
+    color: #000;
+    font-weight: 600;
   }
   
-  .btn-terminal-primary {
-    @apply font-mono text-sm px-4 py-2 rounded bg-primary text-primary-foreground 
-           hover:bg-primary/90 hover:shadow-[0_0_20px_rgba(34,211,238,0.3)] transition-all duration-200;
+  .btn-buy:hover {
+    background: #00e090;
+  }
+  
+  .btn-sell {
+    background: var(--color-sell);
+    color: #fff;
+    font-weight: 600;
+  }
+  
+  .btn-sell:hover {
+    background: #ff6070;
   }
   
   /* Input styling */
   .input-terminal {
-    @apply font-mono text-sm bg-secondary border border-border rounded px-3 py-2
-           focus:border-primary focus:ring-1 focus:ring-primary/50 outline-none transition-all;
+    @apply font-mono text-xs bg-[--color-surface-3] border border-border rounded px-3 py-2
+           focus:border-primary focus:ring-1 focus:ring-primary/40 outline-none;
+    transition: border-color 80ms, box-shadow 80ms;
   }
   
   /* Table styling */
-  .table-terminal {
-    @apply w-full text-sm;
-  }
-  
   .table-terminal th {
-    @apply font-mono text-muted-foreground text-left py-2 px-3 border-b border-border bg-secondary/50;
+    @apply font-mono text-[10px] uppercase tracking-widest text-muted-foreground py-2 px-3 border-b border-border;
+    background: var(--color-surface-1);
   }
   
   .table-terminal td {
-    @apply font-mono py-1.5 px-3 border-b border-border/50;
-  }
-  
-  /* Grid lines */
-  .grid-lines {
-    background-image: 
-      linear-gradient(rgba(34, 211, 238, 0.03) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(34, 211, 238, 0.03) 1px, transparent 1px);
-    background-size: 20px 20px;
+    @apply font-mono text-xs py-1.5 px-3 border-b;
+    border-color: rgba(30, 42, 48, 0.5);
   }
 }
 
 @layer utilities {
-  /* Text glow effects */
+  /* ─── Price Tick Flash Animations ─────────────────────────── */
+  /* The single most important micro-animation for trading UIs   */
+  @keyframes flash-up {
+    0% { background-color: rgba(0, 208, 132, 0.28); }
+    60% { background-color: rgba(0, 208, 132, 0.1); }
+    100% { background-color: transparent; }
+  }
+  
+  @keyframes flash-down {
+    0% { background-color: rgba(255, 71, 87, 0.28); }
+    60% { background-color: rgba(255, 71, 87, 0.1); }
+    100% { background-color: transparent; }
+  }
+  
+  .flash-up {
+    animation: flash-up 400ms ease-out forwards;
+  }
+  
+  .flash-down {
+    animation: flash-down 400ms ease-out forwards;
+  }
+  
+  /* ─── Text glow effects (use sparingly) ───────────────────── */
   .text-glow-green {
-    text-shadow: 0 0 10px rgba(52, 211, 153, 0.5);
+    text-shadow: 0 0 8px rgba(0, 208, 132, 0.4);
   }
   
   .text-glow-red {
