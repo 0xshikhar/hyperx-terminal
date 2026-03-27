@@ -37,9 +37,44 @@ const MAX_LEVELS = 200;
 export const FLUSH_WINDOW_MS = 50;
 
 /**
- * Coalesces an entire batch of deltas against the current book side in a single pass.
- * Instead of creating M Maps and sorting M times for M deltas, this creates exactly 1 Map
- * and performs 1 sort per side per flush window.
+ * Binary search to locate a price level in an already-sorted orderbook side in O(log N) time.
+ * - "desc": sorted descending (highest price at index 0, e.g. bids: [76000, 75990, 75980])
+ * - "asc":  sorted ascending (lowest price at index 0, e.g. asks: [76010, 76020, 76030])
+ *
+ * Returns { found: true, index } if price matches an existing level.
+ * Returns { found: false, index } where `index` is the exact insertion position.
+ */
+export function binarySearchPrice(
+  levels: OrderbookLevel[],
+  targetPrice: number,
+  direction: "asc" | "desc"
+): { found: boolean; index: number } {
+  let low = 0;
+  let high = levels.length - 1;
+
+  while (low <= high) {
+    const mid = (low + high) >>> 1;
+    const midPrice = levels[mid].price;
+
+    if (midPrice === targetPrice) {
+      return { found: true, index: mid };
+    }
+
+    const isBefore = direction === "desc" ? midPrice < targetPrice : midPrice > targetPrice;
+    if (isBefore) {
+      high = mid - 1;
+    } else {
+      low = mid + 1;
+    }
+  }
+
+  return { found: false, index: low };
+}
+
+/**
+ * Applies a batch of orderbook deltas to an already-sorted orderbook side using O(log N)
+ * binary search insertion/mutation, completely eliminating Map allocations and O(N log N)
+ * full array sorts on the hot path.
  */
 function applyCoalescedSideDeltas(
   currentSide: OrderbookLevel[],
@@ -47,35 +82,43 @@ function applyCoalescedSideDeltas(
   side: "bids" | "asks",
   direction: "asc" | "desc"
 ): OrderbookLevel[] {
-  const map = new Map<number, number>();
-
-  // 1. Seed existing levels
-  for (let i = 0; i < currentSide.length; i++) {
-    const level = currentSide[i];
-    map.set(level.price, level.size);
+  let hasUpdates = false;
+  for (let b = 0; b < batch.length; b++) {
+    if (batch[b][side].length > 0) {
+      hasUpdates = true;
+      break;
+    }
   }
+  if (!hasUpdates) return currentSide;
 
-  // 2. Apply all deltas in the batch sequentially into the single Map
+  // Clone current side array once
+  const next = currentSide.slice();
+
   for (let b = 0; b < batch.length; b++) {
     const updates = batch[b][side];
     for (let u = 0; u < updates.length; u++) {
       const update = updates[u];
+      const { found, index } = binarySearchPrice(next, update.price, direction);
+
       if (update.size <= 0) {
-        map.delete(update.price);
+        if (found) {
+          next.splice(index, 1);
+        }
       } else {
-        map.set(update.price, update.size);
+        if (found) {
+          next[index] = { price: update.price, size: update.size };
+        } else {
+          next.splice(index, 0, { price: update.price, size: update.size });
+        }
       }
     }
   }
 
-  // 3. Extract and sort once
-  const result: OrderbookLevel[] = [];
-  for (const [price, size] of map.entries()) {
-    result.push({ price, size });
+  if (next.length > MAX_LEVELS) {
+    next.length = MAX_LEVELS;
   }
 
-  result.sort((a, b) => (direction === "asc" ? a.price - b.price : b.price - a.price));
-  return result.length > MAX_LEVELS ? result.slice(0, MAX_LEVELS) : result;
+  return next;
 }
 
 // Ingestion buffer and timer held outside of reactive state to eliminate subscriber thrashing

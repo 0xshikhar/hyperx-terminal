@@ -56,21 +56,24 @@ function generateReferenceLevels(
 
 const aggregateLevels = (levels: OrderbookLevel[], aggregation: number, side: "bid" | "ask") => {
   if (aggregation <= 1) {
-    const sorted = [...levels].sort((a, b) => (side === "bid" ? b.price - a.price : a.price - b.price));
-    return sorted;
+    return levels;
   }
 
   const map = new Map<number, number>();
-  for (const level of levels) {
+  for (let i = 0; i < levels.length; i++) {
+    const level = levels[i];
     const tickSize = getTickSize(level.price);
     const bucket = roundToTick(level.price, tickSize * aggregation);
     map.set(bucket, (map.get(bucket) ?? 0) + level.size);
   }
-  
-  const rows: { price: number; size: number }[] = Array.from(map.entries()).map(([price, size]) => ({
-    price: Number(price.toFixed(getPrecision(price))),
-    size,
-  }));
+
+  const rows: OrderbookLevel[] = [];
+  for (const [price, size] of map.entries()) {
+    rows.push({
+      price: Number(price.toFixed(getPrecision(price))),
+      size,
+    });
+  }
   rows.sort((a, b) => (side === "bid" ? b.price - a.price : a.price - b.price));
   return rows;
 };
@@ -139,25 +142,43 @@ export function useOrderBook(market: string) {
   );
 
   const bidRows = useMemo<OrderBookRow[]>(() => {
-    const max = aggregatedBids.reduce((acc, level) => Math.max(acc, level.size), 0) || 1;
-    return aggregatedBids.slice(0, 100).map((level) => ({
-      price: level.price,
-      size: level.size,
-      depthPercent: Math.min(100, (level.size / max) * 100),
-      side: "bid" as const,
-      isMine: minePriceSet.has(level.price),
-    }));
+    const limit = Math.min(100, aggregatedBids.length);
+    let max = 1;
+    for (let i = 0; i < limit; i++) {
+      if (aggregatedBids[i].size > max) max = aggregatedBids[i].size;
+    }
+    const rows = new Array<OrderBookRow>(limit);
+    for (let i = 0; i < limit; i++) {
+      const level = aggregatedBids[i];
+      rows[i] = {
+        price: level.price,
+        size: level.size,
+        depthPercent: Math.min(100, (level.size / max) * 100),
+        side: "bid",
+        isMine: minePriceSet.has(level.price),
+      };
+    }
+    return rows;
   }, [aggregatedBids, minePriceSet]);
 
   const askRows = useMemo<OrderBookRow[]>(() => {
-    const max = aggregatedAsks.reduce((acc, level) => Math.max(acc, level.size), 0) || 1;
-    return aggregatedAsks.slice(0, 100).map((level) => ({
-      price: level.price,
-      size: level.size,
-      depthPercent: Math.min(100, (level.size / max) * 100),
-      side: "ask" as const,
-      isMine: minePriceSet.has(level.price),
-    }));
+    const limit = Math.min(100, aggregatedAsks.length);
+    let max = 1;
+    for (let i = 0; i < limit; i++) {
+      if (aggregatedAsks[i].size > max) max = aggregatedAsks[i].size;
+    }
+    const rows = new Array<OrderBookRow>(limit);
+    for (let i = 0; i < limit; i++) {
+      const level = aggregatedAsks[i];
+      rows[i] = {
+        price: level.price,
+        size: level.size,
+        depthPercent: Math.min(100, (level.size / max) * 100),
+        side: "ask",
+        isMine: minePriceSet.has(level.price),
+      };
+    }
+    return rows;
   }, [aggregatedAsks, minePriceSet]);
 
   const feedHealth = getMarketFeedHealth(normalizedMarket);
