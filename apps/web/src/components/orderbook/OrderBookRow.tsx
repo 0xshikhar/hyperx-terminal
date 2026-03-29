@@ -18,7 +18,7 @@ export const OrderBookRow = memo(function OrderBookRow({
   isMine = false,
 }: OrderBookRowData) {
   return (
-    <div className="relative flex h-8 items-center justify-between px-3 text-xs font-mono cursor-default hover:bg-[rgba(255,255,255,0.02)]">
+    <div className="relative flex h-6 items-center justify-between px-3 text-[11px] font-mono cursor-default hover:bg-[rgba(255,255,255,0.03)]">
       <OrderBookDepthBar percent={depthPercent} side={side} />
       <span
         className={cn(

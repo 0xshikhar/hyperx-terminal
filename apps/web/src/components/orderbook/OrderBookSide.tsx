@@ -21,7 +21,7 @@ export function OrderBookSide({ rows, height }: OrderBookSideProps) {
       height={height}
       width="100%"
       itemCount={rows.length}
-      itemSize={32}
+      itemSize={24}
       itemData={rows}
       itemKey={(index, data) => `${data[index]?.price ?? index}-${data[index]?.side ?? ""}`}
     >
