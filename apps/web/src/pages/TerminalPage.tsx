@@ -72,22 +72,19 @@ function MarketHeaderPrice() {
 
       <div className="flex items-center gap-2.5">
         <span
+          data-testid="header-last-price"
           className={cn(
             "price-cell font-mono text-[26px] font-bold leading-none text-white rounded px-1",
             flashClass
           )}
-        >
-          ${formatPrice(lastPrice)}
-        </span>
+        >{`$${formatPrice(lastPrice)}`}</span>
         <span
+          data-testid="header-change-percent"
           className={cn(
             "font-mono text-sm font-medium",
             isPositive ? "text-[#00d084]" : "text-[#ff4757]"
           )}
-        >
-          {isPositive ? "+" : ""}
-          {changePercent24h.toFixed(2)}%
-        </span>
+        >{isPositive ? "+" : ""}{changePercent24h.toFixed(2)}%</span>
       </div>
     </div>
   );
@@ -162,7 +159,7 @@ export function TerminalPage() {
   );
   const [selectedInterval, setSelectedInterval] =
     useState<CandleInterval>("1m");
-  const [rightPanelTab, setRightPanelTab] = useState<"orderbook" | "trades">(
+  const [centerPanelTab, setCenterPanelTab] = useState<"orderbook" | "trades">(
     "orderbook"
   );
 
@@ -183,13 +180,13 @@ export function TerminalPage() {
         </div>
       </header>
 
-      {/* ── Body ── */}
-      <div className="grid flex-1 min-h-0 xl:grid-cols-[minmax(0,1fr)_340px]">
-        {/* Left: Chart + Positions */}
-        <div className="grid min-h-0 xl:grid-rows-[minmax(300px,1.6fr)_minmax(160px,1fr)]">
-          {/* Chart panel */}
+      {/* ── 3-Section Trading Interface ── */}
+      <div className="grid flex-1 min-h-0 grid-cols-1 lg:grid-cols-[minmax(0,1fr)_290px] xl:grid-cols-[minmax(0,1fr)_310px] 2xl:grid-cols-[minmax(0,1fr)_330px]">
+        {/* Left + Center Area (Chart + OrderBook on top, Positions spanning both at bottom) */}
+        <div className="grid min-h-0 grid-cols-1 lg:grid-cols-[minmax(0,1fr)_270px] xl:grid-cols-[minmax(0,1fr)_290px] 2xl:grid-cols-[minmax(0,1fr)_310px] grid-rows-[minmax(320px,1fr)_auto]">
+          {/* Section 1: Chart */}
           <section className="flex min-h-0 flex-col border-b border-[#1a2830]">
-            {/* Chart toolbar — interval + indicators + tools in one strip (no sidebar) */}
+            {/* Chart toolbar */}
             <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#1a2830] bg-[#091416] px-3 py-2">
               {/* Intervals + indicators */}
               <div className="flex items-center gap-0.5 flex-wrap">
@@ -251,23 +248,16 @@ export function TerminalPage() {
               </div>
             </div>
 
-            {/* Chart */}
+            {/* Chart canvas */}
             <div className="min-h-0 flex-1 bg-[#081214] p-2">
               <TradingChart interval={selectedInterval} />
             </div>
           </section>
 
-          {/* Positions */}
-          <div className="min-h-0 bg-[#091416]">
-            <PositionsTabs />
-          </div>
-        </div>
-
-        {/* Right: OrderBook / Trades + TradeForm */}
-        <aside className="grid min-h-0 border-t border-[#1a2830] bg-[#091416] xl:border-l xl:border-t-0 xl:grid-rows-[minmax(0,1fr)_minmax(260px,0.85fr)]">
-          {/* Order Book / Trades */}
-          <div className="flex min-h-0 flex-col">
-            <div className="flex border-b border-[#1a2830]">
+          {/* Section 2: Order Book / Trades (Dedicated Center Column) */}
+          <section className="flex min-h-0 flex-col border-b border-[#1a2830] lg:border-l lg:border-[#1a2830] bg-[#091416]">
+            {/* Tab header: Order Book | Trades */}
+            <div className="flex border-b border-[#1a2830] bg-[#091416]">
               {(
                 [
                   { id: "orderbook", label: "Order Book" },
@@ -276,10 +266,10 @@ export function TerminalPage() {
               ).map((tab) => (
                 <button
                   key={tab.id}
-                  onClick={() => setRightPanelTab(tab.id)}
+                  onClick={() => setCenterPanelTab(tab.id)}
                   className={cn(
                     "flex-1 border-b-2 px-3 py-2.5 text-xs font-medium transition-colors",
-                    rightPanelTab === tab.id
+                    centerPanelTab === tab.id
                       ? "border-[#22d3ee] text-white"
                       : "border-transparent text-[#64748b] hover:text-[#c8d4d7]"
                   )}
@@ -292,19 +282,24 @@ export function TerminalPage() {
               </div>
             </div>
 
-            <div className="min-h-0 flex-1">
-              {rightPanelTab === "orderbook" ? (
+            <div className="min-h-0 flex-1 overflow-hidden">
+              {centerPanelTab === "orderbook" ? (
                 <OrderBook embedded />
               ) : (
                 <RecentTrades embedded />
               )}
             </div>
-          </div>
+          </section>
 
-          {/* Trade Form */}
-          <div className="min-h-0 border-t border-[#1a2830]">
-            <TradeForm />
+          {/* Bottom Dock: Positions / Orders / Balances (spans both Chart & Order Book) */}
+          <div className="min-h-0 lg:col-span-2 bg-[#091416]">
+            <PositionsTabs />
           </div>
+        </div>
+
+        {/* Section 3: Trade Form (Dedicated Right Column - Full Height) */}
+        <aside className="flex min-h-0 flex-col border-t border-[#1a2830] bg-[#091416] lg:border-l lg:border-t-0">
+          <TradeForm />
         </aside>
       </div>
     </div>

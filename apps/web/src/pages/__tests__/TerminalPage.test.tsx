@@ -67,8 +67,8 @@ describe("TerminalPage Re-render Isolation", () => {
   it("renders market header price, quick switcher, and stat cards", () => {
     render(<TerminalPage />);
 
-    expect(screen.getByText("$76,400.00")).toBeInTheDocument();
-    expect(screen.getByText("+1.25%")).toBeInTheDocument();
+    expect(screen.getByTestId("header-last-price")).toHaveTextContent("$76,400.00");
+    expect(screen.getByTestId("header-change-percent")).toHaveTextContent("+1.25%");
     expect(screen.getByText("Mark")).toBeInTheDocument();
     expect(screen.getByText("Oracle")).toBeInTheDocument();
   });
@@ -76,7 +76,7 @@ describe("TerminalPage Re-render Isolation", () => {
   it("updates header price when active market price ticks", () => {
     render(<TerminalPage />);
 
-    expect(screen.getByText("$76,400.00")).toBeInTheDocument();
+    expect(screen.getByTestId("header-last-price")).toHaveTextContent("$76,400.00");
 
     act(() => {
       useMarketStore.getState().updateMarket("BTC-USD", {
@@ -85,14 +85,14 @@ describe("TerminalPage Re-render Isolation", () => {
       });
     });
 
-    expect(screen.getByText("$76,550.00")).toBeInTheDocument();
-    expect(screen.getByText("+1.45%")).toBeInTheDocument();
+    expect(screen.getByTestId("header-last-price")).toHaveTextContent("$76,550.00");
+    expect(screen.getByTestId("header-change-percent")).toHaveTextContent("+1.45%");
   });
 
   it("does not alter active market price when another market ticks", () => {
     render(<TerminalPage />);
 
-    expect(screen.getByText("$76,400.00")).toBeInTheDocument();
+    expect(screen.getByTestId("header-last-price")).toHaveTextContent("$76,400.00");
 
     act(() => {
       useMarketStore.getState().updateMarket("ETH-USD", {
@@ -102,7 +102,7 @@ describe("TerminalPage Re-render Isolation", () => {
     });
 
     // Active market BTC-USD price must remain completely unchanged
-    expect(screen.getByText("$76,400.00")).toBeInTheDocument();
-    expect(screen.getByText("+1.25%")).toBeInTheDocument();
+    expect(screen.getByTestId("header-last-price")).toHaveTextContent("$76,400.00");
+    expect(screen.getByTestId("header-change-percent")).toHaveTextContent("+1.25%");
   });
 });
