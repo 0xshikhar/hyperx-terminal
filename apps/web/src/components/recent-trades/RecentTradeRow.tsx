@@ -18,14 +18,14 @@ export const RecentTradeRow = memo(function RecentTradeRow({
 }: RecentTradeRowProps) {
   return (
     <div
-      className="flex h-8 items-center justify-between px-2 text-xs font-mono"
+      className="flex h-6 items-center justify-between px-3 text-[11px] font-mono hover:bg-[rgba(255,255,255,0.03)] cursor-default"
       data-ts={timestamp}
     >
-      <span className="text-muted-foreground">{time}</span>
-      <span className={cn(side === "buy" ? "text-emerald-500" : "text-rose-500")}>
+      <span className={cn("tabular-nums", side === "buy" ? "text-[#00d084]" : "text-[#ff4757]")}>
         {price.toLocaleString()}
       </span>
-      <span className="text-muted-foreground">{size.toFixed(4)}</span>
+      <span className="tabular-nums text-[#8da0a4]">{size.toFixed(4)}</span>
+      <span className="tabular-nums text-[#506068]">{time}</span>
     </div>
   );
 }, areEqual);

@@ -1,9 +1,8 @@
-import { memo } from "react";
+import { memo, useRef, useState, useEffect } from "react";
 import { FixedSizeList, type ListChildComponentProps } from "react-window";
 import { useMarketStore } from "@/store/marketStore";
 import { RecentTradeRow } from "@/components/recent-trades/RecentTradeRow";
 import { useRecentTrades } from "@/hooks/useRecentTrades";
-import { useRuntimeHealthStore } from "@/store/runtimeHealthStore";
 import { cn } from "@/lib/utils";
 import type { Trade } from "@/store/tradeStore";
 
@@ -11,15 +10,6 @@ type RecentTradesProps = {
   embedded?: boolean;
 };
 
-/**
- * Stable virtualized row renderer declared outside the parent component.
- *
- * CRITICAL PERFORMANCE PATTERN:
- * If this component is declared inside `RecentTrades`, every parent re-render creates
- * a brand-new function reference. react-window treats different function references as
- * different component types, destroying all existing DOM nodes, running unmount/mount cycles,
- * and causing catastrophic layout thrash on every trade arrival.
- */
 const RecentTradeRowRenderer = memo(({ index, style, data }: ListChildComponentProps<Trade[]>) => {
   const trade = data[index];
   if (!trade) return null;
@@ -44,13 +34,29 @@ const getTradeItemKey = (index: number, data: Trade[]) =>
 export function RecentTrades({ embedded = false }: RecentTradesProps) {
   const activeMarket = useMarketStore((s) => s.activeMarket);
   const { trades, listData, isReference } = useRecentTrades(activeMarket);
-  const connectionState = useRuntimeHealthStore((state) => state.connectionState);
-  const getMarketFeedHealth = useRuntimeHealthStore((state) => state.getMarketFeedHealth);
-  const feedHealth = getMarketFeedHealth(activeMarket);
-  const listHeight = embedded ? 420 : 256;
+
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [listHeight, setListHeight] = useState(480);
+
+  useEffect(() => {
+    if (!containerRef.current) return;
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const h = entry.contentRect.height;
+        if (h > 0) {
+          setListHeight(Math.max(160, Math.floor(h - 56)));
+        }
+      }
+    });
+    observer.observe(containerRef.current);
+    return () => observer.disconnect();
+  }, []);
+
+  const baseSymbol = activeMarket.split("-")[0] || "ASSET";
 
   return (
     <div
+      ref={containerRef}
       className={cn(
         "flex h-full min-h-0 flex-col",
         embedded
@@ -58,56 +64,52 @@ export function RecentTrades({ embedded = false }: RecentTradesProps) {
           : "rounded-[20px] border border-border/70 bg-[linear-gradient(180deg,rgba(17,17,24,0.98),rgba(10,10,15,0.98))] p-4 shadow-[0_20px_80px_rgba(0,0,0,0.28)]"
       )}
     >
+      {/* Header Bar */}
       <div
         className={cn(
-          "flex items-center justify-between",
-          embedded ? "border-b border-[#152327] px-4 py-3" : ""
+          "flex items-center justify-between border-b border-[#152327] px-3 py-2",
+          embedded ? "bg-[#0a1518]" : ""
         )}
       >
-        {!embedded ? <h3 className="text-sm font-semibold">Recent Trades</h3> : <div className="text-xs font-medium text-[#8da0a4]">Tape</div>}
-        <span className={cn("text-xs", embedded ? "text-[#8da0a4]" : "text-muted-foreground")}>
-          {activeMarket}
-          {isReference && " · reference"}
-        </span>
+        <div className="flex items-center gap-2">
+          <span className="font-mono text-xs font-semibold text-[#c8d4d7]">
+            {embedded ? "Tape" : "Recent Trades"}
+          </span>
+          <span className="font-mono text-xs text-[#506068]">{activeMarket}</span>
+          {isReference && (
+            <span className="rounded bg-sky-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-sky-300">
+              Ref
+            </span>
+          )}
+        </div>
+        <span className="text-[11px] text-[#506068]">{trades.length} trades</span>
       </div>
-      <div className={cn("min-h-0 flex-1", embedded ? "px-4 py-3" : "mt-3")}>
-        {isReference ? (
-          <div className="space-y-3">
-            <div className="rounded-md border border-sky-500/20 bg-sky-500/5 px-3 py-2 text-xs text-sky-200">
-              Live trade prints are unavailable, so the tape is rendering a deterministic reference sequence for {activeMarket}.
-            </div>
-            <FixedSizeList
-              height={listHeight}
-              width="100%"
-              itemCount={trades.length}
-              itemSize={32}
-              itemData={listData}
-              itemKey={getTradeItemKey}
-            >
-              {RecentTradeRowRenderer}
-            </FixedSizeList>
+
+      {/* Column Headers */}
+      <div className="flex items-center justify-between border-b border-[#152327] bg-[#081214] px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-[#506068]">
+        <span>Price</span>
+        <span>Size ({baseSymbol})</span>
+        <span>Time</span>
+      </div>
+
+      {/* Trades List */}
+      <div className="min-h-0 flex-1 overflow-hidden">
+        {isReference && (
+          <div className="mx-2 my-1.5 rounded border border-sky-500/20 bg-sky-500/5 px-2.5 py-1 text-[10px] text-sky-200">
+            Simulated tape stream for {activeMarket}
           </div>
-        ) : !feedHealth.isFresh ? (
-          <div className="flex h-64 flex-col items-center justify-center gap-2 px-6 text-center text-xs text-muted-foreground">
-            <div>
-              Recent trade tape is stale for {activeMarket}.
-            </div>
-            <div>
-              The socket is {connectionState === "connected" ? "up but quiet" : connectionState}, so the list is showing the last known snapshot instead of pretending it is live.
-            </div>
-          </div>
-        ) : (
-          <FixedSizeList
-            height={listHeight}
-            width="100%"
-            itemCount={trades.length}
-            itemSize={32}
-            itemData={listData}
-            itemKey={getTradeItemKey}
-          >
-            {RecentTradeRowRenderer}
-          </FixedSizeList>
         )}
+
+        <FixedSizeList
+          height={listHeight}
+          width="100%"
+          itemCount={trades.length}
+          itemSize={24}
+          itemData={listData}
+          itemKey={getTradeItemKey}
+        >
+          {RecentTradeRowRenderer}
+        </FixedSizeList>
       </div>
     </div>
   );
