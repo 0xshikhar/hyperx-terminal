@@ -48,6 +48,20 @@ export function TradeForm({ onSubmit }: TradeFormProps) {
   const paperBalance = usePaperTradingStore((s) => s.balance);
   const paperPositions = usePaperTradingStore((s) => s.positions);
   const paperPosition = paperPositions.find((p) => p.market === activeMarket);
+  const faucet = usePaperTradingStore((s) => s.faucet);
+  const paperMarginUsed = paperPositions.reduce((acc, p) => acc + p.margin, 0);
+  const paperPnl = paperPositions.reduce((acc, p) => acc + p.pnl, 0);
+  const paperEquity = paperBalance + paperMarginUsed + paperPnl;
+
+  const setSizePercentage = (percent: number) => {
+    const priceRef = market?.lastPrice || (orderType === "limit" ? Number(price) : 0);
+    if (priceRef <= 0) return;
+    const availableFunds = isPaperTrading ? paperBalance : (account?.available || 0);
+    if (availableFunds <= 0) return;
+    const maxNotional = availableFunds * leverage * (percent / 100);
+    const calculatedSize = maxNotional / priceRef;
+    setSize(calculatedSize.toFixed(4));
+  };
   const { data: accountData } = useQuery({
     queryKey: ["account-summary"],
     queryFn: getAccountSummary,
@@ -288,65 +302,9 @@ export function TradeForm({ onSubmit }: TradeFormProps) {
   }, [isWalletConnected, registerShortcut, unregisterShortcut]);
 
   return (
-    <div id="terminal-trade-form" className="flex h-full flex-col bg-[#0d0d0f]">
-      {/* ── Inline Wallet CTA — when not connected ── */}
-      {!canTrade && (
-        <div className="flex flex-1 flex-col gap-3 p-4">
-          <div className="text-center pb-1">
-            <p className="text-xs font-medium uppercase tracking-widest text-[#506068]">Connect to Trade</p>
-          </div>
-
-          {/* Paper Wallet Option */}
-          <button
-            onClick={() => useWallet.getState().setModalOpen(true)}
-            className="group w-full rounded border-2 border-[#1a3d42] bg-[#0e252a] p-4 text-left transition-all hover:border-[#22d3ee]/50 hover:bg-[#102830]"
-          >
-            <div className="flex items-center gap-3">
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded bg-[#0a3038] text-[#22d3ee] text-lg">
-                ⚡
-              </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-semibold text-white">Paper Wallet</span>
-                  <span className="rounded-full bg-[#22d3ee]/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[#22d3ee]">
-                    Instant
-                  </span>
-                </div>
-                <p className="mt-0.5 text-xs text-[#506068]">
-                  $10,000 virtual USDC · No setup required
-                </p>
-              </div>
-            </div>
-          </button>
-
-          {/* Starknet Wallet Option */}
-          <button
-            onClick={() => useWallet.getState().setModalOpen(true)}
-            className="group w-full rounded border border-[#1a2830] bg-[#0d1a1e] p-4 text-left transition-all hover:border-[#2a3a44] hover:bg-[#111e23]"
-          >
-            <div className="flex items-center gap-3">
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded bg-[#121e23] text-[#506068] text-lg">
-                🔑
-              </div>
-              <div>
-                <span className="text-sm font-semibold text-white">Starknet Wallet</span>
-                <p className="mt-0.5 text-xs text-[#506068]">
-                  Argent X · Braavos · Live trading
-                </p>
-              </div>
-            </div>
-          </button>
-
-          <p className="text-center text-[10px] text-[#2a3a44]">
-            Powered by Paradex · Starknet L2
-          </p>
-        </div>
-      )}
-
-      {/* ── Trade form — when connected ── */}
-      {canTrade && (
-        <>
-        <div className="grid grid-cols-3 gap-2 border-b border-[#1a2a2f] px-3 py-3">
+    <div id="terminal-trade-form" className="flex h-full min-h-0 flex-col bg-[#091416] text-[#c8d4d7] overflow-y-auto">
+      {/* ── Preset selector ── */}
+      <div className="grid grid-cols-3 gap-1.5 border-b border-[#1a2830] bg-[#0a1518] p-2.5">
         {(
           [
             { value: "cross", label: "Cross" },
@@ -358,10 +316,10 @@ export function TradeForm({ onSubmit }: TradeFormProps) {
             key={preset.value}
             onClick={() => setExecutionPreset(preset.value)}
             className={cn(
-              "rounded-md px-3 py-2 text-xs font-medium transition-colors",
+              "rounded px-2.5 py-1.5 text-xs font-medium transition-colors",
               executionPreset === preset.value
-                ? "bg-[#273136] text-white"
-                : "bg-[#141d20] text-[#7f8c90] hover:bg-[#182327] hover:text-[#d4dbdd]"
+                ? "bg-[#16272c] text-[#22d3ee] border border-[#1d4a50]"
+                : "bg-[#0c181b] text-[#6b7c82] hover:bg-[#112025] hover:text-[#c8d4d7]"
             )}
           >
             {preset.label}
@@ -369,16 +327,17 @@ export function TradeForm({ onSubmit }: TradeFormProps) {
         ))}
       </div>
 
-      <div className="grid grid-cols-3 border-b border-[#1a2a2f]">
+      {/* ── Order type tabs ── */}
+      <div className="grid grid-cols-3 border-b border-[#1a2830] bg-[#081214]">
         {(["market", "limit", "stop"] as const).map((value) => (
           <button
             key={value}
             onClick={() => setOrderType(value)}
             className={cn(
-              "px-3 py-3 text-xs font-medium uppercase transition-colors",
+              "py-2 text-xs font-semibold uppercase tracking-wider transition-colors",
               orderType === value
-                ? "border-b border-[#53d8c8] bg-[#111a1d] text-white"
-                : "text-[#6b6b74] hover:bg-[#151519] hover:text-[#a0a0a8]"
+                ? "border-b-2 border-[#22d3ee] bg-[#0c181b] text-white"
+                : "text-[#64748b] hover:bg-[#0a1518] hover:text-[#c8d4d7]"
             )}
           >
             {value}
@@ -386,12 +345,15 @@ export function TradeForm({ onSubmit }: TradeFormProps) {
         ))}
       </div>
 
-      <div className="grid grid-cols-2 border-b border-[#1a2a2f]">
+      {/* ── Side selection: Buy / Long vs Sell / Short ── */}
+      <div className="grid grid-cols-2 border-b border-[#1a2830]">
         <button
           onClick={() => setSide("buy")}
           className={cn(
-            "px-3 py-2.5 text-sm font-medium transition-colors",
-            side === "buy" ? "bg-[#53d8c8] text-[#041013]" : "text-[#d4dbdd] hover:bg-[#121b1e]"
+            "py-2.5 text-xs font-bold uppercase tracking-wider transition-colors",
+            side === "buy"
+              ? "bg-[#00d084] text-[#051518]"
+              : "bg-[#091416] text-[#7f8c90] hover:bg-[#0c181b] hover:text-white"
           )}
         >
           Buy / Long
@@ -399,30 +361,34 @@ export function TradeForm({ onSubmit }: TradeFormProps) {
         <button
           onClick={() => setSide("sell")}
           className={cn(
-            "px-3 py-2.5 text-sm font-medium transition-colors",
-            side === "sell" ? "bg-[#f16d75] text-white" : "text-[#d4dbdd] hover:bg-[#121b1e]"
+            "py-2.5 text-xs font-bold uppercase tracking-wider transition-colors",
+            side === "sell"
+              ? "bg-[#ff4757] text-white"
+              : "bg-[#091416] text-[#7f8c90] hover:bg-[#0c181b] hover:text-white"
           )}
         >
           Sell / Short
         </button>
       </div>
 
-      <div className="flex flex-1 flex-col gap-3 p-3">
-        <div className="space-y-2 border-b border-[#1a2a2f] pb-3 text-xs">
+      {/* ── Form Inputs ── */}
+      <div className="flex flex-1 flex-col gap-3 p-3 min-h-0">
+        {/* Account balance preview */}
+        <div className="space-y-1.5 border-b border-[#1a2830] pb-2.5 text-xs">
           <div className="flex items-center justify-between">
-            <span className="text-[#6b6b74]">Available to Trade</span>
-            <span className="font-mono text-white">
+            <span className="text-[#64748b]">Available to Trade</span>
+            <span className="font-mono font-medium text-white">
               {isPaperTrading
                 ? `${paperBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USDC`
                 : isWalletConnected && account
                   ? `${account.available.toFixed(2)} USDC`
                   : isWalletConnected
                     ? "Loading..."
-                    : "Wallet not connected"}
+                    : "0.00 USDC"}
             </span>
           </div>
           <div className="flex items-center justify-between">
-            <span className="text-[#6b6b74]">Current Position</span>
+            <span className="text-[#64748b]">Current Position</span>
             <span className="font-mono text-white">
               {isPaperTrading
                 ? paperPosition
@@ -432,84 +398,89 @@ export function TradeForm({ onSubmit }: TradeFormProps) {
                   ? `${(account.balance - account.available).toFixed(2)} USDC`
                   : isWalletConnected
                     ? "Loading..."
-                    : "Wallet not connected"}
+                    : "None"}
             </span>
           </div>
         </div>
 
+        {/* Size Input + Quick % buttons */}
         <div className="space-y-1.5">
           <div className="flex items-center justify-between">
-            <label className="text-xs text-[#6b6b74]">Size</label>
-            <span className="text-xs text-[#6b6b74]">{activeMarket.split("-")[0]}</span>
+            <label className="text-xs text-[#64748b]">Size</label>
+            <span className="font-mono text-xs text-[#64748b]">{activeMarket.split("-")[0]}</span>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
             <input
               ref={sizeInputRef}
               type="number"
               value={size}
               onChange={(e) => setSize(e.target.value)}
               placeholder="0.00"
-              className="flex-1 rounded bg-[#1a1a1e] px-3 py-2 text-sm text-white placeholder-[#4a4a52] outline-none ring-1 ring-[#2a2a2e] focus:ring-[#00d084]"
+              className="flex-1 rounded border border-[#1a2830] bg-[#0c181b] px-3 py-2 font-mono text-sm text-white placeholder-[#3e4f55] outline-none focus:border-[#22d3ee]"
             />
             <button
-              className="rounded bg-[#1a1a1e] px-3 py-2 text-xs text-[#6b6b74] hover:bg-[#252529]"
-              onClick={() => {
-                const priceRef = market?.lastPrice || (orderType === "limit" ? Number(price) : 0);
-                if (priceRef <= 0) return;
-                if (isPaperTrading) {
-                  const maxNotional = paperBalance * leverage;
-                  const maxSize = maxNotional / priceRef;
-                  setSize(maxSize.toFixed(4));
-                  return;
-                }
-                if (account) {
-                  const maxSize = account.available / (priceRef / leverage);
-                  setSize(maxSize.toFixed(4));
-                }
-              }}
+              type="button"
+              className="rounded border border-[#1a2830] bg-[#0c181b] px-3 py-2 text-xs font-medium text-[#64748b] hover:border-[#2a3a44] hover:text-[#c8d4d7]"
+              onClick={() => setSizePercentage(100)}
             >
               Max
             </button>
           </div>
+          {/* Quick percentage buttons */}
+          <div className="grid grid-cols-4 gap-1 pt-0.5">
+            {[25, 50, 75, 100].map((pct) => (
+              <button
+                key={pct}
+                type="button"
+                onClick={() => setSizePercentage(pct)}
+                className="rounded border border-[#142327] bg-[#0a1518] py-1 text-[11px] font-mono text-[#64748b] transition-colors hover:border-[#22d3ee]/40 hover:text-[#22d3ee]"
+              >
+                {pct}%
+              </button>
+            ))}
+          </div>
           {errors.size && (
-            <p className="text-xs text-[#ff6b6b]">{errors.size}</p>
+            <p className="text-xs text-[#ff4757]">{errors.size}</p>
           )}
         </div>
 
+        {/* Limit Price */}
         {orderType === "limit" && (
           <div className="space-y-1.5">
-            <label className="text-xs text-[#6b6b74]">Limit Price</label>
+            <label className="text-xs text-[#64748b]">Limit Price</label>
             <input
               ref={priceInputRef}
               type="number"
               value={price}
               onChange={(e) => setPrice(e.target.value)}
               placeholder="0.00"
-              className="w-full rounded bg-[#1a1a1e] px-3 py-2 text-sm text-white placeholder-[#4a4a52] outline-none ring-1 ring-[#2a2a2e] focus:ring-[#00d084]"
+              className="w-full rounded border border-[#1a2830] bg-[#0c181b] px-3 py-2 font-mono text-sm text-white placeholder-[#3e4f55] outline-none focus:border-[#22d3ee]"
             />
             {errors.price && (
-              <p className="text-xs text-[#ff6b6b]">{errors.price}</p>
+              <p className="text-xs text-[#ff4757]">{errors.price}</p>
             )}
           </div>
         )}
 
+        {/* Stop Price */}
         {orderType === "stop" && (
           <div className="space-y-1.5">
-            <label className="text-xs text-[#6b6b74]">Stop Price</label>
+            <label className="text-xs text-[#64748b]">Stop Price</label>
             <input
               ref={stopPriceInputRef}
               type="number"
               value={stopPrice}
               onChange={(e) => setStopPrice(e.target.value)}
               placeholder="0.00"
-              className="w-full rounded bg-[#1a1a1e] px-3 py-2 text-sm text-white placeholder-[#4a4a52] outline-none ring-1 ring-[#2a2a2e] focus:ring-[#00d084]"
+              className="w-full rounded border border-[#1a2830] bg-[#0c181b] px-3 py-2 font-mono text-sm text-white placeholder-[#3e4f55] outline-none focus:border-[#22d3ee]"
             />
             {errors.stopPrice && (
-              <p className="text-xs text-[#ff6b6b]">{errors.stopPrice}</p>
+              <p className="text-xs text-[#ff4757]">{errors.stopPrice}</p>
             )}
           </div>
         )}
 
+        {/* Reduce only & TP/SL toggles */}
         <div className="grid grid-cols-2 gap-2">
           <ToggleField
             label="Reduce Only"
@@ -523,8 +494,9 @@ export function TradeForm({ onSubmit }: TradeFormProps) {
           />
         </div>
 
-        <div className="space-y-1.5 rounded bg-[#1a1a1e] p-2.5">
-          <InfoRow label="Est. Entry Price" value={market?.lastPrice ? `$${market.lastPrice.toFixed(2)}` : "--"} />
+        {/* Order details summary box */}
+        <div className="space-y-1.5 rounded border border-[#1a2830] bg-[#0c181b] p-2.5">
+          <InfoRow label="Est. Entry" value={market?.lastPrice ? `$${market.lastPrice.toFixed(2)}` : "--"} />
           <InfoRow 
             label="Liq. Price" 
             value={liquidationEstimate ? `$${liquidationEstimate.toFixed(2)}` : "--"} 
@@ -549,10 +521,11 @@ export function TradeForm({ onSubmit }: TradeFormProps) {
           />
         </div>
 
+        {/* Leverage slider */}
         <div className="space-y-1.5">
           <div className="flex items-center justify-between">
-            <label className="text-xs text-[#6b6b74]">Leverage</label>
-            <span className="font-mono text-xs text-white">{leverage}x</span>
+            <label className="text-xs text-[#64748b]">Leverage</label>
+            <span className="font-mono text-xs font-semibold text-[#22d3ee]">{leverage}x</span>
           </div>
           <input
             type="range"
@@ -562,54 +535,114 @@ export function TradeForm({ onSubmit }: TradeFormProps) {
             onChange={(e) => setLeverage(Number(e.target.value))}
             className="w-full accent-[#00d084]"
           />
-          <div className="flex items-center justify-between text-[10px] text-[#6b6b74]">
+          <div className="flex items-center justify-between text-[10px] text-[#506068]">
             <span>1x</span>
             <span>25x</span>
             <span>50x</span>
           </div>
         </div>
 
-        {isPaperTrading && (
-          <div className="flex items-center justify-between rounded-md border border-cyan-500/30 bg-cyan-500/10 px-3 py-1.5 text-xs text-cyan-300">
-            <span className="flex items-center gap-1.5 font-medium">
-              <span className="h-2 w-2 rounded-full bg-cyan-400 animate-pulse" />
-              Paper Trading Active
-            </span>
-            <span className="font-mono text-[10px] uppercase tracking-wider text-cyan-400/80">
-              ${paperBalance.toLocaleString(undefined, { maximumFractionDigits: 0 })} Avail
-            </span>
+        {/* Action CTA buttons */}
+        {!canTrade ? (
+          <div className="space-y-2 pt-1">
+            <button
+              onClick={() => useWallet.getState().setModalOpen(true)}
+              className="w-full rounded bg-[#22d3ee] py-3 text-center text-sm font-bold text-[#051518] transition-colors hover:bg-[#38e1fa]"
+            >
+              Connect Wallet
+            </button>
+            <button
+              onClick={() => useWallet.getState().setModalOpen(true)}
+              className="w-full rounded border border-[#1d4a50] bg-[#0e252a] py-2 text-center text-xs font-semibold text-[#22d3ee] transition-colors hover:bg-[#102c32]"
+            >
+              ⚡ Instant Paper Trading ($10k)
+            </button>
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 gap-2 pt-1">
+            <button
+              onClick={() => {
+                setSide("buy");
+                setConfirmOpen(true);
+              }}
+              disabled={isSubmitting || !isValid}
+              className="rounded bg-[#00d084] px-4 py-3 text-sm font-bold text-black transition-colors hover:bg-[#00e090] disabled:opacity-50"
+            >
+              {isPaperTrading ? "Buy / Long" : "Buy / Long"}
+            </button>
+            <button
+              onClick={() => {
+                setSide("sell");
+                setConfirmOpen(true);
+              }}
+              disabled={isSubmitting || !isValid}
+              className="rounded bg-[#ff4757] px-4 py-3 text-sm font-bold text-white transition-colors hover:bg-[#ff5e6c] disabled:opacity-50"
+            >
+              {isPaperTrading ? "Sell / Short" : "Sell / Short"}
+            </button>
           </div>
         )}
+      </div>
 
-        <div className="grid grid-cols-2 gap-2 pt-2">
+      {/* ── Unified Account Summary (Hyperliquid style) ── */}
+      <div className="mt-auto border-t border-[#1a2830] bg-[#071113] p-3 space-y-2.5">
+        <div className="grid grid-cols-2 gap-2">
           <button
             onClick={() => {
-              if (!canTrade) {
-                useWallet.getState().setModalOpen(true);
-                return;
+              if (isPaperTrading) {
+                faucet(10000);
+                toast.success("Added $10,000 virtual USDC");
+              } else {
+                toast.info("Starknet bridge & deposit portal");
               }
-              setSide("buy");
-              setConfirmOpen(true);
             }}
-            disabled={isSubmitting || (canTrade ? !isValid : false)}
-            className="rounded bg-[#00d084] px-4 py-3 text-sm font-semibold text-black transition-colors hover:bg-[#00e090] disabled:opacity-50"
+            className="rounded border border-[#1a2830] bg-[#0a171a] py-1.5 text-center text-xs font-medium text-[#c8d4d7] hover:border-[#2a3a44] hover:bg-[#0e2024]"
           >
-            {isPaperTrading ? "Paper Buy / Long" : "Buy / Long"}
+            {isPaperTrading ? "Deposit (Faucet)" : "Deposit"}
           </button>
           <button
             onClick={() => {
-              if (!canTrade) {
-                useWallet.getState().setModalOpen(true);
-                return;
+              if (isPaperTrading) {
+                toast.info("Withdraw disabled in paper trading simulation");
+              } else {
+                toast.info("Starknet withdrawal portal");
               }
-              setSide("sell");
-              setConfirmOpen(true);
             }}
-            disabled={isSubmitting || (canTrade ? !isValid : false)}
-            className="rounded bg-[#ff4757] px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-[#ff5e6c] disabled:opacity-50"
+            className="rounded border border-[#1a2830] bg-[#0a171a] py-1.5 text-center text-xs font-medium text-[#c8d4d7] hover:border-[#2a3a44] hover:bg-[#0e2024]"
           >
-            {isPaperTrading ? "Paper Sell / Short" : "Sell / Short"}
+            Withdraw
           </button>
+        </div>
+
+        <div className="space-y-1 text-xs">
+          <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider text-[#506068]">
+            <span>Account Summary</span>
+            <span className="font-mono text-[#22d3ee]">{isPaperTrading ? "Paper Sim" : "Starknet L2"}</span>
+          </div>
+          <div className="flex items-center justify-between text-[11px]">
+            <span className="text-[#64748b]">Portfolio Value</span>
+            <span className="font-mono font-medium text-white">
+              ${isPaperTrading ? paperEquity.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : (account ? account.balance.toFixed(2) : "0.00")}
+            </span>
+          </div>
+          <div className="flex items-center justify-between text-[11px]">
+            <span className="text-[#64748b]">Available Margin</span>
+            <span className="font-mono font-medium text-white">
+              ${isPaperTrading ? paperBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : (account ? account.available.toFixed(2) : "0.00")}
+            </span>
+          </div>
+          <div className="flex items-center justify-between text-[11px]">
+            <span className="text-[#64748b]">Unrealized PNL</span>
+            <span className={cn("font-mono font-medium", (isPaperTrading ? paperPnl : 0) >= 0 ? "text-[#00d084]" : "text-[#ff4757]")}>
+              {(isPaperTrading ? paperPnl : 0) >= 0 ? "+" : ""}${isPaperTrading ? paperPnl.toFixed(2) : "0.00"}
+            </span>
+          </div>
+          <div className="flex items-center justify-between text-[11px]">
+            <span className="text-[#64748b]">Account Leverage</span>
+            <span className="font-mono font-medium text-white">
+              {isPaperTrading && paperEquity > 0 ? `${((paperMarginUsed * leverage) / paperEquity).toFixed(2)}x` : "0.00x"}
+            </span>
+          </div>
         </div>
       </div>
 
@@ -694,8 +727,6 @@ export function TradeForm({ onSubmit }: TradeFormProps) {
         title="Connect to trade"
         description="Trading actions are disabled until you connect a Starknet wallet."
       />
-        </>
-      )}
     </div>
   );
 }
