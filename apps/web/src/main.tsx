@@ -5,7 +5,6 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import App from "./App.tsx";
 import { Toaster as SonnerToaster } from "@/components/ui/sonner";
 import { startClientServices } from "@/services/startup";
-import { FPSCounter } from "@/components/monitoring/FPSCounter";
 import { NotificationsToastBridge } from "@/components/notifications/NotificationsToastBridge";
 import { useUIStore, getEffectiveTheme } from "@/store/uiStore";
 import { useMarketStore } from "@/store/marketStore";
@@ -79,8 +78,13 @@ export function AppRoot() {
       }
     };
 
+    const handleOpenShortcuts = () => setKeyboardHelpOpen(true);
     window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
+    window.addEventListener("hyperx:open-shortcuts", handleOpenShortcuts);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("hyperx:open-shortcuts", handleOpenShortcuts);
+    };
   }, []);
 
   return (
@@ -91,7 +95,6 @@ export function AppRoot() {
             <App />
             <NotificationsToastBridge />
             <PerformanceMonitor />
-            <FPSCounter position="bottom-right" />
             <SonnerToaster />
             <ToastContainer position="top-right" />
             <CommandPaletteV2 open={commandPaletteOpen} onOpenChange={setCommandPaletteOpen} />
