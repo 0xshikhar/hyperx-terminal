@@ -5,11 +5,12 @@ import { LatencyDisplay } from "@/components/monitoring/LatencyDisplay";
 import { useWebSocket } from "@/hooks/useWebSocket";
 import { useMarketStore } from "@/store/marketStore";
 import { useNetworkStore } from "@/store/networkStore";
+import { useIsPaperTrading } from "@/hooks/useIsPaperTrading";
 import { useRuntimeHealthStore } from "@/store/runtimeHealthStore";
 
 type StatusData = {
   blockHeight?: number;
-  gasPrice?: string;
+  gasPrice?: string | number;
   lastBlockTime?: number;
 };
 
@@ -21,6 +22,7 @@ type StatusBarProps = {
 export function StatusBar({ className, showDetails = true }: StatusBarProps) {
   const activeMarket = useMarketStore((state) => state.activeMarket);
   const network = useNetworkStore((s) => s.network);
+  const isPaperTrading = useIsPaperTrading();
   const [status, setStatus] = useState<StatusData>({});
   const [timeAgo, setTimeAgo] = useState<number | null>(null);
   const [currentTime, setCurrentTime] = useState<string>("");
@@ -173,16 +175,18 @@ export function StatusBar({ className, showDetails = true }: StatusBarProps) {
               <Activity
                 className={cn(
                   "h-3 w-3",
-                  feedHealth.isFresh ? "text-terminal-green" : "text-terminal-yellow"
+                  isPaperTrading || feedHealth.isFresh ? "text-terminal-green" : "text-terminal-yellow"
                 )}
               />
               <span className="font-mono text-[10px] uppercase tracking-wider">Feed</span>
               <span className="font-mono text-foreground">
-                {feedHealth.isFresh
-                  ? `${activeMarket} live`
-                  : wsState === "connected"
-                    ? `${activeMarket} stale`
-                    : "paused"}
+                {isPaperTrading
+                  ? `${activeMarket} sim`
+                  : feedHealth.isFresh
+                    ? `${activeMarket} live`
+                    : wsState === "connected"
+                      ? `${activeMarket} stale`
+                      : "paused"}
               </span>
             </div>
           </>

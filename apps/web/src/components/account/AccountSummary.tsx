@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useActiveMarket } from "@/store/marketStore";
 import { useNetworkStore } from "@/store/networkStore";
+import { useIsPaperTrading } from "@/hooks/useIsPaperTrading";
 import { usePaperTradingStore } from "@/store/paperTradingStore";
 import { useStarkzapBalance } from "@/hooks/useStarkzapBalance";
 import { getAccountSummary } from "@/services/apiClient/account.api";
@@ -10,7 +11,7 @@ import { RotateCcw, PlusCircle } from "lucide-react";
 export function AccountSummary() {
   const activeMarket = useActiveMarket();
   const network = useNetworkStore((s) => s.network);
-  const isPaperTrading = useNetworkStore((s) => s.isPaperTrading);
+  const isPaperTrading = useIsPaperTrading();
 
   const networkLabel = isPaperTrading
     ? "PAPER SIM"

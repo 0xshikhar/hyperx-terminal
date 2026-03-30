@@ -1,14 +1,21 @@
 import { useState } from "react";
 import { useMarketStore } from "@/store/marketStore";
 import { cn } from "@/lib/utils";
-import { Wallet, Plug, ArrowRight, PlusCircle, RotateCcw, ChevronDown, ChevronUp } from "lucide-react";
+import { Wallet, Plug, ArrowRight, PlusCircle, RotateCcw, ChevronDown, ChevronUp, ExternalLink } from "lucide-react";
 import { OpenPositionsTable } from "@/components/positions/OpenPositionsTable";
 import { OpenOrdersTable } from "@/components/positions/OpenOrdersTable";
 import { TradeHistoryTable } from "@/components/positions/TradeHistoryTable";
 import { FundingHistoryTable } from "@/components/positions/FundingHistoryTable";
+import { OrderHistoryTable } from "@/components/positions/OrderHistoryTable";
+import { TWAPOrdersTable } from "@/components/positions/TWAPOrdersTable";
 import { useWallet } from "@/components/wallet/useWallet";
-import { useNetworkStore } from "@/store/networkStore";
+import { useIsPaperTrading } from "@/hooks/useIsPaperTrading";
 import { usePaperTradingStore } from "@/store/paperTradingStore";
+import { usePositions } from "@/hooks/usePositions";
+import { useOrdersStore } from "@/store/ordersStore";
+import { useStarkzapBalance } from "@/hooks/useStarkzapBalance";
+import { getAccountSummary } from "@/services/apiClient/account.api";
+import { useQuery } from "@tanstack/react-query";
 import { ConnectWalletButton } from "@/components/wallet/ConnectWalletButton";
 import { toast } from "sonner";
 
@@ -29,23 +36,41 @@ export function PositionsTabs() {
   const [activeTab, setActiveTab] = useState<TabId>("positions");
   const [isCollapsed, setIsCollapsed] = useState(false);
   const isWalletConnected = useWallet((state) => state.isConnected);
-  const isPaperWallet = useWallet((state) => state.isPaperWallet);
+  const walletAddress = useWallet((state) => state.address);
   const { setModalOpen } = useWallet();
-  const isPaperTrading = useNetworkStore((s) => s.isPaperTrading) || isPaperWallet;
+  const isPaperTrading = useIsPaperTrading();
   const hasAccess = isWalletConnected || isPaperTrading;
 
   // Paper trading data
   const paperBalance = usePaperTradingStore((s) => s.balance);
   const paperPositions = usePaperTradingStore((s) => s.positions);
   const paperOrders = usePaperTradingStore((s) => s.openOrders);
+  const paperTwapOrders = usePaperTradingStore((s) => s.twapOrders);
+  const runningPaperTwapsCount = paperTwapOrders.filter((t) => t.status === "running").length;
   const closePaperPosition = usePaperTradingStore((s) => s.closePosition);
   const cancelPaperOrder = usePaperTradingStore((s) => s.cancelOrder);
   const faucet = usePaperTradingStore((s) => s.faucet);
   const resetAccount = usePaperTradingStore((s) => s.resetAccount);
 
+  // Live trading data
+  const { positions: realPositions } = usePositions();
+  const realOrders = useOrdersStore((s) => s.openOrders);
+  const markOrderCancelled = useOrdersStore((s) => s.markOrderCancelled);
+  const strkBalance = useStarkzapBalance();
+  const { data: realAccount } = useQuery({
+    queryKey: ["account-summary"],
+    queryFn: getAccountSummary,
+    enabled: !isPaperTrading && isWalletConnected,
+    staleTime: 15_000,
+  });
+
   const paperMarginUsed = paperPositions.reduce((acc, p) => acc + p.margin, 0);
   const paperPnl = paperPositions.reduce((acc, p) => acc + p.pnl, 0);
   const paperEquity = paperBalance + paperMarginUsed + paperPnl;
+
+  const realMarginUsed = realAccount?.marginUsed ?? 0;
+  const realPnl = realAccount?.unrealizedPnl ?? 0;
+  const realAvailable = realAccount?.available ?? 0;
 
   const handleCloseAll = () => {
     if (isPaperTrading) {
@@ -56,6 +81,12 @@ export function PositionsTabs() {
       const count = paperPositions.length;
       paperPositions.forEach((p) => closePaperPosition(p.id));
       toast.success(`Closed all ${count} paper position(s)`);
+    } else {
+      if (!realPositions || realPositions.length === 0) {
+        toast.info("No open live positions to close");
+        return;
+      }
+      toast.info(`Requesting market close for ${realPositions.length} live position(s)...`);
     }
   };
 
@@ -68,11 +99,18 @@ export function PositionsTabs() {
       const count = paperOrders.length;
       paperOrders.forEach((o) => cancelPaperOrder(o.id));
       toast.info(`Cancelled ${count} paper order(s)`);
+    } else {
+      if (realOrders.length === 0) {
+        toast.info("No open live orders to cancel");
+        return;
+      }
+      realOrders.forEach((o) => markOrderCancelled(o.id));
+      toast.info(`Cancelled ${realOrders.length} live order(s)`);
     }
   };
 
   return (
-    <div className={cn("flex min-h-0 flex-col bg-[#091416]", isCollapsed ? "h-9" : "h-[220px]")}>
+    <div className={cn("flex min-h-0 flex-col bg-[#091416]", isCollapsed ? "h-9" : "h-[240px]")}>
       <div className="flex items-center border-b border-[#1a2830] bg-[#0a1518]">
         {TABS.map((tab) => (
           <button
@@ -89,14 +127,19 @@ export function PositionsTabs() {
             )}
           >
             {tab.label}
-            {tab.id === "positions" && paperPositions.length > 0 && (
+            {tab.id === "positions" && (isPaperTrading ? paperPositions.length : (realPositions?.length ?? 0)) > 0 && (
               <span className="ml-1.5 rounded bg-cyan-500/20 px-1.5 py-0.2 text-[10px] font-mono text-cyan-300">
-                {paperPositions.length}
+                {isPaperTrading ? paperPositions.length : realPositions.length}
               </span>
             )}
-            {tab.id === "orders" && paperOrders.length > 0 && (
+            {tab.id === "orders" && (isPaperTrading ? paperOrders.length : realOrders.length) > 0 && (
               <span className="ml-1.5 rounded bg-amber-500/20 px-1.5 py-0.2 text-[10px] font-mono text-amber-300">
-                {paperOrders.length}
+                {isPaperTrading ? paperOrders.length : realOrders.length}
+              </span>
+            )}
+            {tab.id === "twap" && runningPaperTwapsCount > 0 && (
+              <span className="ml-1.5 rounded bg-cyan-500/20 px-1.5 py-0.2 text-[10px] font-mono text-cyan-300">
+                {runningPaperTwapsCount}
               </span>
             )}
             {activeTab === tab.id && (
@@ -149,7 +192,7 @@ export function PositionsTabs() {
               <>
                 {activeTab === "balances" && (
                   isPaperTrading ? (
-                    <div className="space-y-3 max-w-2xl">
+                    <div className="space-y-3 max-w-3xl">
                       <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
                         <div className="rounded border border-[#1a2830] bg-[#0c181b] p-2.5">
                           <div className="text-[10px] uppercase text-[#64748b]">Available Cash</div>
@@ -211,15 +254,69 @@ export function PositionsTabs() {
                       </div>
                     </div>
                   ) : (
-                    <EmptyState message="No spot balances available yet on this network" />
+                    <div className="space-y-3 max-w-3xl">
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
+                        <div className="rounded border border-[#1a2830] bg-[#0c181b] p-2.5">
+                          <div className="text-[10px] uppercase text-[#64748b]">STRK Token Balance</div>
+                          <div className="mt-0.5 text-sm font-bold font-mono text-white">
+                            {strkBalance !== null ? `${Number(strkBalance).toFixed(4)} STRK` : "Checking..."}
+                          </div>
+                          <div className="text-[10px] text-[#22d3ee]">Starknet Wallet</div>
+                        </div>
+
+                        <div className="rounded border border-[#1a2830] bg-[#0c181b] p-2.5">
+                          <div className="text-[10px] uppercase text-[#64748b]">Available Margin</div>
+                          <div className="mt-0.5 text-sm font-bold font-mono text-white">
+                            ${realAvailable.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </div>
+                          <div className="text-[10px] text-[#64748b]">USDC Margin</div>
+                        </div>
+
+                        <div className="rounded border border-[#1a2830] bg-[#0c181b] p-2.5">
+                          <div className="text-[10px] uppercase text-[#64748b]">Margin Used</div>
+                          <div className="mt-0.5 text-sm font-bold font-mono text-white">
+                            ${realMarginUsed.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </div>
+                          <div className="text-[10px] text-[#64748b]">Active Positions</div>
+                        </div>
+
+                        <div className="rounded border border-[#1a2830] bg-[#0c181b] p-2.5">
+                          <div className="text-[10px] uppercase text-[#64748b]">Unrealized PnL</div>
+                          <div className={cn(
+                            "mt-0.5 text-sm font-bold font-mono",
+                            realPnl >= 0 ? "text-[#00d084]" : "text-[#ff4757]"
+                          )}>
+                            {realPnl >= 0 ? "+" : ""}${realPnl.toFixed(2)}
+                          </div>
+                          <div className="text-[10px] text-[#64748b]">Live Positions</div>
+                        </div>
+                      </div>
+
+                      {walletAddress && (
+                        <div className="flex items-center justify-between rounded border border-[#1a2830] bg-[#0c181b] px-3.5 py-2 text-xs">
+                          <div className="flex items-center gap-2 text-[#8ea4a9]">
+                            <span>Connected Account:</span>
+                            <span className="font-mono text-white">{walletAddress.slice(0, 10)}...{walletAddress.slice(-8)}</span>
+                          </div>
+                          <a
+                            href={`https://voyager.online/contract/${walletAddress}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 text-[11px] text-[#22d3ee] hover:underline"
+                          >
+                            Voyager Explorer <ExternalLink className="h-3 w-3" />
+                          </a>
+                        </div>
+                      )}
+                    </div>
                   )
                 )}
                 {activeTab === "positions" && <OpenPositionsTable />}
                 {activeTab === "orders" && <OpenOrdersTable />}
-                {activeTab === "twap" && <EmptyState message="No TWAP orders running" />}
+                {activeTab === "twap" && <TWAPOrdersTable />}
                 {activeTab === "trades" && <TradeHistoryTable />}
                 {activeTab === "funding" && <FundingHistoryTable />}
-                {activeTab === "history" && <EmptyState message="No historical orders recorded yet" />}
+                {activeTab === "history" && <OrderHistoryTable />}
               </>
             )}
           </div>
@@ -231,24 +328,24 @@ export function PositionsTabs() {
                   <div className="flex items-center gap-2">
                     <span className="text-[#64748b]">Cross Margin</span>
                     <span className="font-mono text-white">
-                      {isPaperTrading ? `$${paperMarginUsed.toFixed(2)}` : "0.00"}
+                      {isPaperTrading ? `$${paperMarginUsed.toFixed(2)}` : `$${realMarginUsed.toFixed(2)}`}
                     </span>
                   </div>
                   <div className="flex items-center gap-2">
                     <span className="text-[#64748b]">Available</span>
                     <span className="font-mono text-white">
-                      {isPaperTrading ? `$${paperBalance.toFixed(2)}` : "0.00"}
+                      {isPaperTrading ? `$${paperBalance.toFixed(2)}` : `$${realAvailable.toFixed(2)}`}
                     </span>
                   </div>
                   <div className="flex items-center gap-2">
                     <span className="text-[#64748b]">P&L</span>
                     <span className={cn(
                       "font-mono font-medium",
-                      isPaperTrading
-                        ? paperPnl >= 0 ? "text-[#00d084]" : "text-[#ff4757]"
-                        : "text-[#00d084]"
+                      (isPaperTrading ? paperPnl : realPnl) >= 0 ? "text-[#00d084]" : "text-[#ff4757]"
                     )}>
-                      {isPaperTrading ? `${paperPnl >= 0 ? "+" : ""}$${paperPnl.toFixed(2)}` : "+0.00"}
+                      {isPaperTrading
+                        ? `${paperPnl >= 0 ? "+" : ""}$${paperPnl.toFixed(2)}`
+                        : `${realPnl >= 0 ? "+" : ""}$${realPnl.toFixed(2)}`}
                     </span>
                   </div>
                 </div>
@@ -276,14 +373,6 @@ export function PositionsTabs() {
           </div>
         </>
       )}
-    </div>
-  );
-}
-
-function EmptyState({ message }: { message: string }) {
-  return (
-    <div className="flex h-full items-center justify-center text-[#6b6b74]">
-      <p className="text-sm">{message}</p>
     </div>
   );
 }
