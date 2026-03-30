@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Blocks, Clock, Zap, Activity, RefreshCw } from "lucide-react";
+import { Blocks, Clock, Zap, Activity, RefreshCw, Volume2, VolumeX, Keyboard } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { LatencyDisplay } from "@/components/monitoring/LatencyDisplay";
 import { useWebSocket } from "@/hooks/useWebSocket";
@@ -7,6 +7,8 @@ import { useMarketStore } from "@/store/marketStore";
 import { useNetworkStore } from "@/store/networkStore";
 import { useIsPaperTrading } from "@/hooks/useIsPaperTrading";
 import { useRuntimeHealthStore } from "@/store/runtimeHealthStore";
+import { useRenderMetricsStore } from "@/store/renderMetricsStore";
+import { terminalAudio } from "@/lib/terminalAudio";
 
 type StatusData = {
   blockHeight?: number;
@@ -23,9 +25,11 @@ export function StatusBar({ className, showDetails = true }: StatusBarProps) {
   const activeMarket = useMarketStore((state) => state.activeMarket);
   const network = useNetworkStore((s) => s.network);
   const isPaperTrading = useIsPaperTrading();
+  const fps = useRenderMetricsStore((s) => s.fps);
   const [status, setStatus] = useState<StatusData>({});
   const [timeAgo, setTimeAgo] = useState<number | null>(null);
   const [currentTime, setCurrentTime] = useState<string>("");
+  const [soundEnabled, setSoundEnabled] = useState(() => terminalAudio.isEnabled());
   const { state: wsState, on, subscribe } = useWebSocket(true);
   const reconnectCount = useRuntimeHealthStore((state) => state.reconnectCount);
   const reconnectPlan = useRuntimeHealthStore((state) => state.reconnectPlan);
@@ -196,6 +200,48 @@ export function StatusBar({ className, showDetails = true }: StatusBarProps) {
       <div className="flex items-center gap-6">
         {/* Latency */}
         <LatencyDisplay />
+
+        {/* Render Performance / FPS */}
+        <div className="hidden sm:flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+          <Zap className={cn("h-3 w-3", fps >= 55 ? "text-emerald-400" : fps >= 30 ? "text-amber-400" : "text-rose-400")} />
+          <span className={cn("font-semibold", fps >= 55 ? "text-emerald-400" : fps >= 30 ? "text-amber-400" : "text-rose-400")}>
+            {fps} FPS
+          </span>
+        </div>
+
+        {/* Tactile Audio Toggle */}
+        <button
+          type="button"
+          onClick={() => {
+            const next = terminalAudio.toggle();
+            setSoundEnabled(next);
+          }}
+          className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-wider text-muted-foreground hover:text-white transition-colors cursor-pointer"
+          title={soundEnabled ? "Tactile audio ON (click to mute)" : "Tactile audio OFF (click to unmute)"}
+        >
+          {soundEnabled ? (
+            <Volume2 className="h-3 w-3 text-[#22d3ee]" />
+          ) : (
+            <VolumeX className="h-3 w-3 text-[#506068]" />
+          )}
+          <span className="hidden sm:inline">{soundEnabled ? "SFX" : "MUTE"}</span>
+        </button>
+
+        {/* Shortcuts Modal Trigger */}
+        <button
+          type="button"
+          onClick={() => {
+            terminalAudio.playClick();
+            window.dispatchEvent(new CustomEvent("hyperx:open-shortcuts"));
+          }}
+          className="flex items-center gap-1 font-mono text-[10px] uppercase tracking-wider text-muted-foreground hover:text-white transition-colors cursor-pointer"
+          title="Keyboard shortcuts (?)"
+        >
+          <Keyboard className="h-3 w-3 text-[#8ea4a9]" />
+          <span className="rounded bg-[#122327] px-1 py-0.2 border border-[#1d4a50] text-[#22d3ee] font-bold text-[9px]">
+            ?
+          </span>
+        </button>
 
         <div className="hidden lg:flex items-center gap-2 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
           <span>Reconnects</span>

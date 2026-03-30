@@ -18,6 +18,7 @@ import { toParadexMarketSymbol } from "@hyperx/types/common";
 import { WalletConnectDialog } from "@/components/wallet/WalletConnectDialog";
 import { useQuery } from "@tanstack/react-query";
 import { usePaperTradingStore } from "@/store/paperTradingStore";
+import { terminalAudio } from "@/lib/terminalAudio";
 
 export type TradeOrder = {
   market: string;
@@ -80,6 +81,8 @@ export function TradeForm({ onSubmit }: TradeFormProps) {
   const [leverage, setLeverage] = useState(10);
   const [executionPreset, setExecutionPreset] = useState<"cross" | "scaled" | "classic">("cross");
   const [reduceOnly, setReduceOnly] = useState(false);
+  const [postOnly, setPostOnly] = useState(false);
+  const [tif, setTif] = useState<"GTC" | "IOC" | "FOK">("GTC");
   const [bracketEnabled, setBracketEnabled] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -133,6 +136,7 @@ export function TradeForm({ onSubmit }: TradeFormProps) {
       leverage,
     };
     setIsSubmitting(true);
+    terminalAudio.playOrderSubmit();
     const effectivePrice = market?.lastPrice || Number(price) || Number(stopPrice) || 100;
     const optimisticOrderId = createOptimisticOrder(order, effectivePrice);
     try {
@@ -150,6 +154,9 @@ export function TradeForm({ onSubmit }: TradeFormProps) {
           effectivePrice
         );
         acknowledgeOrder(optimisticOrderId, res.orderId);
+        if (res.status === "filled") {
+          terminalAudio.playOrderFill();
+        }
         toast.success(
           `⚡ Paper ${orderType.toUpperCase()} ${res.status}: ${side.toUpperCase()} ${size} ${activeMarket} @ $${res.price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
         );
@@ -160,6 +167,7 @@ export function TradeForm({ onSubmit }: TradeFormProps) {
       if (onSubmit) {
         await onSubmit(order);
         acknowledgeOrder(optimisticOrderId, optimisticOrderId);
+        terminalAudio.playOrderFill();
         toast.success("Order submitted");
       } else {
         const signer = getParadexSigner(walletAccount);
@@ -245,6 +253,29 @@ export function TradeForm({ onSubmit }: TradeFormProps) {
               ? stopPriceInputRef
               : sizeInputRef;
         window.setTimeout(() => targetRef.current?.focus(), 0);
+        return;
+      }
+
+      if (action.type === "set-order-price") {
+        setOrderType("limit");
+        setPrice(String(action.price));
+        window.setTimeout(() => priceInputRef.current?.focus(), 0);
+        return;
+      }
+
+      if (action.type === "set-order-size") {
+        setSize(String(action.size));
+        window.setTimeout(() => sizeInputRef.current?.focus(), 0);
+        return;
+      }
+
+      if (action.type === "prefill-order") {
+        setOrderType("limit");
+        setPrice(String(action.price));
+        if (action.side) setSide(action.side);
+        if (action.size) setSize(String(action.size));
+        window.setTimeout(() => sizeInputRef.current?.focus(), 0);
+        return;
       }
     });
   }, [canTrade]);
@@ -480,8 +511,19 @@ export function TradeForm({ onSubmit }: TradeFormProps) {
           </div>
         )}
 
-        {/* Reduce only & TP/SL toggles */}
-        <div className="grid grid-cols-2 gap-2">
+        {/* Execution options: Post Only, Reduce Only, TP/SL */}
+        <div className="grid grid-cols-3 gap-1.5">
+          {orderType === "limit" ? (
+            <ToggleField
+              label="Post Only"
+              checked={postOnly}
+              onToggle={() => setPostOnly((v) => !v)}
+            />
+          ) : (
+            <div className="flex items-center justify-between rounded-md border border-[#162024] bg-[#091012] px-2 py-1 text-[11px] text-[#48565b]">
+              <span>Taker</span>
+            </div>
+          )}
           <ToggleField
             label="Reduce Only"
             checked={reduceOnly}
@@ -492,6 +534,35 @@ export function TradeForm({ onSubmit }: TradeFormProps) {
             checked={bracketEnabled}
             onToggle={() => setBracketEnabled((value) => !value)}
           />
+        </div>
+
+        {/* Time In Force (TIF) */}
+        <div className="flex items-center justify-between rounded-md border border-[#142328] bg-[#0a1518] px-2.5 py-1.5 text-xs">
+          <span className="text-[11px] font-mono text-[#64748b]">Time in Force</span>
+          <div className="flex items-center gap-1">
+            {(["GTC", "IOC", "FOK"] as const).map((t) => (
+              <button
+                key={t}
+                type="button"
+                onClick={() => setTif(t)}
+                className={cn(
+                  "rounded px-2 py-0.5 font-mono text-[10px] font-semibold transition-colors",
+                  tif === t
+                    ? "bg-[#102d33] text-[#22d3ee] border border-[#1d4a50]"
+                    : "text-[#55686e] hover:text-[#9bb0b5]"
+                )}
+                title={
+                  t === "GTC"
+                    ? "Good 'Til Cancelled"
+                    : t === "IOC"
+                      ? "Immediate or Cancel"
+                      : "Fill or Kill"
+                }
+              >
+                {t}
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* Order details summary box */}

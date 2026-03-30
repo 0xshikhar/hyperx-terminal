@@ -1,8 +1,10 @@
 import { useEffect } from "react";
 import { usePerformanceReporter } from "@/hooks/usePerformanceReporter";
+import { useFPSMonitor } from "@/components/monitoring/FPSCounter";
 
 export function PerformanceMonitor() {
   const { report } = usePerformanceReporter();
+  useFPSMonitor();
 
   useEffect(() => {
     if (typeof PerformanceObserver === "undefined") return undefined;

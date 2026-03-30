@@ -16,7 +16,7 @@ interface FPSData {
   isStable: boolean;
 }
 
-function useFPSMonitor(): FPSData {
+export function useFPSMonitor(): FPSData {
   const [fpsData, setFpsData] = useState<FPSData>({
     fps: 60,
     frameTime: 16.67,

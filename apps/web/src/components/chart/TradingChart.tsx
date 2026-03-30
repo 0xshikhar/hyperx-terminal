@@ -34,6 +34,8 @@ export function TradingChart({ interval }: TradingChartProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
+  const [chartInstance, setChartInstance] = useState<IChartApi | null>(null);
+  const [seriesInstance, setSeriesInstance] = useState<ISeriesApi<"Candlestick"> | null>(null);
   const lastTimeRef = useRef<UTCTimestamp | null>(null);
   const lastCountRef = useRef<number>(0);
   const lastSeriesKeyRef = useRef<string | null>(null);
@@ -225,6 +227,8 @@ export function TradingChart({ interval }: TradingChartProps) {
 
     chartRef.current = chart;
     seriesRef.current = series;
+    setChartInstance(chart);
+    setSeriesInstance(series);
 
     const resize = () => {
       if (!containerRef.current) return;
@@ -244,6 +248,8 @@ export function TradingChart({ interval }: TradingChartProps) {
       chart.remove();
       chartRef.current = null;
       seriesRef.current = null;
+      setChartInstance(null);
+      setSeriesInstance(null);
       lastTimeRef.current = null;
       lastSeriesKeyRef.current = null;
     };
@@ -386,7 +392,12 @@ export function TradingChart({ interval }: TradingChartProps) {
         </div>
       )}
 
-      <ChartPositionOverlay market={activeMarket} />
+      <ChartPositionOverlay
+        market={activeMarket}
+        series={seriesInstance}
+        chart={chartInstance}
+        overlayTrigger={overlayTrigger}
+      />
 
       <svg viewBox="0 0 100 100" className="pointer-events-none absolute inset-0 h-full w-full">
         {drawLines.map((line) => (
