@@ -33,6 +33,7 @@ export function startClientServices() {
     useRuntimeHealthStore.getState().recordFeedEvent(message.market, "ticker", message.timestamp);
     useMarketStore.getState().updateMarket(message.market, {
       lastPrice: message.lastPrice,
+      markPrice: (message as unknown as { markPrice?: number }).markPrice ?? message.lastPrice,
       changePercent24h: message.changePercent24h,
       volume24h: message.volume24h,
       openInterest: message.openInterest,
