@@ -7,11 +7,51 @@ export interface PaperTradeRecord {
   id: string;
   market: string;
   side: "buy" | "sell";
-  type: "market" | "limit";
+  type: "market" | "limit" | "stop" | "twap";
   price: number;
   size: number;
   realizedPnl?: number;
   timestamp: number;
+}
+
+export interface PaperOrderHistoryRecord {
+  id: string;
+  market: string;
+  side: "buy" | "sell";
+  type: "market" | "limit" | "stop" | "twap";
+  price: number;
+  avgFillPrice?: number;
+  size: number;
+  filledSize: number;
+  status: "filled" | "cancelled" | "rejected";
+  timestamp: number;
+  triggerCondition?: string;
+}
+
+export interface PaperFundingRecord {
+  id: string;
+  market: string;
+  rate: number;
+  payment: number;
+  time: string;
+}
+
+export interface PaperTwapOrder {
+  id: string;
+  market: string;
+  side: "buy" | "sell";
+  totalSize: number;
+  executedSize: number;
+  remainingSize: number;
+  sliceSize: number;
+  totalSlices: number;
+  executedSlices: number;
+  intervalSeconds: number;
+  durationMinutes: number;
+  status: "running" | "completed" | "cancelled";
+  createdAt: number;
+  nextSliceAt: number;
+  avgFillPrice?: number;
 }
 
 export interface PaperTradingState {
@@ -19,6 +59,9 @@ export interface PaperTradingState {
   positions: Position[];
   openOrders: Order[];
   tradeHistory: PaperTradeRecord[];
+  orderHistory: PaperOrderHistoryRecord[];
+  fundingHistory: PaperFundingRecord[];
+  twapOrders: PaperTwapOrder[];
 
   // Actions
   executeOrder: (
@@ -34,9 +77,22 @@ export interface PaperTradingState {
     referencePrice?: number
   ) => { orderId: string; status: "filled" | "open"; price: number };
 
+  createTwapOrder: (params: {
+    market: string;
+    side: "buy" | "sell";
+    totalSize: number;
+    intervalSeconds?: number;
+    durationMinutes?: number;
+    totalSlices?: number;
+  }) => string;
+
+  cancelTwapOrder: (twapId: string) => void;
+  executeTwapSlice: (twapId: string, currentPrice: number) => void;
+
   onPriceTick: (market: string, markPrice: number) => void;
   closePosition: (positionId: string, currentPrice?: number) => { realizedPnl: number };
   cancelOrder: (orderId: string) => void;
+  settleFundingPeriod: (market: string, fundingRate: number) => void;
   resetAccount: () => void;
   faucet: (amount?: number) => void;
 }
@@ -63,6 +119,9 @@ export const usePaperTradingStore = create<PaperTradingState>()(
       positions: [],
       openOrders: [],
       tradeHistory: [],
+      orderHistory: [],
+      fundingHistory: [],
+      twapOrders: [],
 
       executeOrder: (order, referencePrice) => {
         const sizeNum = Math.abs(Number(order.size) || 0);
@@ -192,8 +251,9 @@ export const usePaperTradingStore = create<PaperTradingState>()(
             nextPositions.unshift(newPos);
           }
 
+          const orderId = `paper-trade-${Date.now()}`;
           const tradeRecord: PaperTradeRecord = {
-            id: `paper-trade-${Date.now()}`,
+            id: orderId,
             market: order.market,
             side: order.side,
             type: "market",
@@ -203,23 +263,37 @@ export const usePaperTradingStore = create<PaperTradingState>()(
             timestamp: Date.now(),
           };
 
+          const orderHistoryRecord: PaperOrderHistoryRecord = {
+            id: orderId,
+            market: order.market,
+            side: order.side,
+            type: "market",
+            price: execPrice,
+            avgFillPrice: execPrice,
+            size: sizeNum,
+            filledSize: sizeNum,
+            status: "filled",
+            timestamp: Date.now(),
+          };
+
           set({
             balance: Math.max(0, nextBalance),
             positions: nextPositions,
             tradeHistory: [tradeRecord, ...state.tradeHistory].slice(0, 100),
+            orderHistory: [orderHistoryRecord, ...state.orderHistory].slice(0, 100),
           });
 
           return { orderId: tradeRecord.id, status: "filled", price: execPrice };
         }
 
-        // 2. LIMIT ORDER
-        const limitPrice = Number(order.type === "stop" ? order.stopPrice : order.price);
-        if (!limitPrice || limitPrice <= 0) throw new Error("Invalid limit price");
+        // 2. LIMIT OR STOP ORDER
+        const targetPrice = Number(order.type === "stop" ? order.stopPrice : order.price);
+        if (!targetPrice || targetPrice <= 0) throw new Error("Invalid order price");
 
-        const reqMargin = (limitPrice * sizeNum) / leverage;
+        const reqMargin = (targetPrice * sizeNum) / leverage;
         if (state.balance < reqMargin) {
           throw new Error(
-            `Insufficient virtual balance for limit order: need $${reqMargin.toFixed(2)}, available $${state.balance.toFixed(2)}`
+            `Insufficient virtual balance for order: need $${reqMargin.toFixed(2)}, available $${state.balance.toFixed(2)}`
           );
         }
 
@@ -229,7 +303,7 @@ export const usePaperTradingStore = create<PaperTradingState>()(
           market: order.market,
           side: order.side,
           type: order.type,
-          price: limitPrice,
+          price: targetPrice,
           size: sizeNum,
           status: "open",
           filledSize: 0,
@@ -243,7 +317,106 @@ export const usePaperTradingStore = create<PaperTradingState>()(
           openOrders: [limitOrder, ...state.openOrders],
         });
 
-        return { orderId: limitOrder.id, status: "open", price: limitPrice };
+        return { orderId: limitOrder.id, status: "open", price: targetPrice };
+      },
+
+      createTwapOrder: (params) => {
+        const state = get();
+        const totalSize = Math.abs(Number(params.totalSize) || 0);
+        if (totalSize <= 0) throw new Error("TWAP size must be greater than 0");
+
+        const intervalSeconds = Math.max(5, params.intervalSeconds || 15);
+        const totalSlices = Math.max(2, params.totalSlices || 5);
+        const durationMinutes = params.durationMinutes || Math.ceil((intervalSeconds * totalSlices) / 60);
+        const sliceSize = Number((totalSize / totalSlices).toFixed(4));
+
+        const twapId = `twap-${Date.now()}`;
+        const newTwap: PaperTwapOrder = {
+          id: twapId,
+          market: params.market,
+          side: params.side,
+          totalSize,
+          executedSize: 0,
+          remainingSize: totalSize,
+          sliceSize,
+          totalSlices,
+          executedSlices: 0,
+          intervalSeconds,
+          durationMinutes,
+          status: "running",
+          createdAt: Date.now(),
+          nextSliceAt: Date.now() + 1000, // First slice fires soon
+        };
+
+        set({
+          twapOrders: [newTwap, ...state.twapOrders],
+        });
+
+        return twapId;
+      },
+
+      cancelTwapOrder: (twapId) => {
+        set((state) => ({
+          twapOrders: state.twapOrders.map((t) =>
+            t.id === twapId ? { ...t, status: "cancelled" } : t
+          ),
+        }));
+      },
+
+      executeTwapSlice: (twapId, currentPrice) => {
+        const state = get();
+        const twap = state.twapOrders.find((t) => t.id === twapId && t.status === "running");
+        if (!twap) return;
+
+        const currentSliceSize = Math.min(twap.sliceSize, twap.remainingSize);
+        if (currentSliceSize <= 0) {
+          set((s) => ({
+            twapOrders: s.twapOrders.map((t) =>
+              t.id === twapId ? { ...t, status: "completed" } : t
+            ),
+          }));
+          return;
+        }
+
+        try {
+          get().executeOrder(
+            {
+              market: twap.market,
+              side: twap.side,
+              type: "market",
+              size: currentSliceSize,
+              leverage: 10,
+            },
+            currentPrice
+          );
+
+          const nextExecutedSize = twap.executedSize + currentSliceSize;
+          const nextRemaining = Math.max(0, twap.totalSize - nextExecutedSize);
+          const nextExecutedSlices = twap.executedSlices + 1;
+          const isComplete = nextRemaining <= 0 || nextExecutedSlices >= twap.totalSlices;
+
+          set((s) => ({
+            twapOrders: s.twapOrders.map((t) =>
+              t.id === twapId
+                ? {
+                    ...t,
+                    executedSize: nextExecutedSize,
+                    remainingSize: nextRemaining,
+                    executedSlices: nextExecutedSlices,
+                    status: isComplete ? "completed" : "running",
+                    nextSliceAt: Date.now() + t.intervalSeconds * 1000,
+                  }
+                : t
+            ),
+          }));
+        } catch {
+          // If insufficient balance, pause TWAP
+          set((s) => ({
+            twapOrders: s.twapOrders.map((t) =>
+              t.id === twapId ? { ...t, status: "cancelled" } : t
+            ),
+          }));
+        }
       },
 
       onPriceTick: (market, markPrice) => {
@@ -269,7 +442,7 @@ export const usePaperTradingStore = create<PaperTradingState>()(
           };
         });
 
-        // 2. Check if any open limit orders can trigger fill
+        // 2. Check if any open limit or stop orders can trigger fill
         const remainingOrders: Order[] = [];
         const triggeredOrders: Order[] = [];
 
@@ -279,10 +452,25 @@ export const usePaperTradingStore = create<PaperTradingState>()(
             continue;
           }
 
-          const isBuyFill = order.side === "buy" && markPrice <= order.price;
-          const isSellFill = order.side === "sell" && markPrice >= order.price;
+          let isTriggered = false;
+          if (order.type === "stop") {
+            // Buy Stop triggers when mark price rises to or above stop
+            // Sell Stop triggers when mark price drops to or below stop
+            if (order.side === "buy") {
+              isTriggered = markPrice >= order.price;
+            } else {
+              isTriggered = markPrice <= order.price;
+            }
+          } else {
+            // Standard Limit order:
+            // Buy Limit fills when market <= limit price
+            // Sell Limit fills when market >= limit price
+            const isBuyFill = order.side === "buy" && markPrice <= order.price;
+            const isSellFill = order.side === "sell" && markPrice >= order.price;
+            isTriggered = isBuyFill || isSellFill;
+          }
 
-          if (isBuyFill || isSellFill) {
+          if (isTriggered) {
             triggeredOrders.push(order);
           } else {
             remainingOrders.push(order);
@@ -312,6 +500,26 @@ export const usePaperTradingStore = create<PaperTradingState>()(
                 },
                 markPrice
               );
+
+              // Record fill in orderHistory
+              set((s) => ({
+                orderHistory: [
+                  {
+                    id: ord.id,
+                    market: ord.market,
+                    side: ord.side as "buy" | "sell",
+                    type: ord.type as "market" | "limit" | "stop" | "twap",
+                    price: ord.price,
+                    avgFillPrice: markPrice,
+                    size: ord.size,
+                    filledSize: ord.size,
+                    status: "filled" as const,
+                    timestamp: Date.now(),
+                    triggerCondition: ord.type === "stop" ? `Triggered @ $${markPrice}` : undefined,
+                  },
+                  ...s.orderHistory,
+                ].slice(0, 100),
+              }));
             } catch {}
           }
         }
@@ -327,8 +535,9 @@ export const usePaperTradingStore = create<PaperTradingState>()(
         const realizedPnl = (execPrice - pos.entryPrice) * pos.size * direction;
         const returnedFunds = Math.max(0, pos.margin + realizedPnl);
 
+        const closeId = `paper-close-${Date.now()}`;
         const tradeRecord: PaperTradeRecord = {
-          id: `paper-close-${Date.now()}`,
+          id: closeId,
           market: pos.market,
           side: pos.side === "long" ? "sell" : "buy",
           type: "market",
@@ -338,10 +547,24 @@ export const usePaperTradingStore = create<PaperTradingState>()(
           timestamp: Date.now(),
         };
 
+        const orderHistoryRecord: PaperOrderHistoryRecord = {
+          id: closeId,
+          market: pos.market,
+          side: pos.side === "long" ? "sell" : "buy",
+          type: "market",
+          price: execPrice,
+          avgFillPrice: execPrice,
+          size: pos.size,
+          filledSize: pos.size,
+          status: "filled",
+          timestamp: Date.now(),
+        };
+
         set({
           balance: state.balance + returnedFunds,
           positions: state.positions.filter((p) => p.id !== positionId),
           tradeHistory: [tradeRecord, ...state.tradeHistory].slice(0, 100),
+          orderHistory: [orderHistoryRecord, ...state.orderHistory].slice(0, 100),
         });
 
         return { realizedPnl };
@@ -353,9 +576,52 @@ export const usePaperTradingStore = create<PaperTradingState>()(
         if (!order) return;
 
         const reservedMargin = (order.price * order.size) / 10;
+
+        const cancelledHistoryRecord: PaperOrderHistoryRecord = {
+          id: order.id,
+          market: order.market,
+          side: order.side as "buy" | "sell",
+          type: order.type as "market" | "limit" | "stop" | "twap",
+          price: order.price,
+          size: order.size,
+          filledSize: 0,
+          status: "cancelled",
+          timestamp: Date.now(),
+        };
+
         set({
           balance: state.balance + reservedMargin,
           openOrders: state.openOrders.filter((o) => o.id !== orderId),
+          orderHistory: [cancelledHistoryRecord, ...state.orderHistory].slice(0, 100),
+        });
+      },
+
+      settleFundingPeriod: (market, fundingRate) => {
+        const state = get();
+        const matchingPositions = state.positions.filter((p) => p.market === market);
+        if (matchingPositions.length === 0) return;
+
+        let totalPayment = 0;
+        for (const pos of matchingPositions) {
+          // Payment = -1 * notional * rate * direction
+          // Long pays positive rate, Short receives positive rate
+          const direction = pos.side === "long" ? -1 : 1;
+          const notional = pos.size * pos.markPrice;
+          const payment = notional * fundingRate * direction;
+          totalPayment += payment;
+        }
+
+        const fundingRecord: PaperFundingRecord = {
+          id: `fund-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          market,
+          rate: fundingRate * 100,
+          payment: Number(totalPayment.toFixed(2)),
+          time: new Date().toISOString(),
+        };
+
+        set({
+          balance: Math.max(0, state.balance + totalPayment),
+          fundingHistory: [fundingRecord, ...state.fundingHistory].slice(0, 100),
         });
       },
 
@@ -365,6 +631,9 @@ export const usePaperTradingStore = create<PaperTradingState>()(
           positions: [],
           openOrders: [],
           tradeHistory: [],
+          orderHistory: [],
+          fundingHistory: [],
+          twapOrders: [],
         });
       },
 
@@ -379,6 +648,9 @@ export const usePaperTradingStore = create<PaperTradingState>()(
         positions: state.positions,
         openOrders: state.openOrders,
         tradeHistory: state.tradeHistory,
+        orderHistory: state.orderHistory,
+        fundingHistory: state.fundingHistory,
+        twapOrders: state.twapOrders,
       }),
     }
   )

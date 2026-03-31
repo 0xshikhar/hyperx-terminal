@@ -128,4 +128,101 @@ describe("paperTradingStore", () => {
     usePaperTradingStore.getState().faucet(5000);
     expect(usePaperTradingStore.getState().balance).toBe(15000);
   });
+
+  it("records filled and cancelled orders into orderHistory", () => {
+    const store = usePaperTradingStore.getState();
+    // 1. Market order
+    store.executeOrder(
+      { market: "BTC-USD", side: "buy", type: "market", size: 0.1, leverage: 10 },
+      60000
+    );
+    expect(usePaperTradingStore.getState().orderHistory).toHaveLength(1);
+    expect(usePaperTradingStore.getState().orderHistory[0]).toMatchObject({
+      market: "BTC-USD",
+      status: "filled",
+      side: "buy",
+      type: "market",
+    });
+
+    // 2. Limit order placed then cancelled
+    const limit = store.executeOrder({
+      market: "ETH-USD",
+      side: "buy",
+      type: "limit",
+      price: 2000,
+      size: 1,
+      leverage: 10,
+    });
+    expect(usePaperTradingStore.getState().openOrders).toHaveLength(1);
+    store.cancelOrder(limit.orderId);
+    expect(usePaperTradingStore.getState().openOrders).toHaveLength(0);
+    expect(usePaperTradingStore.getState().orderHistory).toHaveLength(2);
+    expect(usePaperTradingStore.getState().orderHistory[0]).toMatchObject({
+      market: "ETH-USD",
+      status: "cancelled",
+    });
+  });
+
+  it("triggers stop-loss sell order only when price drops to or below stop price", () => {
+    const store = usePaperTradingStore.getState();
+    // Place stop loss at 50,000 for a long position
+    store.executeOrder({
+      market: "BTC-USD",
+      side: "sell",
+      type: "stop",
+      stopPrice: 50000,
+      size: 0.5,
+      leverage: 10,
+    });
+    expect(usePaperTradingStore.getState().openOrders).toHaveLength(1);
+
+    // Price stays above stop (55,000) -> should NOT trigger
+    usePaperTradingStore.getState().onPriceTick("BTC-USD", 55000);
+    expect(usePaperTradingStore.getState().openOrders).toHaveLength(1);
+
+    // Price drops to 49,900 -> SHOULD trigger
+    usePaperTradingStore.getState().onPriceTick("BTC-USD", 49900);
+    expect(usePaperTradingStore.getState().openOrders).toHaveLength(0);
+    expect(usePaperTradingStore.getState().orderHistory[0].status).toBe("filled");
+  });
+
+  it("settles simulated funding payment and appends to fundingHistory", () => {
+    const store = usePaperTradingStore.getState();
+    store.executeOrder(
+      { market: "BTC-USD", side: "buy", type: "market", size: 1, leverage: 10 },
+      60000
+    );
+    // Open position: Long 1 BTC @ 60,000. Notional: 60,000.
+    // Funding rate: 0.0001 (0.01%). Long pays short: -60,000 * 0.0001 = -$6.00
+    store.settleFundingPeriod("BTC-USD", 0.0001);
+    const updated = usePaperTradingStore.getState();
+    expect(updated.fundingHistory).toHaveLength(1);
+    expect(updated.fundingHistory[0]).toMatchObject({
+      market: "BTC-USD",
+      payment: -6,
+    });
+  });
+
+  it("creates and runs TWAP order slices", () => {
+    const store = usePaperTradingStore.getState();
+    const twapId = store.createTwapOrder({
+      market: "BTC-USD",
+      side: "buy",
+      totalSize: 1.0,
+      totalSlices: 4,
+      intervalSeconds: 10,
+    });
+    const stateAfterCreate = usePaperTradingStore.getState();
+    expect(stateAfterCreate.twapOrders).toHaveLength(1);
+    expect(stateAfterCreate.twapOrders[0].status).toBe("running");
+    expect(stateAfterCreate.twapOrders[0].sliceSize).toBe(0.25);
+
+    // Execute first slice
+    usePaperTradingStore.getState().executeTwapSlice(twapId, 60000);
+    const updated = usePaperTradingStore.getState();
+    expect(updated.twapOrders[0].executedSlices).toBe(1);
+    expect(updated.twapOrders[0].executedSize).toBe(0.25);
+    expect(updated.twapOrders[0].remainingSize).toBe(0.75);
+    expect(updated.positions).toHaveLength(1);
+  });
 });
