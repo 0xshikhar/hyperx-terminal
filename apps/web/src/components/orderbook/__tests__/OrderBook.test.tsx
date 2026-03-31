@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, act } from "@testing-library/react";
 import { OrderBook } from "../OrderBook";
 
 vi.mock("@/store/marketStore", () => ({
@@ -34,5 +34,32 @@ describe("OrderBook", () => {
   it("renders aggregation selector values", () => {
     render(<OrderBook />);
     expect(screen.getByDisplayValue("1")).toBeInTheDocument();
+  });
+
+  it("renders 3 column headers with active base symbol", () => {
+    render(<OrderBook />);
+    expect(screen.getByText("Price")).toBeInTheDocument();
+    expect(screen.getByText("Size (BTC)")).toBeInTheDocument();
+    expect(screen.getByText("Total (BTC)")).toBeInTheDocument();
+  });
+
+  it("renders 3-way view mode switcher and toggles mode", () => {
+    render(<OrderBook />);
+    const bothBtn = screen.getByTitle("Both Asks and Bids");
+    const bidsBtn = screen.getByTitle("Bids Only");
+    const asksBtn = screen.getByTitle("Asks Only");
+
+    expect(bothBtn).toBeInTheDocument();
+    expect(bidsBtn).toBeInTheDocument();
+    expect(asksBtn).toBeInTheDocument();
+
+    // Toggle to bids only
+    act(() => {
+      bidsBtn.click();
+    });
+    // Toggle to asks only
+    act(() => {
+      asksBtn.click();
+    });
   });
 });

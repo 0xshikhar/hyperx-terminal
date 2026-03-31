@@ -28,6 +28,11 @@ import { TradeForm } from "@/components/trade-form/TradeForm";
 import { PositionsTabs } from "@/components/positions/PositionsTabs";
 import { useVimNavigation } from "@/hooks/useVimNavigation";
 import { usePaperTradingSync } from "@/hooks/usePaperTradingSync";
+import {
+  ResizablePanelGroup,
+  ResizablePanel,
+  ResizableHandle,
+} from "@/components/ui/resizable";
 import type { CandleInterval } from "@/services/wsClient";
 
 const INTERVALS: CandleInterval[] = ["1m", "5m", "15m", "1h", "4h", "1d"];
@@ -180,127 +185,154 @@ export function TerminalPage() {
         </div>
       </header>
 
-      {/* ── 3-Section Trading Interface ── */}
-      <div className="grid flex-1 min-h-0 grid-cols-1 lg:grid-cols-[minmax(0,1fr)_290px] xl:grid-cols-[minmax(0,1fr)_310px] 2xl:grid-cols-[minmax(0,1fr)_330px]">
-        {/* Left + Center Area (Chart + OrderBook on top, Positions spanning both at bottom) */}
-        <div className="grid min-h-0 grid-cols-1 lg:grid-cols-[minmax(0,1fr)_270px] xl:grid-cols-[minmax(0,1fr)_290px] 2xl:grid-cols-[minmax(0,1fr)_310px] grid-rows-[minmax(320px,1fr)_auto]">
-          {/* Section 1: Chart */}
-          <section className="flex min-h-0 flex-col border-b border-[#1a2830]">
-            {/* Chart toolbar */}
-            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#1a2830] bg-[#091416] px-3 py-2">
-              {/* Intervals + indicators */}
-              <div className="flex items-center gap-0.5 flex-wrap">
-                {INTERVALS.map((interval) => (
-                  <button
-                    key={interval}
-                    onClick={() => setSelectedInterval(interval)}
-                    className={cn(
-                      "rounded px-2.5 py-1 font-mono text-xs font-medium transition-colors",
-                      selectedInterval === interval
-                        ? "bg-[#132126] text-white"
-                        : "text-[#64748b] hover:bg-[#101b1f] hover:text-[#c8d4d7]"
-                    )}
-                  >
-                    {interval}
-                  </button>
-                ))}
-
-                <div className="mx-2 h-4 w-px bg-[#1a2830]" />
-
-                <ToolbarChip active>{activeMarket}</ToolbarChip>
-                <ToolbarChip>EMA</ToolbarChip>
-                <ToolbarChip>VWAP</ToolbarChip>
-                <ToolbarChip>RSI</ToolbarChip>
-              </div>
-
-              {/* Chart tools + feed status */}
-              <div className="flex items-center gap-1">
-                <ToolIconButton icon={Crosshair} label="Cursor" active />
-                <ToolIconButton icon={LineChart} label="Draw" />
-                <ToolIconButton icon={CandlestickChart} label="Indicators" />
-                <ToolIconButton icon={Bell} label="Alerts" />
-                <ToolIconButton icon={Expand} label="Replay" />
-
-                <div className="mx-1.5 h-4 w-px bg-[#1a2830]" />
-
-                {/* Live / Stale indicator */}
-                <div
-                  className={cn(
-                    "flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-medium uppercase tracking-wider",
-                    feedHealth.isFresh
-                      ? "border-[#1d4d49] bg-[#0f2523] text-[#00d084]"
-                      : connectionState === "connected"
-                        ? "border-[#5a4a1f] bg-[#261f10] text-[#f59e0b]"
-                        : "border-[#3b4b56] bg-[#0f1d26] text-[#84b5d8]"
-                  )}
+      {/* ── Draggable Resizable Trading Interface ── */}
+      <div className="flex-1 min-h-0 w-full overflow-hidden">
+        <ResizablePanelGroup
+          direction="horizontal"
+          autoSaveId="hyperx-terminal-panels-main"
+          className="h-full w-full"
+        >
+          {/* Left + Center Area (Chart, Book, Bottom Dock) */}
+          <ResizablePanel defaultSize={78} minSize={55} className="min-w-0">
+            <ResizablePanelGroup
+              direction="vertical"
+              autoSaveId="hyperx-terminal-panels-left"
+              className="h-full w-full"
+            >
+              {/* Top Row: Chart (Left) + Order Book / Trades (Right) */}
+              <ResizablePanel defaultSize={68} minSize={35} className="min-h-0">
+                <ResizablePanelGroup
+                  direction="horizontal"
+                  autoSaveId="hyperx-terminal-panels-top"
+                  className="h-full w-full"
                 >
-                  <Waves className="h-3 w-3" />
-                  {feedHealth.isFresh
-                    ? "Live"
-                    : connectionState === "connected"
-                      ? "Stale"
-                      : "Recovering"}
-                </div>
+                  {/* Section 1: Chart */}
+                  <ResizablePanel defaultSize={72} minSize={40} className="min-w-0 flex flex-col bg-[#081214]">
+                    {/* Chart toolbar */}
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#1a2830] bg-[#091416] px-3 py-2">
+                      {/* Intervals + indicators */}
+                      <div className="flex items-center gap-0.5 flex-wrap">
+                        {INTERVALS.map((interval) => (
+                          <button
+                            key={interval}
+                            onClick={() => setSelectedInterval(interval)}
+                            className={cn(
+                              "rounded px-2.5 py-1 font-mono text-xs font-medium transition-colors",
+                              selectedInterval === interval
+                                ? "bg-[#132126] text-white"
+                                : "text-[#64748b] hover:bg-[#101b1f] hover:text-[#c8d4d7]"
+                            )}
+                          >
+                            {interval}
+                          </button>
+                        ))}
 
-                <IconButton icon={Sigma} label="Metrics" />
-                <IconButton icon={Settings2} label="Settings" />
-                <IconButton icon={Maximize2} label="Expand" />
-              </div>
-            </div>
+                        <div className="mx-2 h-4 w-px bg-[#1a2830]" />
 
-            {/* Chart canvas */}
-            <div className="min-h-0 flex-1 bg-[#081214] p-2">
-              <TradingChart interval={selectedInterval} />
-            </div>
-          </section>
+                        <ToolbarChip active>{activeMarket}</ToolbarChip>
+                        <ToolbarChip>EMA</ToolbarChip>
+                        <ToolbarChip>VWAP</ToolbarChip>
+                        <ToolbarChip>RSI</ToolbarChip>
+                      </div>
 
-          {/* Section 2: Order Book / Trades (Dedicated Center Column) */}
-          <section className="flex min-h-0 flex-col border-b border-[#1a2830] lg:border-l lg:border-[#1a2830] bg-[#091416]">
-            {/* Tab header: Order Book | Trades */}
-            <div className="flex border-b border-[#1a2830] bg-[#091416]">
-              {(
-                [
-                  { id: "orderbook", label: "Order Book" },
-                  { id: "trades", label: "Trades" },
-                ] as const
-              ).map((tab) => (
-                <button
-                  key={tab.id}
-                  onClick={() => setCenterPanelTab(tab.id)}
-                  className={cn(
-                    "flex-1 border-b-2 px-3 py-2.5 text-xs font-medium transition-colors",
-                    centerPanelTab === tab.id
-                      ? "border-[#22d3ee] text-white"
-                      : "border-transparent text-[#64748b] hover:text-[#c8d4d7]"
-                  )}
-                >
-                  {tab.label}
-                </button>
-              ))}
-              <div className="flex items-center px-2">
-                <IconButton icon={Settings2} label="Book Settings" />
-              </div>
-            </div>
+                      {/* Chart tools + feed status */}
+                      <div className="flex items-center gap-1">
+                        <ToolIconButton icon={Crosshair} label="Cursor" active />
+                        <ToolIconButton icon={LineChart} label="Draw" />
+                        <ToolIconButton icon={CandlestickChart} label="Indicators" />
+                        <ToolIconButton icon={Bell} label="Alerts" />
+                        <ToolIconButton icon={Expand} label="Replay" />
 
-            <div className="min-h-0 flex-1 overflow-hidden">
-              {centerPanelTab === "orderbook" ? (
-                <OrderBook embedded />
-              ) : (
-                <RecentTrades embedded />
-              )}
-            </div>
-          </section>
+                        <div className="mx-1.5 h-4 w-px bg-[#1a2830]" />
 
-          {/* Bottom Dock: Positions / Orders / Balances (spans both Chart & Order Book) */}
-          <div className="min-h-0 lg:col-span-2 bg-[#091416]">
-            <PositionsTabs />
-          </div>
-        </div>
+                        {/* Live / Stale indicator */}
+                        <div
+                          className={cn(
+                            "flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-medium uppercase tracking-wider",
+                            feedHealth.isFresh
+                              ? "border-[#1d4d49] bg-[#0f2523] text-[#00d084]"
+                              : connectionState === "connected"
+                                ? "border-[#5a4a1f] bg-[#261f10] text-[#f59e0b]"
+                                : "border-[#3b4b56] bg-[#0f1d26] text-[#84b5d8]"
+                          )}
+                        >
+                          <Waves className="h-3 w-3" />
+                          {feedHealth.isFresh
+                            ? "Live"
+                            : connectionState === "connected"
+                              ? "Stale"
+                              : "Recovering"}
+                        </div>
 
-        {/* Section 3: Trade Form (Dedicated Right Column - Full Height) */}
-        <aside className="flex min-h-0 flex-col border-t border-[#1a2830] bg-[#091416] lg:border-l lg:border-t-0">
-          <TradeForm />
-        </aside>
+                        <IconButton icon={Sigma} label="Metrics" />
+                        <IconButton icon={Settings2} label="Settings" />
+                        <IconButton icon={Maximize2} label="Expand" />
+                      </div>
+                    </div>
+
+                    {/* Chart canvas */}
+                    <div className="min-h-0 flex-1 bg-[#081214] p-2">
+                      <TradingChart interval={selectedInterval} />
+                    </div>
+                  </ResizablePanel>
+
+                  <ResizableHandle withHandle />
+
+                  {/* Section 2: Order Book / Trades (Dedicated Center Column) */}
+                  <ResizablePanel defaultSize={28} minSize={18} maxSize={45} className="min-w-0 flex flex-col bg-[#091416]">
+                    {/* Tab header: Order Book | Trades */}
+                    <div className="flex border-b border-[#1a2830] bg-[#091416]">
+                      {(
+                        [
+                          { id: "orderbook", label: "Order Book" },
+                          { id: "trades", label: "Trades" },
+                        ] as const
+                      ).map((tab) => (
+                        <button
+                          key={tab.id}
+                          onClick={() => setCenterPanelTab(tab.id)}
+                          className={cn(
+                            "flex-1 border-b-2 px-3 py-2.5 text-xs font-medium transition-colors",
+                            centerPanelTab === tab.id
+                              ? "border-[#22d3ee] text-white"
+                              : "border-transparent text-[#64748b] hover:text-[#c8d4d7]"
+                          )}
+                        >
+                          {tab.label}
+                        </button>
+                      ))}
+                      <div className="flex items-center px-2">
+                        <IconButton icon={Settings2} label="Book Settings" />
+                      </div>
+                    </div>
+
+                    <div className="min-h-0 flex-1 overflow-hidden">
+                      {centerPanelTab === "orderbook" ? (
+                        <OrderBook embedded />
+                      ) : (
+                        <RecentTrades embedded />
+                      )}
+                    </div>
+                  </ResizablePanel>
+                </ResizablePanelGroup>
+              </ResizablePanel>
+
+              <ResizableHandle withHandle />
+
+              {/* Bottom Dock: Positions / Orders / Balances (spans both Chart & Order Book) */}
+              <ResizablePanel defaultSize={32} minSize={15} maxSize={65} className="min-h-0 bg-[#091416]">
+                <PositionsTabs />
+              </ResizablePanel>
+            </ResizablePanelGroup>
+          </ResizablePanel>
+
+          <ResizableHandle withHandle />
+
+          {/* Section 3: Trade Form (Dedicated Right Column - Full Height) */}
+          <ResizablePanel defaultSize={22} minSize={16} maxSize={35} className="min-w-0 flex flex-col bg-[#091416]">
+            <TradeForm />
+          </ResizablePanel>
+        </ResizablePanelGroup>
       </div>
     </div>
   );

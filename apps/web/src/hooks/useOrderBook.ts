@@ -7,9 +7,10 @@ import { useMarketStore } from "@/store/marketStore";
 import { useRuntimeHealthStore } from "@/store/runtimeHealthStore";
 import { normalizeMarketSymbol } from "@hyperx/types/common";
 
-type OrderBookRow = {
+export type OrderBookRow = {
   price: number;
   size: number;
+  total: number;
   depthPercent: number;
   side: "bid" | "ask";
   isMine: boolean;
@@ -144,42 +145,48 @@ export function useOrderBook(market: string) {
 
   const bidRows = useMemo<OrderBookRow[]>(() => {
     const limit = Math.min(100, aggregatedBids.length);
-    let max = 1;
+    let runningTotal = 0;
+    const items: { price: number; size: number; total: number }[] = [];
     for (let i = 0; i < limit; i++) {
-      if (aggregatedBids[i].size > max) max = aggregatedBids[i].size;
+      runningTotal += aggregatedBids[i].size;
+      items.push({
+        price: aggregatedBids[i].price,
+        size: aggregatedBids[i].size,
+        total: runningTotal,
+      });
     }
-    const rows = new Array<OrderBookRow>(limit);
-    for (let i = 0; i < limit; i++) {
-      const level = aggregatedBids[i];
-      rows[i] = {
-        price: level.price,
-        size: level.size,
-        depthPercent: Math.min(100, (level.size / max) * 100),
-        side: "bid",
-        isMine: minePriceSet.has(level.price),
-      };
-    }
-    return rows;
+    const maxTotal = runningTotal > 0 ? runningTotal : 1;
+    return items.map((item) => ({
+      price: item.price,
+      size: item.size,
+      total: item.total,
+      depthPercent: Math.min(100, (item.total / maxTotal) * 100),
+      side: "bid",
+      isMine: minePriceSet.has(item.price),
+    }));
   }, [aggregatedBids, minePriceSet]);
 
   const askRows = useMemo<OrderBookRow[]>(() => {
     const limit = Math.min(100, aggregatedAsks.length);
-    let max = 1;
+    let runningTotal = 0;
+    const items: { price: number; size: number; total: number }[] = [];
     for (let i = 0; i < limit; i++) {
-      if (aggregatedAsks[i].size > max) max = aggregatedAsks[i].size;
+      runningTotal += aggregatedAsks[i].size;
+      items.push({
+        price: aggregatedAsks[i].price,
+        size: aggregatedAsks[i].size,
+        total: runningTotal,
+      });
     }
-    const rows = new Array<OrderBookRow>(limit);
-    for (let i = 0; i < limit; i++) {
-      const level = aggregatedAsks[i];
-      rows[i] = {
-        price: level.price,
-        size: level.size,
-        depthPercent: Math.min(100, (level.size / max) * 100),
-        side: "ask",
-        isMine: minePriceSet.has(level.price),
-      };
-    }
-    return rows;
+    const maxTotal = runningTotal > 0 ? runningTotal : 1;
+    return items.map((item) => ({
+      price: item.price,
+      size: item.size,
+      total: item.total,
+      depthPercent: Math.min(100, (item.total / maxTotal) * 100),
+      side: "ask",
+      isMine: minePriceSet.has(item.price),
+    }));
   }, [aggregatedAsks, minePriceSet]);
 
   const feedHealth = getMarketFeedHealth(normalizedMarket);
