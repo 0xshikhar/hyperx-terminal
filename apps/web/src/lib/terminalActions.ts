@@ -10,6 +10,14 @@ export type TerminalAction =
       side: "buy" | "sell";
       orderType: "market" | "limit" | "stop";
       focusField?: "size" | "price" | "stop";
+    }
+  | { type: "set-order-price"; price: string | number }
+  | { type: "set-order-size"; size: string | number }
+  | {
+      type: "prefill-order";
+      price: string | number;
+      side?: "buy" | "sell";
+      size?: string | number;
     };
 
 export function dispatchTerminalAction(action: TerminalAction) {
