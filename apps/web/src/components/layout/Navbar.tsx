@@ -37,16 +37,19 @@ export function Navbar() {
               v1.1
             </span>
           </Link>
-          <div className="relative group flex items-center gap-1 font-mono text-[10px] text-primary/80 border border-primary/30 px-1.5 py-0.5 rounded bg-primary/5 cursor-help">
+          <div className="relative group flex items-center gap-1.5 font-mono text-[10px] text-cyan-300 border border-cyan-500/30 px-2 py-0.5 rounded bg-cyan-500/10 cursor-help transition-colors hover:bg-cyan-500/20">
             <span className="relative flex h-1.5 w-1.5">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
               <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500"></span>
             </span>
-            <span>Railway Server</span>
+            <span className="font-semibold">Cloudflare Edge</span>
 
-            <div className="absolute top-full left-0 mt-2 w-72 p-3 bg-card border border-border rounded-lg shadow-xl shadow-black/80 invisible opacity-0 group-hover:visible group-hover:opacity-100 transition-all duration-200 z-50 font-sans text-xs text-foreground font-normal leading-normal normal-case">
-              <div className="font-semibold text-primary mb-1">Backend Hosted on Railway</div>
-              We use a Railway server as our backend. If the server is in sleep/idle mode, it may take a few seconds to wake up and fetch data (such as charts) when you first load the landing page.
+            <div className="absolute top-full left-0 mt-2 w-72 p-3 bg-[#091418] border border-[#1b2f38] rounded-lg shadow-xl shadow-black/80 invisible opacity-0 group-hover:visible group-hover:opacity-100 transition-all duration-200 z-50 font-sans text-xs text-[#c8d4d7] font-normal leading-normal normal-case">
+              <div className="font-semibold text-cyan-400 mb-1 flex items-center gap-1">
+                <Zap className="h-3.5 w-3.5" />
+                Cloudflare Global Anycast Edge
+              </div>
+              Low-latency global routing, WebSocket acceleration, and high-throughput execution proxy connected to Starknet decentralized perp contracts.
             </div>
           </div>
 
