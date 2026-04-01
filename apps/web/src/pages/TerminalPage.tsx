@@ -33,6 +33,7 @@ import {
   ResizablePanel,
   ResizableHandle,
 } from "@/components/ui/resizable";
+import { SettlementCountdown } from "@/components/risk/SettlementCountdown";
 import type { CandleInterval } from "@/services/wsClient";
 
 const INTERVALS: CandleInterval[] = ["1m", "5m", "15m", "1h", "4h", "1d"];
@@ -144,11 +145,7 @@ function MarketStatsStrip() {
       />
       <StatChip label="24h Vol" value={formatCompactUsd(volume24h)} />
       <StatChip label="Open Int." value={formatCompactUsd(openInterest)} />
-      <StatChip
-        label="Funding"
-        value={`${fundingRate >= 0 ? "+" : ""}${fundingRate.toFixed(4)}%`}
-        tone={fundingRate >= 0 ? "up" : "down"}
-      />
+      <SettlementCountdown fundingRate={fundingRate} />
     </div>
   );
 }
