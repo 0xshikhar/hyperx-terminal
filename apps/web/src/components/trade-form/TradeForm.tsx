@@ -19,6 +19,7 @@ import { WalletConnectDialog } from "@/components/wallet/WalletConnectDialog";
 import { useQuery } from "@tanstack/react-query";
 import { usePaperTradingStore } from "@/store/paperTradingStore";
 import { terminalAudio } from "@/lib/terminalAudio";
+import { AccountRiskHUD } from "@/components/risk/AccountRiskHUD";
 
 export type TradeOrder = {
   market: string;
@@ -50,9 +51,6 @@ export function TradeForm({ onSubmit }: TradeFormProps) {
   const paperPositions = usePaperTradingStore((s) => s.positions);
   const paperPosition = paperPositions.find((p) => p.market === activeMarket);
   const faucet = usePaperTradingStore((s) => s.faucet);
-  const paperMarginUsed = paperPositions.reduce((acc, p) => acc + p.margin, 0);
-  const paperPnl = paperPositions.reduce((acc, p) => acc + p.pnl, 0);
-  const paperEquity = paperBalance + paperMarginUsed + paperPnl;
 
   const setSizePercentage = (percent: number) => {
     const priceRef = market?.lastPrice || (orderType === "limit" ? Number(price) : 0);
@@ -685,36 +683,8 @@ export function TradeForm({ onSubmit }: TradeFormProps) {
           </button>
         </div>
 
-        <div className="space-y-1 text-xs">
-          <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider text-[#506068]">
-            <span>Account Summary</span>
-            <span className="font-mono text-[#22d3ee]">{isPaperTrading ? "Paper Sim" : "Starknet L2"}</span>
-          </div>
-          <div className="flex items-center justify-between text-[11px]">
-            <span className="text-[#64748b]">Portfolio Value</span>
-            <span className="font-mono font-medium text-white">
-              ${isPaperTrading ? paperEquity.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : (account ? account.balance.toFixed(2) : "0.00")}
-            </span>
-          </div>
-          <div className="flex items-center justify-between text-[11px]">
-            <span className="text-[#64748b]">Available Margin</span>
-            <span className="font-mono font-medium text-white">
-              ${isPaperTrading ? paperBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : (account ? account.available.toFixed(2) : "0.00")}
-            </span>
-          </div>
-          <div className="flex items-center justify-between text-[11px]">
-            <span className="text-[#64748b]">Unrealized PNL</span>
-            <span className={cn("font-mono font-medium", (isPaperTrading ? paperPnl : 0) >= 0 ? "text-[#00d084]" : "text-[#ff4757]")}>
-              {(isPaperTrading ? paperPnl : 0) >= 0 ? "+" : ""}${isPaperTrading ? paperPnl.toFixed(2) : "0.00"}
-            </span>
-          </div>
-          <div className="flex items-center justify-between text-[11px]">
-            <span className="text-[#64748b]">Account Leverage</span>
-            <span className="font-mono font-medium text-white">
-              {isPaperTrading && paperEquity > 0 ? `${((paperMarginUsed * leverage) / paperEquity).toFixed(2)}x` : "0.00x"}
-            </span>
-          </div>
-        </div>
+        {/* Real-time Cross-Margin Risk & Health Gauge */}
+        <AccountRiskHUD />
       </div>
 
       {/* Confirmation Dialog */}
