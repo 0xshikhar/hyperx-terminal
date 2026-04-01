@@ -17,6 +17,7 @@ import { useStarkzapBalance } from "@/hooks/useStarkzapBalance";
 import { getAccountSummary } from "@/services/apiClient/account.api";
 import { useQuery } from "@tanstack/react-query";
 import { ConnectWalletButton } from "@/components/wallet/ConnectWalletButton";
+import { AccountRiskHUD } from "@/components/risk/AccountRiskHUD";
 import { toast } from "sonner";
 
 const TABS = [
@@ -193,6 +194,7 @@ export function PositionsTabs() {
                 {activeTab === "balances" && (
                   isPaperTrading ? (
                     <div className="space-y-3 max-w-3xl">
+                      <AccountRiskHUD />
                       <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
                         <div className="rounded border border-[#1a2830] bg-[#0c181b] p-2.5">
                           <div className="text-[10px] uppercase text-[#64748b]">Available Cash</div>
@@ -255,6 +257,7 @@ export function PositionsTabs() {
                     </div>
                   ) : (
                     <div className="space-y-3 max-w-3xl">
+                      <AccountRiskHUD />
                       <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
                         <div className="rounded border border-[#1a2830] bg-[#0c181b] p-2.5">
                           <div className="text-[10px] uppercase text-[#64748b]">STRK Token Balance</div>
@@ -347,6 +350,9 @@ export function PositionsTabs() {
                         ? `${paperPnl >= 0 ? "+" : ""}$${paperPnl.toFixed(2)}`
                         : `${realPnl >= 0 ? "+" : ""}$${realPnl.toFixed(2)}`}
                     </span>
+                  </div>
+                  <div className="hidden lg:flex items-center pl-2 border-l border-[#1a2830]">
+                    <AccountRiskHUD variant="compact" />
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
