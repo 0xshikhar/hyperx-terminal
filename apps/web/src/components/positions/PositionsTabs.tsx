@@ -18,6 +18,7 @@ import { getAccountSummary } from "@/services/apiClient/account.api";
 import { useQuery } from "@tanstack/react-query";
 import { ConnectWalletButton } from "@/components/wallet/ConnectWalletButton";
 import { AccountRiskHUD } from "@/components/risk/AccountRiskHUD";
+import { terminalAudio } from "@/lib/terminalAudio";
 import { toast } from "sonner";
 
 const TABS = [
@@ -49,14 +50,14 @@ export function PositionsTabs() {
   const paperTwapOrders = usePaperTradingStore((s) => s.twapOrders);
   const runningPaperTwapsCount = paperTwapOrders.filter((t) => t.status === "running").length;
   const closePaperPosition = usePaperTradingStore((s) => s.closePosition);
-  const cancelPaperOrder = usePaperTradingStore((s) => s.cancelOrder);
+  const cancelAllPaperOrders = usePaperTradingStore((s) => s.cancelAllOrders);
   const faucet = usePaperTradingStore((s) => s.faucet);
   const resetAccount = usePaperTradingStore((s) => s.resetAccount);
 
   // Live trading data
   const { positions: realPositions } = usePositions();
   const realOrders = useOrdersStore((s) => s.openOrders);
-  const markOrderCancelled = useOrdersStore((s) => s.markOrderCancelled);
+  const cancelAllRealOrders = useOrdersStore((s) => s.cancelAllOrders);
   const strkBalance = useStarkzapBalance();
   const { data: realAccount } = useQuery({
     queryKey: ["account-summary"],
@@ -92,21 +93,23 @@ export function PositionsTabs() {
   };
 
   const handleCancelAll = () => {
+    terminalAudio.playOrderCancel();
     if (isPaperTrading) {
-      if (paperOrders.length === 0) {
+      const { cancelledCount, refundedMargin } = cancelAllPaperOrders();
+      if (cancelledCount === 0) {
         toast.info("No open paper orders to cancel");
         return;
       }
-      const count = paperOrders.length;
-      paperOrders.forEach((o) => cancelPaperOrder(o.id));
-      toast.info(`Cancelled ${count} paper order(s)`);
+      toast.success(
+        `Cancelled all ${cancelledCount} paper order(s) (+$${refundedMargin.toFixed(2)} margin)`
+      );
     } else {
-      if (realOrders.length === 0) {
+      const count = cancelAllRealOrders();
+      if (count === 0) {
         toast.info("No open live orders to cancel");
         return;
       }
-      realOrders.forEach((o) => markOrderCancelled(o.id));
-      toast.info(`Cancelled ${realOrders.length} live order(s)`);
+      toast.info(`Cancelled all ${count} live order(s)`);
     }
   };
 
@@ -358,9 +361,16 @@ export function PositionsTabs() {
                 <div className="flex items-center gap-2">
                   <button
                     onClick={handleCancelAll}
-                    className="rounded border border-[#1a2830] bg-[#0c181b] px-2.5 py-1 text-xs text-[#64748b] hover:border-[#2a3a44] hover:text-white transition-colors"
+                    disabled={(isPaperTrading ? paperOrders.length : realOrders.length) === 0}
+                    className={cn(
+                      "rounded px-2.5 py-1 text-xs font-mono font-bold transition-all cursor-pointer",
+                      (isPaperTrading ? paperOrders.length : realOrders.length) > 0
+                        ? "border border-rose-500/40 bg-rose-500/10 text-rose-300 hover:bg-rose-500/25 hover:border-rose-500/70 shadow-sm shadow-rose-950/40"
+                        : "border border-[#1a2830] bg-[#0c181b] text-[#556970] cursor-not-allowed opacity-50"
+                    )}
+                    title="Cancel all active limit and stop orders"
                   >
-                    Cancel All
+                    Cancel All {(isPaperTrading ? paperOrders.length : realOrders.length) > 0 ? `(${(isPaperTrading ? paperOrders.length : realOrders.length)})` : ""}
                   </button>
                   <button
                     onClick={handleCloseAll}

@@ -6,7 +6,8 @@ import { usePaperTradingStore } from "@/store/paperTradingStore";
 import { Button } from "@/components/ui/button";
 import { useWallet } from "@/components/wallet/useWallet";
 import { toast } from "sonner";
-import { X } from "lucide-react";
+import { X, Trash2 } from "lucide-react";
+import { terminalAudio } from "@/lib/terminalAudio";
 import {
   Table,
   TableBody,
@@ -16,24 +17,55 @@ import {
   TableRow,
 } from "@/components/ui/table";
 
-const formatNumber = (value: number, fractionDigits = 2) =>
-  value.toLocaleString(undefined, { maximumFractionDigits: fractionDigits });
+const formatNumber = (value: number | undefined | null, fractionDigits = 2) =>
+  Number(value ?? 0).toLocaleString(undefined, { maximumFractionDigits: fractionDigits });
 
 export function OpenOrdersTable() {
   const isPaperTrading = useIsPaperTrading();
   const realOrders = useOrdersStore((state) => state.openOrders);
   const fetchOrders = useOrdersStore((state) => state.fetchOrders);
   const markOrderCancelled = useOrdersStore((state) => state.markOrderCancelled);
+  const cancelAllRealOrders = useOrdersStore((state) => state.cancelAllOrders);
   const isLoading = useOrdersStore((state) => state.isLoading);
   const error = useOrdersStore((state) => state.error);
   const isWalletConnected = useWallet((state) => state.isConnected);
 
   const paperOrders = usePaperTradingStore((s) => s.openOrders);
   const cancelPaperOrder = usePaperTradingStore((s) => s.cancelOrder);
+  const cancelAllPaperOrders = usePaperTradingStore((s) => s.cancelAllOrders);
 
   const orders = useMemo(() => {
     return isPaperTrading ? paperOrders : realOrders;
   }, [isPaperTrading, paperOrders, realOrders]);
+
+  const workingOrders = useMemo(() => {
+    return orders.filter(
+      (o) => o.status === "open" || o.status === "pending" || o.status === "partially_filled" || !o.status
+    );
+  }, [orders]);
+
+  const workingOrdersCount = workingOrders.length;
+
+  const handleCancelAll = () => {
+    terminalAudio.playOrderCancel();
+    if (isPaperTrading) {
+      const { cancelledCount, refundedMargin } = cancelAllPaperOrders();
+      if (cancelledCount === 0) {
+        toast.info("No active open paper orders to cancel");
+        return;
+      }
+      toast.success(
+        `Cancelled ${cancelledCount} paper order(s) (Refunded $${refundedMargin.toFixed(2)} margin)`
+      );
+    } else {
+      const count = cancelAllRealOrders();
+      if (count === 0) {
+        toast.info("No active open live orders to cancel");
+        return;
+      }
+      toast.info(`Cancelled ${count} live order(s)`);
+    }
+  };
 
   useEffect(() => {
     if (!isWalletConnected || isPaperTrading) return;
@@ -71,6 +103,23 @@ export function OpenOrdersTable() {
           value={counts.rejected ?? 0}
           helper="Submission failures"
         />
+      </div>
+
+      {/* ── Control Bar with Cancel All Panic Action ── */}
+      <div className="flex items-center justify-between px-1">
+        <span className="text-xs font-mono text-[#8ea2a6]">
+          Working Orders: <span className="font-bold text-white tabular-nums">{workingOrdersCount}</span>
+        </span>
+        <button
+          type="button"
+          onClick={handleCancelAll}
+          disabled={workingOrdersCount === 0}
+          className="flex items-center gap-1.5 rounded border border-rose-500/30 bg-rose-500/10 px-3 py-1.5 text-xs font-mono font-bold text-rose-300 hover:bg-rose-500/25 hover:border-rose-500/60 disabled:opacity-30 disabled:cursor-not-allowed transition-all cursor-pointer shadow-sm shadow-rose-950/40"
+          title="Cancel all working limit and stop orders"
+        >
+          <Trash2 className="h-3 w-3" />
+          Cancel All Orders {workingOrdersCount > 0 ? `(${workingOrdersCount})` : ""}
+        </button>
       </div>
 
       <div className="rounded-md border border-[#1a2830] bg-[#0c181b]">
@@ -139,6 +188,7 @@ export function OpenOrdersTable() {
                     {(order.status === "open" || order.status === "pending") && (
                       <button
                         onClick={() => {
+                          terminalAudio.playOrderCancel();
                           if (isPaperTrading) {
                             cancelPaperOrder(order.id);
                             toast.info(`Cancelled paper order ${order.id}`);

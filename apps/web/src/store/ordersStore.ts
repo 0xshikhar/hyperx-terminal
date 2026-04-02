@@ -40,6 +40,7 @@ type OrdersState = {
   acknowledgeOrder: (localOrderId: string, exchangeOrderId: string) => void;
   rejectOrder: (localOrderId: string, reason: string) => void;
   markOrderCancelled: (localOrderId: string) => void;
+  cancelAllOrders: (market?: string) => number;
   markOrderFill: (localOrderId: string, filledSize: number) => void;
   fetchOrders: () => Promise<void>;
 };
@@ -165,6 +166,20 @@ export const useOrdersStore = create<OrdersState>()((set) => ({
         updatedAt: canCancel(order) ? now() : order.updatedAt,
       })),
     })),
+
+  cancelAllOrders: (market) => {
+    let cancelled = 0;
+    set((state) => ({
+      openOrders: state.openOrders.map((order) => {
+        if ((!market || order.market === market) && canCancel(order)) {
+          cancelled++;
+          return { ...order, status: "cancelled", updatedAt: now() };
+        }
+        return order;
+      }),
+    }));
+    return cancelled;
+  },
 
   markOrderFill: (localOrderId, filledSize) =>
     set((state) => ({

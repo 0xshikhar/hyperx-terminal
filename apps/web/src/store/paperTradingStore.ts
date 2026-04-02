@@ -99,6 +99,7 @@ export interface PaperTradingState {
   ) => { realizedPnl: number; remainingSize: number };
   updatePositionTPSL: (positionId: string, takeProfit?: number, stopLoss?: number) => void;
   cancelOrder: (orderId: string) => void;
+  cancelAllOrders: (market?: string) => { cancelledCount: number; refundedMargin: number };
   settleFundingPeriod: (market: string, fundingRate: number) => void;
   resetAccount: () => void;
   faucet: (amount?: number) => void;
@@ -304,9 +305,10 @@ export const usePaperTradingStore = create<PaperTradingState>()(
           );
         }
 
+        const uniqueId = `paper-ord-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
         const limitOrder: Order = {
-          id: `paper-ord-${Date.now()}`,
-          exchangeOrderId: `paper-ord-${Date.now()}`,
+          id: uniqueId,
+          exchangeOrderId: uniqueId,
           market: order.market,
           side: order.side,
           type: order.type,
@@ -620,7 +622,7 @@ export const usePaperTradingStore = create<PaperTradingState>()(
         // Limit reduce-only order
         if (orderType === "limit" && targetPrice && targetPrice > 0) {
           const limitOrder: Order = {
-            id: `paper-ord-${Date.now()}`,
+            id: `paper-ord-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
             market: pos.market,
             side: pos.side === "long" ? "sell" : "buy",
             type: "limit",
@@ -740,6 +742,45 @@ export const usePaperTradingStore = create<PaperTradingState>()(
           openOrders: state.openOrders.filter((o) => o.id !== orderId),
           orderHistory: [cancelledHistoryRecord, ...state.orderHistory].slice(0, 100),
         });
+      },
+
+      cancelAllOrders: (market) => {
+        const state = get();
+        const ordersToCancel = state.openOrders.filter((o) => !market || o.market === market);
+        if (ordersToCancel.length === 0) {
+          return { cancelledCount: 0, refundedMargin: 0 };
+        }
+
+        const toCancelIds = new Set(ordersToCancel.map((o) => o.id));
+        let totalRefunded = 0;
+        const cancelledRecords: PaperOrderHistoryRecord[] = [];
+
+        for (const order of ordersToCancel) {
+          const reservedMargin = (order.price * order.size) / 10;
+          totalRefunded += reservedMargin;
+          cancelledRecords.push({
+            id: order.id,
+            market: order.market,
+            side: order.side as "buy" | "sell",
+            type: order.type as "market" | "limit" | "stop" | "twap",
+            price: order.price,
+            size: order.size,
+            filledSize: 0,
+            status: "cancelled",
+            timestamp: Date.now(),
+          });
+        }
+
+        set({
+          balance: state.balance + totalRefunded,
+          openOrders: state.openOrders.filter((o) => !toCancelIds.has(o.id)),
+          orderHistory: [...cancelledRecords, ...state.orderHistory].slice(0, 100),
+        });
+
+        return {
+          cancelledCount: ordersToCancel.length,
+          refundedMargin: totalRefunded,
+        };
       },
 
       settleFundingPeriod: (market, fundingRate) => {
