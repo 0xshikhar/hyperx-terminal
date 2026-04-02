@@ -79,6 +79,19 @@ export function KeyboardShortcutsProvider({ children }: { children: React.ReactN
         if (e.key !== "Escape") return;
       }
 
+      // Pro Hyperliquid HUD: ? toggles shortcuts help
+      if (e.key === "?" && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        e.preventDefault();
+        setShowHelp((prev) => !prev);
+        return;
+      }
+
+      if (e.key === "Escape" && showHelp) {
+        e.preventDefault();
+        setShowHelp(false);
+        return;
+      }
+
       const parts: string[] = [];
       if (e.ctrlKey) parts.push("ctrl");
       if (e.shiftKey) parts.push("shift");
@@ -96,7 +109,7 @@ export function KeyboardShortcutsProvider({ children }: { children: React.ReactN
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [shortcuts]);
+  }, [shortcuts, showHelp]);
 
   return (
     <KeyboardShortcutsContext.Provider

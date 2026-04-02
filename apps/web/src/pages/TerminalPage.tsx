@@ -1,4 +1,4 @@
-import { type ReactNode, useState, useRef, useEffect } from "react";
+import { type ReactNode, useState, useRef, useEffect, useCallback } from "react";
 import {
   Activity,
   Bell,
@@ -6,8 +6,10 @@ import {
   ChevronDown,
   Crosshair,
   Expand,
+  Keyboard,
   LineChart,
   Maximize2,
+  Search,
   Settings2,
   Sigma,
   Waves,
@@ -34,6 +36,13 @@ import {
   ResizableHandle,
 } from "@/components/ui/resizable";
 import { SettlementCountdown } from "@/components/risk/SettlementCountdown";
+import { MarketSelectorModal } from "@/components/market-selector/MarketSelectorModal";
+import { KeyboardShortcutsModal } from "@/components/modals/KeyboardShortcutsModal";
+import { usePaperTradingStore } from "@/store/paperTradingStore";
+import { useOrdersStore } from "@/store/ordersStore";
+import { useNetworkStore } from "@/store/networkStore";
+import { terminalAudio } from "@/lib/terminalAudio";
+import { toast } from "sonner";
 import type { CandleInterval } from "@/services/wsClient";
 
 const INTERVALS: CandleInterval[] = ["1m", "5m", "15m", "1h", "4h", "1d"];
@@ -59,7 +68,7 @@ function usePriceFlash(price: number) {
 }
 
 // ─── Market header price block ───────────────────────────────────────────────
-function MarketHeaderPrice() {
+function MarketHeaderPrice({ onOpenMarketModal }: { onOpenMarketModal: () => void }) {
   const { displaySymbol, lastPrice, changePercent24h, isPositive } =
     useActiveMarketSummary();
   const flashClass = usePriceFlash(lastPrice);
@@ -67,9 +76,16 @@ function MarketHeaderPrice() {
   return (
     <div className="flex items-center gap-4 min-w-0">
       <div className="flex items-center gap-2">
-        <button className="flex items-center gap-1.5 font-mono text-[22px] font-bold leading-none tracking-tight text-white">
+        <button
+          onClick={() => {
+            terminalAudio.playClick();
+            onOpenMarketModal();
+          }}
+          className="group flex items-center gap-1.5 font-mono text-[22px] font-bold leading-none tracking-tight text-white hover:text-[#22d3ee] transition-colors cursor-pointer"
+          title="Select Market (⌘K)"
+        >
           <span>{displaySymbol}</span>
-          <ChevronDown className="h-3.5 w-3.5 text-[#5a6e74] mt-0.5" />
+          <ChevronDown className="h-3.5 w-3.5 text-[#5a6e74] mt-0.5 group-hover:text-[#22d3ee] transition-colors" />
         </button>
         <span className="rounded border border-[#1d4a50] bg-[#0e282c] px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[#22d3ee]">
           PERP
@@ -97,27 +113,64 @@ function MarketHeaderPrice() {
 }
 
 // ─── Market quick switcher ───────────────────────────────────────────────────
-function MarketQuickSwitcher() {
+function MarketQuickSwitcher({
+  onOpenMarketModal,
+  onOpenShortcutsModal,
+}: {
+  onOpenMarketModal: () => void;
+  onOpenShortcutsModal: () => void;
+}) {
   const activeMarket = useActiveMarket();
   const setActiveMarket = useSetActiveMarket();
   const symbols = useMarketSymbols();
 
   return (
-    <div className="flex items-center gap-1">
-      {symbols.map((symbol) => (
-        <button
-          key={symbol}
-          onClick={() => setActiveMarket(symbol)}
-          className={cn(
-            "rounded px-2.5 py-1 text-xs font-medium transition-colors",
-            symbol === activeMarket
-              ? "bg-[#0e282c] text-[#22d3ee] border border-[#1d4a50]"
-              : "text-[#64748b] hover:text-[#c0cdd0] hover:bg-[#111e23]"
-          )}
-        >
-          {symbol.split("-")[0]}
-        </button>
-      ))}
+    <div className="flex items-center gap-2">
+      <div className="flex items-center gap-1">
+        {symbols.map((symbol) => (
+          <button
+            key={symbol}
+            onClick={() => setActiveMarket(symbol)}
+            className={cn(
+              "rounded px-2.5 py-1 text-xs font-medium transition-colors cursor-pointer",
+              symbol === activeMarket
+                ? "bg-[#0e282c] text-[#22d3ee] border border-[#1d4a50]"
+                : "text-[#64748b] hover:text-[#c0cdd0] hover:bg-[#111e23]"
+            )}
+          >
+            {symbol.split("-")[0]}
+          </button>
+        ))}
+      </div>
+
+      <div className="h-3.5 w-px bg-[#1a2830]" />
+
+      <button
+        onClick={() => {
+          terminalAudio.playClick();
+          onOpenMarketModal();
+        }}
+        className="flex items-center gap-1.5 rounded border border-[#1b343c] bg-[#0b1b1f] px-2.5 py-1 text-xs font-medium text-[#8ea2a6] hover:border-[#22d3ee]/60 hover:text-white transition-all cursor-pointer"
+        title="Search markets (⌘K)"
+      >
+        <Search className="h-3 w-3 text-[#22d3ee]" />
+        <span>Search</span>
+        <kbd className="rounded border border-[#1f3137] bg-[#071316] px-1 font-mono text-[10px] text-[#556b73]">
+          ⌘K
+        </kbd>
+      </button>
+
+      <button
+        onClick={() => {
+          terminalAudio.playClick();
+          onOpenShortcutsModal();
+        }}
+        className="flex items-center gap-1 rounded border border-[#1b343c] bg-[#0b1b1f] px-2 py-1 text-xs font-medium text-[#8ea2a6] hover:border-[#22d3ee]/60 hover:text-white transition-all cursor-pointer"
+        title="Pro Hotkeys HUD (?)"
+      >
+        <Keyboard className="h-3.5 w-3.5 text-[#556b73]" />
+        <kbd className="font-mono text-[10px] text-[#556b73]">?</kbd>
+      </button>
     </div>
   );
 }
@@ -167,14 +220,81 @@ export function TerminalPage() {
 
   const feedHealth = getMarketFeedHealth(activeMarket);
 
+  const [marketModalOpen, setMarketModalOpen] = useState(false);
+  const [shortcutsModalOpen, setShortcutsModalOpen] = useState(false);
+
+  // Global hotkeys for ⌘K and Shift+C (Panic Cancel)
+  const cancelAllPaperOrders = usePaperTradingStore((s) => s.cancelAllOrders);
+  const cancelAllRealOrders = useOrdersStore((s) => s.cancelAllOrders);
+  const isPaperTrading = useNetworkStore((s) => s.isPaperTrading);
+
+  const handlePanicCancel = useCallback(() => {
+    terminalAudio.playOrderCancel();
+    if (isPaperTrading) {
+      const { cancelledCount, refundedMargin } = cancelAllPaperOrders();
+      if (cancelledCount > 0) {
+        toast.success(
+          `🚨 Panic cancelled ${cancelledCount} open order(s), refunded $${refundedMargin.toFixed(2)} margin`
+        );
+      } else {
+        toast.info("No open paper orders to cancel");
+      }
+    } else {
+      const count = cancelAllRealOrders();
+      if (count > 0) {
+        toast.success(`🚨 Panic cancelled ${count} open live order(s)`);
+      } else {
+        toast.info("No open live orders to cancel");
+      }
+    }
+  }, [cancelAllPaperOrders, cancelAllRealOrders, isPaperTrading]);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const inInput =
+        e.target instanceof HTMLInputElement ||
+        e.target instanceof HTMLTextAreaElement ||
+        e.target instanceof HTMLSelectElement;
+
+      // Cmd+K or Ctrl+K opens market selector modal (even from inputs)
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setMarketModalOpen((prev) => !prev);
+        return;
+      }
+
+      if (inInput) return;
+
+      // ? toggles shortcuts modal
+      if (e.key === "?" && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        e.preventDefault();
+        setShortcutsModalOpen((prev) => !prev);
+        return;
+      }
+
+      // Shift+C triggers panic cancel
+      if (e.shiftKey && e.key.toLowerCase() === "c") {
+        e.preventDefault();
+        handlePanicCancel();
+        return;
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [handlePanicCancel]);
+
   return (
     <div className="flex h-full min-h-0 flex-col bg-[#081214] text-[#c8d4d7]">
       {/* ── Top market header ── */}
       <header className="border-b border-[#1a2830] bg-[#0a1518]">
         {/* Row 1: Symbol + Price + Market switcher */}
         <div className="flex items-center justify-between gap-4 px-4 py-2.5">
-          <MarketHeaderPrice />
-          <MarketQuickSwitcher />
+          <MarketHeaderPrice onOpenMarketModal={() => setMarketModalOpen(true)} />
+          <MarketQuickSwitcher
+            onOpenMarketModal={() => setMarketModalOpen(true)}
+            onOpenShortcutsModal={() => setShortcutsModalOpen(true)}
+          />
         </div>
         {/* Row 2: Stats strip */}
         <div className="border-t border-[#1a2830]">
@@ -331,6 +451,18 @@ export function TerminalPage() {
           </ResizablePanel>
         </ResizablePanelGroup>
       </div>
+
+      {/* ── Institutional Market Selector Modal ── */}
+      <MarketSelectorModal
+        open={marketModalOpen}
+        onOpenChange={setMarketModalOpen}
+      />
+
+      {/* ── Pro Keyboard Shortcuts HUD ── */}
+      <KeyboardShortcutsModal
+        open={shortcutsModalOpen}
+        onOpenChange={setShortcutsModalOpen}
+      />
     </div>
   );
 }

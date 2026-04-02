@@ -34,6 +34,7 @@ const shortcutSections: ShortcutSection[] = [
       { keys: ["S"], description: "Prepare sell order and focus size" },
       { keys: ["M"], description: "Switch to market order" },
       { keys: ["L"], description: "Switch to limit order and focus price" },
+      { keys: ["Shift", "C"], description: "🚨 Panic Cancel All Open Orders" },
       { keys: ["Tab"], description: "Next Input Field" },
       { keys: ["Enter"], description: "Submit Order" },
     ],
