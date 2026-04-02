@@ -97,6 +97,7 @@ export interface PaperTradingState {
     targetPrice?: number,
     orderType?: "market" | "limit"
   ) => { realizedPnl: number; remainingSize: number };
+  updatePositionTPSL: (positionId: string, takeProfit?: number, stopLoss?: number) => void;
   cancelOrder: (orderId: string) => void;
   settleFundingPeriod: (market: string, fundingRate: number) => void;
   resetAccount: () => void;
@@ -529,6 +530,32 @@ export const usePaperTradingStore = create<PaperTradingState>()(
             } catch {}
           }
         }
+
+        // 3. Check for Take Profit / Stop Loss triggers on open positions
+        const activePositions = get().positions;
+        for (const pos of activePositions) {
+          if (pos.market !== market) continue;
+
+          // Take Profit Check
+          if (pos.takeProfit && pos.takeProfit > 0) {
+            const isTpReached =
+              pos.side === "long" ? markPrice >= pos.takeProfit : markPrice <= pos.takeProfit;
+            if (isTpReached) {
+              get().closePosition(pos.id, markPrice);
+              continue;
+            }
+          }
+
+          // Stop Loss Check
+          if (pos.stopLoss && pos.stopLoss > 0) {
+            const isSlReached =
+              pos.side === "long" ? markPrice <= pos.stopLoss : markPrice >= pos.stopLoss;
+            if (isSlReached) {
+              get().closePosition(pos.id, markPrice);
+              continue;
+            }
+          }
+        }
       },
 
       closePosition: (positionId, currentPrice) => {
@@ -673,6 +700,20 @@ export const usePaperTradingStore = create<PaperTradingState>()(
         });
 
         return { realizedPnl, remainingSize };
+      },
+
+      updatePositionTPSL: (positionId, takeProfit, stopLoss) => {
+        set((s) => ({
+          positions: s.positions.map((p) =>
+            p.id === positionId
+              ? {
+                  ...p,
+                  takeProfit: takeProfit !== undefined ? (takeProfit > 0 ? takeProfit : undefined) : undefined,
+                  stopLoss: stopLoss !== undefined ? (stopLoss > 0 ? stopLoss : undefined) : undefined,
+                }
+              : p
+          ),
+        }));
       },
 
       cancelOrder: (orderId) => {

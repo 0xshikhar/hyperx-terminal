@@ -15,6 +15,8 @@ export type Position = {
   openedAt: string;
   pnl: number;
   pnlPercent: number;
+  takeProfit?: number;
+  stopLoss?: number;
 };
 
 export type PositionDelta = {
