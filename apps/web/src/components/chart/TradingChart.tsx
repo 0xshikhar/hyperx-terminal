@@ -9,6 +9,7 @@ import {
 } from "lightweight-charts";
 import { useMarketStore } from "@/store/marketStore";
 import { ChartPositionOverlay } from "@/components/chart/ChartPositionOverlay";
+import { QuickTradeHUD } from "@/components/chart/QuickTradeHUD";
 import {
   useDrawingTools,
   type DrawingLine,
@@ -398,6 +399,8 @@ export function TradingChart({ interval }: TradingChartProps) {
         chart={chartInstance}
         overlayTrigger={overlayTrigger}
       />
+
+      <QuickTradeHUD market={activeMarket} />
 
       <svg viewBox="0 0 100 100" className="pointer-events-none absolute inset-0 h-full w-full">
         {drawLines.map((line) => (
