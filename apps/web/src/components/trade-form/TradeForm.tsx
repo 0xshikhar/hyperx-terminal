@@ -20,6 +20,7 @@ import { useQuery } from "@tanstack/react-query";
 import { usePaperTradingStore } from "@/store/paperTradingStore";
 import { terminalAudio } from "@/lib/terminalAudio";
 import { AccountRiskHUD } from "@/components/risk/AccountRiskHUD";
+import { ScaledOrderForm } from "@/components/trade-form/ScaledOrderForm";
 
 export type TradeOrder = {
   market: string;
@@ -70,7 +71,7 @@ export function TradeForm({ onSubmit }: TradeFormProps) {
   const account = accountData ?? null;
   const { registerShortcut, unregisterShortcut } = useKeyboardShortcuts();
   const [side, setSide] = useState<"buy" | "sell">("buy");
-  const [orderType, setOrderType] = useState<"market" | "limit" | "stop">("market");
+  const [orderType, setOrderType] = useState<"market" | "limit" | "stop" | "scale">("market");
   const [size, setSize] = useState("");
   const [price, setPrice] = useState("");
   const [stopPrice, setStopPrice] = useState("");
@@ -108,7 +109,7 @@ export function TradeForm({ onSubmit }: TradeFormProps) {
   } = useTradeForm({
     market: activeMarket,
     side,
-    type: orderType,
+    type: orderType === "scale" ? "limit" : orderType,
     size,
     price,
     stopPrice,
@@ -122,13 +123,15 @@ export function TradeForm({ onSubmit }: TradeFormProps) {
 
   const submit = async () => {
     if (isSubmitting || !isValid) return;
+    const safeOrderType: "market" | "limit" | "stop" =
+      orderType === "scale" ? "limit" : orderType;
     const order: PlaceOrderPayload = {
       market: activeMarket,
       side,
-      type: orderType,
+      type: safeOrderType,
       size,
-      price: orderType === "limit" ? price : undefined,
-      stopPrice: orderType === "stop" ? stopPrice : undefined,
+      price: safeOrderType === "limit" ? price : undefined,
+      stopPrice: safeOrderType === "stop" ? stopPrice : undefined,
       takeProfit: takeProfit || undefined,
       stopLoss: stopLoss || undefined,
       leverage,
@@ -143,10 +146,10 @@ export function TradeForm({ onSubmit }: TradeFormProps) {
           {
             market: activeMarket,
             side,
-            type: orderType,
+            type: safeOrderType,
             size,
-            price: orderType === "limit" ? price : undefined,
-            stopPrice: orderType === "stop" ? stopPrice : undefined,
+            price: safeOrderType === "limit" ? price : undefined,
+            stopPrice: safeOrderType === "stop" ? stopPrice : undefined,
             leverage,
           },
           effectivePrice
@@ -357,13 +360,13 @@ export function TradeForm({ onSubmit }: TradeFormProps) {
       </div>
 
       {/* ── Order type tabs ── */}
-      <div className="grid grid-cols-3 border-b border-[#1a2830] bg-[#081214]">
-        {(["market", "limit", "stop"] as const).map((value) => (
+      <div className="grid grid-cols-4 border-b border-[#1a2830] bg-[#081214]">
+        {(["market", "limit", "stop", "scale"] as const).map((value) => (
           <button
             key={value}
             onClick={() => setOrderType(value)}
             className={cn(
-              "py-2 text-xs font-semibold uppercase tracking-wider transition-colors",
+              "py-2 text-xs font-semibold uppercase tracking-wider transition-colors cursor-pointer",
               orderType === value
                 ? "border-b-2 border-[#22d3ee] bg-[#0c181b] text-white"
                 : "text-[#64748b] hover:bg-[#0a1518] hover:text-[#c8d4d7]"
@@ -401,8 +404,17 @@ export function TradeForm({ onSubmit }: TradeFormProps) {
       </div>
 
       {/* ── Form Inputs ── */}
-      <div className="flex flex-1 flex-col gap-3 p-3 min-h-0">
-        {/* Account balance preview */}
+      {orderType === "scale" ? (
+        <ScaledOrderForm
+          activeMarket={activeMarket}
+          side={side}
+          leverage={leverage}
+          markPrice={market?.lastPrice || 0}
+          isPaperTrading={Boolean(isPaperTrading)}
+        />
+      ) : (
+        <div className="flex flex-1 flex-col gap-3 p-3 min-h-0">
+          {/* Account balance preview */}
         <div className="space-y-1.5 border-b border-[#1a2830] pb-2.5 text-xs">
           <div className="flex items-center justify-between">
             <span className="text-[#64748b]">Available to Trade</span>
@@ -652,6 +664,7 @@ export function TradeForm({ onSubmit }: TradeFormProps) {
           </div>
         )}
       </div>
+      )}
 
       {/* ── Unified Account Summary (Hyperliquid style) ── */}
       <div className="mt-auto border-t border-[#1a2830] bg-[#071113] p-3 space-y-2.5">
