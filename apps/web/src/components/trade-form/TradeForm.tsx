@@ -5,7 +5,7 @@ import { placeOrder } from "@/services/apiClient/orders.api";
 import type { PlaceOrderPayload } from "@/services/apiClient/orders.api";
 import { getAccountSummary } from "@/services/apiClient/account.api";
 import { toast } from "sonner";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { useTradeForm } from "@/hooks/useTradeForm";
 import { addTerminalActionListener } from "@/lib/terminalActions";
@@ -21,7 +21,7 @@ import { usePaperTradingStore } from "@/store/paperTradingStore";
 import { terminalAudio } from "@/lib/terminalAudio";
 import { AccountRiskHUD } from "@/components/risk/AccountRiskHUD";
 import { ScaledOrderForm } from "@/components/trade-form/ScaledOrderForm";
-import { ChevronDown, Sliders } from "lucide-react";
+import { ChevronDown, Sliders, Zap } from "lucide-react";
 import { useMarginSettingsStore } from "@/store/marginSettingsStore";
 import { LeverageMarginModal } from "@/components/trade-form/LeverageMarginModal";
 
@@ -103,6 +103,35 @@ export function TradeForm({ onSubmit }: TradeFormProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [walletPromptOpen, setWalletPromptOpen] = useState(false);
+
+  // 1-Click Trading (1CT Mode)
+  const ONE_CLICK_STORAGE_KEY = "hyperx-one-click-trading";
+  const [oneClickTrading, setOneClickTrading] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem(ONE_CLICK_STORAGE_KEY) === "true";
+    } catch {
+      return false;
+    }
+  });
+
+  const toggleOneClickTrading = () => {
+    terminalAudio.playClick();
+    setOneClickTrading((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem(ONE_CLICK_STORAGE_KEY, String(next));
+      } catch {
+        // ignore
+      }
+      if (next) {
+        toast.info("⚡ 1-Click Trading enabled (Fast Scalper Mode - Instant Fills)");
+      } else {
+        toast.info("1-Click Trading disabled (Order Confirmations Required)");
+      }
+      return next;
+    });
+  };
+
   const sizeInputRef = useRef<HTMLInputElement | null>(null);
   const priceInputRef = useRef<HTMLInputElement | null>(null);
   const stopPriceInputRef = useRef<HTMLInputElement | null>(null);
@@ -137,13 +166,14 @@ export function TradeForm({ onSubmit }: TradeFormProps) {
 
   const walletAccount = useWallet((state) => state.account);
 
-  const submit = async () => {
+  const submit = async (targetSide?: "buy" | "sell") => {
+    const activeSide = targetSide || side;
     if (isSubmitting || !isValid) return;
     const safeOrderType: "market" | "limit" | "stop" =
       orderType === "scale" ? "limit" : orderType;
     const order: PlaceOrderPayload = {
       market: activeMarket,
-      side,
+      side: activeSide,
       type: safeOrderType,
       size,
       price: safeOrderType === "limit" ? price : undefined,
@@ -161,7 +191,7 @@ export function TradeForm({ onSubmit }: TradeFormProps) {
         const res = usePaperTradingStore.getState().executeOrder(
           {
             market: activeMarket,
-            side,
+            side: activeSide,
             type: safeOrderType,
             size,
             price: safeOrderType === "limit" ? price : undefined,
@@ -175,7 +205,7 @@ export function TradeForm({ onSubmit }: TradeFormProps) {
           terminalAudio.playOrderFill();
         }
         toast.success(
-          `⚡ Paper ${orderType.toUpperCase()} ${res.status}: ${side.toUpperCase()} ${size} ${activeMarket} @ $${res.price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+          `⚡ Paper ${orderType.toUpperCase()} ${res.status}: ${activeSide.toUpperCase()} ${size} ${activeMarket} @ $${res.price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
         );
         resetForm();
         return;
@@ -231,6 +261,15 @@ export function TradeForm({ onSubmit }: TradeFormProps) {
       toast.error(errorMsg);
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const handleInitiateOrder = (selectedSide: "buy" | "sell") => {
+    setSide(selectedSide);
+    if (oneClickTrading) {
+      submit(selectedSide);
+    } else {
+      setConfirmOpen(true);
     }
   };
 
@@ -381,16 +420,40 @@ export function TradeForm({ onSubmit }: TradeFormProps) {
           </button>
         </div>
 
-        <button
-          type="button"
-          onClick={() => {
-            terminalAudio.playClick();
-            setMarginModalOpen(true);
-          }}
-          className="text-[10px] text-[#627a80] hover:text-[#22d3ee] transition-colors cursor-pointer"
-        >
-          Margin Config
-        </button>
+        <div className="flex items-center gap-2">
+          {/* 1-Click Trading (1CT) Fast Scalper Toggle */}
+          <button
+            type="button"
+            onClick={toggleOneClickTrading}
+            className={cn(
+              "flex items-center gap-1 rounded border px-2 py-1 text-xs font-semibold transition-all cursor-pointer",
+              oneClickTrading
+                ? "border-[#00d084]/50 bg-[#00d084]/15 text-[#00d084] shadow-[0_0_8px_rgba(0,208,132,0.15)]"
+                : "border-[#1b3842] bg-[#0e2227] text-[#6b8288] hover:text-[#c8d4d7]"
+            )}
+            title={
+              oneClickTrading
+                ? "1-Click Trading Enabled: Instant order execution without confirmation prompts"
+                : "1-Click Trading Disabled: Click to enable instant fills"
+            }
+          >
+            <Zap className="h-3 w-3 fill-current" />
+            <span className="font-mono text-[10px] uppercase font-bold">
+              1CT {oneClickTrading ? "ON" : "OFF"}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              terminalAudio.playClick();
+              setMarginModalOpen(true);
+            }}
+            className="text-[10px] text-[#627a80] hover:text-[#22d3ee] transition-colors cursor-pointer"
+          >
+            Margin Config
+          </button>
+        </div>
       </div>
 
       {/* ── Order type tabs ── */}
@@ -676,22 +739,18 @@ export function TradeForm({ onSubmit }: TradeFormProps) {
         ) : (
           <div className="grid grid-cols-2 gap-2 pt-1">
             <button
-              onClick={() => {
-                setSide("buy");
-                setConfirmOpen(true);
-              }}
+              data-testid="buy-submit-btn"
+              onClick={() => handleInitiateOrder("buy")}
               disabled={isSubmitting || !isValid}
-              className="rounded bg-[#00d084] px-4 py-3 text-sm font-bold text-black transition-colors hover:bg-[#00e090] disabled:opacity-50"
+              className="rounded bg-[#00d084] px-4 py-3 text-sm font-bold text-black transition-colors hover:bg-[#00e090] disabled:opacity-50 cursor-pointer"
             >
               {isPaperTrading ? "Buy / Long" : "Buy / Long"}
             </button>
             <button
-              onClick={() => {
-                setSide("sell");
-                setConfirmOpen(true);
-              }}
+              data-testid="sell-submit-btn"
+              onClick={() => handleInitiateOrder("sell")}
               disabled={isSubmitting || !isValid}
-              className="rounded bg-[#ff4757] px-4 py-3 text-sm font-bold text-white transition-colors hover:bg-[#ff5e6c] disabled:opacity-50"
+              className="rounded bg-[#ff4757] px-4 py-3 text-sm font-bold text-white transition-colors hover:bg-[#ff5e6c] disabled:opacity-50 cursor-pointer"
             >
               {isPaperTrading ? "Sell / Short" : "Sell / Short"}
             </button>
@@ -741,6 +800,9 @@ export function TradeForm({ onSubmit }: TradeFormProps) {
             <DialogTitle className="text-white">
               {isPaperTrading ? "⚡ Confirm Paper Order (Simulated)" : "Confirm Order"}
             </DialogTitle>
+            <DialogDescription className="sr-only">
+              Verify order size, execution price, margin required, and liquidation estimate before submitting.
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-2 text-sm">
             <div className="flex items-center justify-between">
@@ -780,6 +842,29 @@ export function TradeForm({ onSubmit }: TradeFormProps) {
               <span className="font-mono text-white">
                 {margin ? `$${margin.toFixed(2)}` : "--"}
               </span>
+            </div>
+
+            {/* Don't ask again toggle */}
+            <div className="flex items-center gap-2 pt-2 border-t border-[#1a2830]">
+              <input
+                type="checkbox"
+                id="enable-1ct-checkbox"
+                checked={oneClickTrading}
+                onChange={(e) => {
+                  const checked = e.target.checked;
+                  setOneClickTrading(checked);
+                  try {
+                    localStorage.setItem(ONE_CLICK_STORAGE_KEY, String(checked));
+                  } catch {}
+                  if (checked) {
+                    toast.info("⚡ 1-Click Trading enabled");
+                  }
+                }}
+                className="rounded border-[#2a3a44] bg-[#0a171a] text-[#22d3ee] focus:ring-0 cursor-pointer"
+              />
+              <label htmlFor="enable-1ct-checkbox" className="text-xs text-[#8ea2a6] cursor-pointer">
+                Don't ask again (Enable 1-Click Trading)
+              </label>
             </div>
           </div>
           <div className="flex items-center justify-end gap-2 pt-2">
