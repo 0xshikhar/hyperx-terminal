@@ -91,6 +91,12 @@ export interface PaperTradingState {
 
   onPriceTick: (market: string, markPrice: number) => void;
   closePosition: (positionId: string, currentPrice?: number) => { realizedPnl: number };
+  partialClosePosition: (
+    positionId: string,
+    sizeToClose: number,
+    targetPrice?: number,
+    orderType?: "market" | "limit"
+  ) => { realizedPnl: number; remainingSize: number };
   cancelOrder: (orderId: string) => void;
   settleFundingPeriod: (market: string, fundingRate: number) => void;
   resetAccount: () => void;
@@ -568,6 +574,105 @@ export const usePaperTradingStore = create<PaperTradingState>()(
         });
 
         return { realizedPnl };
+      },
+
+      partialClosePosition: (positionId, sizeToClose, targetPrice, orderType = "market") => {
+        const state = get();
+        const pos = state.positions.find((p) => p.id === positionId);
+        if (!pos) return { realizedPnl: 0, remainingSize: 0 };
+
+        const validCloseSize = Math.min(pos.size, Math.max(0, Number(sizeToClose) || 0));
+        if (validCloseSize <= 0) return { realizedPnl: 0, remainingSize: pos.size };
+
+        // Full close if requested size meets or exceeds current position size
+        if (validCloseSize >= pos.size) {
+          const res = get().closePosition(positionId, targetPrice);
+          return { realizedPnl: res.realizedPnl, remainingSize: 0 };
+        }
+
+        // Limit reduce-only order
+        if (orderType === "limit" && targetPrice && targetPrice > 0) {
+          const limitOrder: Order = {
+            id: `paper-ord-${Date.now()}`,
+            market: pos.market,
+            side: pos.side === "long" ? "sell" : "buy",
+            type: "limit",
+            price: targetPrice,
+            size: validCloseSize,
+            status: "open",
+            filledSize: 0,
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+            source: "optimistic",
+          };
+          set((s) => ({
+            openOrders: [limitOrder, ...s.openOrders],
+          }));
+          return { realizedPnl: 0, remainingSize: pos.size };
+        }
+
+        // Market partial close
+        const execPrice = targetPrice || pos.markPrice;
+        const direction = pos.side === "long" ? 1 : -1;
+        const closeRatio = validCloseSize / pos.size;
+        const marginToRelease = pos.margin * closeRatio;
+        const realizedPnl = (execPrice - pos.entryPrice) * validCloseSize * direction;
+        const returnedFunds = Math.max(0, marginToRelease + realizedPnl);
+
+        const remainingSize = pos.size - validCloseSize;
+        const remainingMargin = pos.margin - marginToRelease;
+        const { pnl: nextPnl, pnlPercent: nextPnlPercent } = computePnl(
+          pos.side,
+          pos.entryPrice,
+          execPrice,
+          remainingSize,
+          remainingMargin
+        );
+
+        const closeId = `paper-partial-${Date.now()}`;
+        const tradeRecord: PaperTradeRecord = {
+          id: closeId,
+          market: pos.market,
+          side: pos.side === "long" ? "sell" : "buy",
+          type: "market",
+          price: execPrice,
+          size: validCloseSize,
+          realizedPnl,
+          timestamp: Date.now(),
+        };
+
+        const orderHistoryRecord: PaperOrderHistoryRecord = {
+          id: closeId,
+          market: pos.market,
+          side: pos.side === "long" ? "sell" : "buy",
+          type: "market",
+          price: execPrice,
+          avgFillPrice: execPrice,
+          size: validCloseSize,
+          filledSize: validCloseSize,
+          status: "filled",
+          timestamp: Date.now(),
+        };
+
+        set({
+          balance: state.balance + returnedFunds,
+          positions: state.positions.map((p) =>
+            p.id === positionId
+              ? {
+                  ...p,
+                  size: remainingSize,
+                  margin: remainingMargin,
+                  markPrice: execPrice,
+                  pnl: nextPnl,
+                  pnlPercent: nextPnlPercent,
+                }
+              : p
+          ),
+          tradeHistory: [tradeRecord, ...state.tradeHistory].slice(0, 100),
+          orderHistory: [orderHistoryRecord, ...state.orderHistory].slice(0, 100),
+        });
+
+        return { realizedPnl, remainingSize };
       },
 
       cancelOrder: (orderId) => {

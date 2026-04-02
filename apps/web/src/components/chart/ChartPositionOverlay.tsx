@@ -6,9 +6,10 @@ import { useIsPaperTrading } from "@/hooks/useIsPaperTrading";
 import { usePaperTradingStore } from "@/store/paperTradingStore";
 import { useOrdersStore, type Order } from "@/store/ordersStore";
 import type { Position } from "@/store/positionsStore";
-import { X, AlertTriangle } from "lucide-react";
+import { X, AlertTriangle, Percent } from "lucide-react";
 import { toast } from "sonner";
 import { terminalAudio } from "@/lib/terminalAudio";
+import { PartialCloseModal } from "@/components/positions/PartialCloseModal";
 
 type ChartPositionOverlayProps = {
   market: string;
@@ -48,6 +49,14 @@ export function ChartPositionOverlay({
 
   const priceLinesRef = useRef<Map<string, IPriceLine>>(new Map());
   const [coordsVersion, setCoordsVersion] = useState(0);
+  const [partialModalOpen, setPartialModalOpen] = useState(false);
+  const [partialPosition, setPartialPosition] = useState<Position | null>(null);
+
+  const handlePartialClose = (pos: Position) => {
+    terminalAudio.playClick();
+    setPartialPosition(pos);
+    setPartialModalOpen(true);
+  };
 
   // Active positions for current market
   const activePositions = useMemo(() => {
@@ -291,8 +300,16 @@ export function ChartPositionOverlay({
               {position.pnl >= 0 ? "+" : ""}${position.pnl.toFixed(2)} ({position.pnlPercent >= 0 ? "+" : ""}{position.pnlPercent.toFixed(2)}%)
             </span>
             <button
+              onClick={() => handlePartialClose(position)}
+              className="ml-1.5 flex h-4 items-center gap-0.5 rounded bg-[#22d3ee]/20 px-1.5 py-0.5 text-[10px] font-bold text-[#22d3ee] hover:bg-[#22d3ee]/35 transition-colors cursor-pointer"
+              title="Partial close / scale out (25%, 50%, 75%, 100%)"
+            >
+              <Percent className="h-2.5 w-2.5" />
+              %
+            </button>
+            <button
               onClick={() => handleClosePosition(position)}
-              className="ml-1.5 flex h-4 items-center gap-1 rounded bg-rose-500/20 px-1.5 py-0.5 text-[10px] font-bold text-rose-300 hover:bg-rose-500/30 hover:text-white transition-colors cursor-pointer"
+              className="ml-1 flex h-4 items-center gap-1 rounded bg-rose-500/20 px-1.5 py-0.5 text-[10px] font-bold text-rose-300 hover:bg-rose-500/30 hover:text-white transition-colors cursor-pointer"
               title="Close position at market"
             >
               <X className="h-2.5 w-2.5" />
@@ -356,6 +373,13 @@ export function ChartPositionOverlay({
           </div>
         );
       })}
+
+      {/* Partial Close Modal */}
+      <PartialCloseModal
+        position={partialPosition}
+        open={partialModalOpen}
+        onOpenChange={setPartialModalOpen}
+      />
     </div>
   );
 }

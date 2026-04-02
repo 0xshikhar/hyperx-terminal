@@ -6,8 +6,9 @@ import { usePaperTradingStore } from "@/store/paperTradingStore";
 import { cn } from "@/lib/utils";
 import type { Position } from "@/store/positionsStore";
 import { toast } from "sonner";
-import { X, Share2, RefreshCw } from "lucide-react";
+import { X, Share2, RefreshCw, Percent } from "lucide-react";
 import { PnLShareModal } from "@/components/positions/PnLShareModal";
+import { PartialCloseModal } from "@/components/positions/PartialCloseModal";
 import { terminalAudio } from "@/lib/terminalAudio";
 
 const ROW_HEIGHT = 40;
@@ -23,12 +24,13 @@ interface RowItemData {
   positions: Position[];
   isPaperTrading: boolean;
   onClose: (pos: Position) => void;
+  onPartialClose: (pos: Position) => void;
   onReverse: (pos: Position) => void;
   onShare: (pos: Position) => void;
 }
 
 const PositionRow = memo(({ index, style, data }: ListChildComponentProps<RowItemData>) => {
-  const { positions, onClose, onReverse, onShare } = data;
+  const { positions, onClose, onPartialClose, onReverse, onShare } = data;
   const position = positions[index];
   if (!position) return null;
   const pnlClass = position.pnl >= 0 ? "text-[#00d084]" : "text-[#ff4757]";
@@ -78,7 +80,7 @@ const PositionRow = memo(({ index, style, data }: ListChildComponentProps<RowIte
         {/* Share PnL */}
         <button
           onClick={() => onShare(position)}
-          className="flex h-6 w-6 items-center justify-center rounded border border-[#1e3b43] bg-[#0c242a] text-[#22d3ee] hover:bg-[#12363f] hover:text-white transition-colors"
+          className="flex h-6 w-6 items-center justify-center rounded border border-[#1e3b43] bg-[#0c242a] text-[#22d3ee] hover:bg-[#12363f] hover:text-white transition-colors cursor-pointer"
           title="Share P&L Card"
         >
           <Share2 className="h-2.5 w-2.5" />
@@ -87,16 +89,26 @@ const PositionRow = memo(({ index, style, data }: ListChildComponentProps<RowIte
         {/* Reverse Position */}
         <button
           onClick={() => onReverse(position)}
-          className="flex h-6 w-6 items-center justify-center rounded border border-amber-500/30 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20 transition-colors"
+          className="flex h-6 w-6 items-center justify-center rounded border border-amber-500/30 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20 transition-colors cursor-pointer"
           title="Reverse Position (Flip side at market)"
         >
           <RefreshCw className="h-2.5 w-2.5" />
         </button>
 
+        {/* Partial Close */}
+        <button
+          onClick={() => onPartialClose(position)}
+          className="flex items-center gap-0.5 rounded border border-[#22d3ee]/30 bg-[#22d3ee]/10 px-1.5 py-0.5 text-[10px] font-semibold text-[#22d3ee] hover:bg-[#22d3ee]/20 transition-colors cursor-pointer"
+          title="Partial Close (Scale out at Market or Limit)"
+        >
+          <Percent className="h-2.5 w-2.5" />
+          Close %
+        </button>
+
         {/* Market Close */}
         <button
           onClick={() => onClose(position)}
-          className="flex items-center gap-1 rounded border border-rose-500/30 bg-rose-500/10 px-2 py-0.5 text-[10px] text-rose-300 hover:bg-rose-500/20 transition-colors"
+          className="flex items-center gap-1 rounded border border-rose-500/30 bg-rose-500/10 px-2 py-0.5 text-[10px] text-rose-300 hover:bg-rose-500/20 transition-colors cursor-pointer"
           title="Market close position"
         >
           <X className="h-2.5 w-2.5" />
@@ -118,6 +130,8 @@ export function OpenPositionsTable() {
 
   const [shareModalOpen, setShareModalOpen] = useState(false);
   const [selectedPosition, setSelectedPosition] = useState<Position | null>(null);
+  const [partialModalOpen, setPartialModalOpen] = useState(false);
+  const [partialPosition, setPartialPosition] = useState<Position | null>(null);
 
   const positions = useMemo(() => {
     return isPaperTrading ? paperPositions : realPositions;
@@ -134,6 +148,12 @@ export function OpenPositionsTable() {
     } else {
       toast.info(`Closing live ${position.market} position on Starknet...`);
     }
+  };
+
+  const handlePartialClose = (position: Position) => {
+    terminalAudio.playClick();
+    setPartialPosition(position);
+    setPartialModalOpen(true);
   };
 
   const handleReverse = (position: Position) => {
@@ -171,6 +191,7 @@ export function OpenPositionsTable() {
       positions,
       isPaperTrading,
       onClose: handleClose,
+      onPartialClose: handlePartialClose,
       onReverse: handleReverse,
       onShare: handleShare,
     }),
@@ -219,6 +240,13 @@ export function OpenPositionsTable() {
         position={selectedPosition}
         open={shareModalOpen}
         onOpenChange={setShareModalOpen}
+      />
+
+      {/* Partial Position Close Modal */}
+      <PartialCloseModal
+        position={partialPosition}
+        open={partialModalOpen}
+        onOpenChange={setPartialModalOpen}
       />
     </div>
   );
