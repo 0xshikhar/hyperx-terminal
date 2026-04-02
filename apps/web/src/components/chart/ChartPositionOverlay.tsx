@@ -6,10 +6,11 @@ import { useIsPaperTrading } from "@/hooks/useIsPaperTrading";
 import { usePaperTradingStore } from "@/store/paperTradingStore";
 import { useOrdersStore, type Order } from "@/store/ordersStore";
 import type { Position } from "@/store/positionsStore";
-import { X, AlertTriangle, Percent } from "lucide-react";
+import { X, AlertTriangle, Percent, Target, ShieldAlert } from "lucide-react";
 import { toast } from "sonner";
 import { terminalAudio } from "@/lib/terminalAudio";
 import { PartialCloseModal } from "@/components/positions/PartialCloseModal";
+import { PositionTPSLModal } from "@/components/positions/PositionTPSLModal";
 
 type ChartPositionOverlayProps = {
   market: string;
@@ -23,6 +24,8 @@ interface PositionCoordinate {
   entryY: number | null;
   liqY: number | null;
   liqPrice: number;
+  tpY: number | null;
+  slY: number | null;
 }
 
 interface OrderCoordinate {
@@ -41,6 +44,7 @@ export function ChartPositionOverlay({
   const { positions: realPositions } = usePositions();
   const paperPositions = usePaperTradingStore((s) => s.positions);
   const closePaperPosition = usePaperTradingStore((s) => s.closePosition);
+  const updatePaperTPSL = usePaperTradingStore((s) => s.updatePositionTPSL);
 
   const realOrders = useOrdersStore((s) => s.openOrders);
   const markOrderCancelled = useOrdersStore((s) => s.markOrderCancelled);
@@ -51,11 +55,35 @@ export function ChartPositionOverlay({
   const [coordsVersion, setCoordsVersion] = useState(0);
   const [partialModalOpen, setPartialModalOpen] = useState(false);
   const [partialPosition, setPartialPosition] = useState<Position | null>(null);
+  const [tpslModalOpen, setTpslModalOpen] = useState(false);
+  const [tpslPosition, setTpslPosition] = useState<Position | null>(null);
 
   const handlePartialClose = (pos: Position) => {
     terminalAudio.playClick();
     setPartialPosition(pos);
     setPartialModalOpen(true);
+  };
+
+  const handleOpenTPSL = (pos: Position) => {
+    terminalAudio.playClick();
+    setTpslPosition(pos);
+    setTpslModalOpen(true);
+  };
+
+  const handleCancelTP = (pos: Position) => {
+    terminalAudio.playClick();
+    if (isPaperTrading) {
+      updatePaperTPSL(pos.id, undefined, pos.stopLoss);
+      toast.info(`Cancelled Take-Profit for ${pos.market}`);
+    }
+  };
+
+  const handleCancelSL = (pos: Position) => {
+    terminalAudio.playClick();
+    if (isPaperTrading) {
+      updatePaperTPSL(pos.id, pos.takeProfit, undefined);
+      toast.info(`Cancelled Stop-Loss for ${pos.market}`);
+    }
   };
 
   // Active positions for current market
@@ -82,7 +110,7 @@ export function ChartPositionOverlay({
     const currentLineKeys = new Set<string>();
     const linesMap = priceLinesRef.current;
 
-    // 1. Position Entry and Liquidation Price Lines
+    // 1. Position Entry, Liquidation, TP, and SL Price Lines
     for (const position of activePositions) {
       const entryKey = `pos-entry-${position.id}`;
       currentLineKeys.add(entryKey);
@@ -136,6 +164,58 @@ export function ChartPositionOverlay({
           price: liqPrice,
           title: `LIQ $${liqPrice.toFixed(2)}`,
         });
+      }
+
+      // Take-Profit Price Line
+      if (position.takeProfit) {
+        const tpKey = `pos-tp-${position.id}`;
+        currentLineKeys.add(tpKey);
+
+        if (!linesMap.has(tpKey)) {
+          try {
+            const line = series.createPriceLine({
+              price: position.takeProfit,
+              color: "#00d084",
+              lineWidth: 1,
+              lineStyle: 1, // Dotted
+              axisLabelVisible: true,
+              title: `TP $${position.takeProfit.toFixed(2)}`,
+            });
+            linesMap.set(tpKey, line);
+          } catch {}
+        } else {
+          linesMap.get(tpKey)?.applyOptions({
+            price: position.takeProfit,
+            color: "#00d084",
+            title: `TP $${position.takeProfit.toFixed(2)}`,
+          });
+        }
+      }
+
+      // Stop-Loss Price Line
+      if (position.stopLoss) {
+        const slKey = `pos-sl-${position.id}`;
+        currentLineKeys.add(slKey);
+
+        if (!linesMap.has(slKey)) {
+          try {
+            const line = series.createPriceLine({
+              price: position.stopLoss,
+              color: "#ff4757",
+              lineWidth: 1,
+              lineStyle: 1, // Dotted
+              axisLabelVisible: true,
+              title: `SL $${position.stopLoss.toFixed(2)}`,
+            });
+            linesMap.set(slKey, line);
+          } catch {}
+        } else {
+          linesMap.get(slKey)?.applyOptions({
+            price: position.stopLoss,
+            color: "#ff4757",
+            title: `SL $${position.stopLoss.toFixed(2)}`,
+          });
+        }
       }
     }
 
@@ -210,12 +290,16 @@ export function ChartPositionOverlay({
           ? Math.max(0, pos.entryPrice * (1 - 0.9 / (pos.leverage || 10)))
           : pos.entryPrice * (1 + 0.9 / (pos.leverage || 10));
       const liqY = series.priceToCoordinate(liqPrice);
+      const tpY = pos.takeProfit ? series.priceToCoordinate(pos.takeProfit) : null;
+      const slY = pos.stopLoss ? series.priceToCoordinate(pos.stopLoss) : null;
 
       return {
         position: pos,
         entryY: typeof entryY === "number" ? entryY : null,
         liqY: typeof liqY === "number" ? liqY : null,
         liqPrice,
+        tpY: typeof tpY === "number" ? tpY : null,
+        slY: typeof slY === "number" ? slY : null,
       };
     });
   }, [series, activePositions, coordsVersion]);
@@ -300,8 +384,21 @@ export function ChartPositionOverlay({
               {position.pnl >= 0 ? "+" : ""}${position.pnl.toFixed(2)} ({position.pnlPercent >= 0 ? "+" : ""}{position.pnlPercent.toFixed(2)}%)
             </span>
             <button
+              onClick={() => handleOpenTPSL(position)}
+              className={cn(
+                "ml-1 flex h-4 items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-bold transition-colors cursor-pointer",
+                position.takeProfit || position.stopLoss
+                  ? "bg-[#22d3ee]/20 text-[#22d3ee] hover:bg-[#22d3ee]/35"
+                  : "bg-[#142328] text-[#8ea2a6] hover:bg-[#1f373e] hover:text-white"
+              )}
+              title="Manage Take-Profit / Stop-Loss bracket"
+            >
+              <Target className="h-2.5 w-2.5" />
+              TP/SL
+            </button>
+            <button
               onClick={() => handlePartialClose(position)}
-              className="ml-1.5 flex h-4 items-center gap-0.5 rounded bg-[#22d3ee]/20 px-1.5 py-0.5 text-[10px] font-bold text-[#22d3ee] hover:bg-[#22d3ee]/35 transition-colors cursor-pointer"
+              className="ml-1 flex h-4 items-center gap-0.5 rounded bg-[#22d3ee]/20 px-1.5 py-0.5 text-[10px] font-bold text-[#22d3ee] hover:bg-[#22d3ee]/35 transition-colors cursor-pointer"
               title="Partial close / scale out (25%, 50%, 75%, 100%)"
             >
               <Percent className="h-2.5 w-2.5" />
@@ -335,6 +432,74 @@ export function ChartPositionOverlay({
             <span className="tabular-nums">
               ${liqPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </span>
+          </div>
+        );
+      })}
+
+      {/* ── Position Take-Profit Chips ── */}
+      {positionCoords.map(({ position, tpY }) => {
+        if (tpY === null || tpY < 32 || !position.takeProfit) return null;
+        const pnlGain =
+          position.side === "long"
+            ? (position.takeProfit - position.entryPrice) * position.size
+            : (position.entryPrice - position.takeProfit) * position.size;
+
+        return (
+          <div
+            key={`chip-tp-${position.id}`}
+            style={{ top: `${tpY - 12}px` }}
+            className="pointer-events-auto absolute right-16 z-20 flex items-center gap-1.5 rounded border border-[#00d084]/40 bg-[#041c14]/95 px-2 py-0.5 text-[10px] font-mono text-[#00d084] shadow-lg backdrop-blur-sm"
+            title="Take-Profit trigger"
+          >
+            <Target className="h-2.5 w-2.5 text-[#00d084]" />
+            <span className="font-bold">TP:</span>
+            <span className="tabular-nums">
+              ${position.takeProfit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </span>
+            <span className="text-[#00d084]/80 tabular-nums">
+              (+${pnlGain.toFixed(2)})
+            </span>
+            <button
+              onClick={() => handleCancelTP(position)}
+              className="ml-1 flex h-3.5 w-3.5 items-center justify-center rounded hover:bg-[#00d084]/20 text-[#00d084] cursor-pointer"
+              title="Cancel Take-Profit"
+            >
+              <X className="h-2.5 w-2.5" />
+            </button>
+          </div>
+        );
+      })}
+
+      {/* ── Position Stop-Loss Chips ── */}
+      {positionCoords.map(({ position, slY }) => {
+        if (slY === null || slY < 32 || !position.stopLoss) return null;
+        const pnlLoss =
+          position.side === "long"
+            ? (position.stopLoss - position.entryPrice) * position.size
+            : (position.entryPrice - position.stopLoss) * position.size;
+
+        return (
+          <div
+            key={`chip-sl-${position.id}`}
+            style={{ top: `${slY - 12}px` }}
+            className="pointer-events-auto absolute right-16 z-20 flex items-center gap-1.5 rounded border border-[#ff4757]/40 bg-[#1c0608]/95 px-2 py-0.5 text-[10px] font-mono text-[#ff4757] shadow-lg backdrop-blur-sm"
+            title="Stop-Loss trigger"
+          >
+            <ShieldAlert className="h-2.5 w-2.5 text-[#ff4757]" />
+            <span className="font-bold">SL:</span>
+            <span className="tabular-nums">
+              ${position.stopLoss.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </span>
+            <span className="text-[#ff4757]/80 tabular-nums">
+              (${pnlLoss.toFixed(2)})
+            </span>
+            <button
+              onClick={() => handleCancelSL(position)}
+              className="ml-1 flex h-3.5 w-3.5 items-center justify-center rounded hover:bg-[#ff4757]/20 text-[#ff4757] cursor-pointer"
+              title="Cancel Stop-Loss"
+            >
+              <X className="h-2.5 w-2.5" />
+            </button>
           </div>
         );
       })}
@@ -379,6 +544,13 @@ export function ChartPositionOverlay({
         position={partialPosition}
         open={partialModalOpen}
         onOpenChange={setPartialModalOpen}
+      />
+
+      {/* Position TP/SL Bracket Modal */}
+      <PositionTPSLModal
+        position={tpslPosition}
+        open={tpslModalOpen}
+        onOpenChange={setTpslModalOpen}
       />
     </div>
   );

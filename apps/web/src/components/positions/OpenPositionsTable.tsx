@@ -9,11 +9,12 @@ import { toast } from "sonner";
 import { X, Share2, RefreshCw, Percent } from "lucide-react";
 import { PnLShareModal } from "@/components/positions/PnLShareModal";
 import { PartialCloseModal } from "@/components/positions/PartialCloseModal";
+import { PositionTPSLModal } from "@/components/positions/PositionTPSLModal";
 import { terminalAudio } from "@/lib/terminalAudio";
 
 const ROW_HEIGHT = 40;
 
-const headers = ["Market", "Side", "Size", "Entry", "Mark", "Liq Price", "PnL", "Margin", "Lev", "Actions"];
+const headers = ["Market", "Side", "Size", "Entry", "Mark", "Liq Price", "TP/SL", "PnL", "Margin", "Lev", "Actions"];
 
 const formatNumber = (value: number, fractionDigits = 2) =>
   value.toLocaleString(undefined, { maximumFractionDigits: fractionDigits });
@@ -25,12 +26,13 @@ interface RowItemData {
   isPaperTrading: boolean;
   onClose: (pos: Position) => void;
   onPartialClose: (pos: Position) => void;
+  onTPSL: (pos: Position) => void;
   onReverse: (pos: Position) => void;
   onShare: (pos: Position) => void;
 }
 
 const PositionRow = memo(({ index, style, data }: ListChildComponentProps<RowItemData>) => {
-  const { positions, onClose, onPartialClose, onReverse, onShare } = data;
+  const { positions, onClose, onPartialClose, onTPSL, onReverse, onShare } = data;
   const position = positions[index];
   if (!position) return null;
   const pnlClass = position.pnl >= 0 ? "text-[#00d084]" : "text-[#ff4757]";
@@ -50,7 +52,7 @@ const PositionRow = memo(({ index, style, data }: ListChildComponentProps<RowIte
     <div
       style={style}
       className={cn(
-        "grid grid-cols-10 items-center border-b border-[#142228] px-2 text-xs font-mono text-white hover:bg-[#112025]/50 transition-colors",
+        "grid grid-cols-11 items-center border-b border-[#142228] px-2 text-xs font-mono text-white hover:bg-[#112025]/50 transition-colors",
         isNearLiquidation && "bg-rose-950/20 border-rose-500/30"
       )}
     >
@@ -69,6 +71,35 @@ const PositionRow = memo(({ index, style, data }: ListChildComponentProps<RowIte
       <span className={cn("tabular-nums", isNearLiquidation ? "text-rose-400 font-bold" : "text-amber-400/90")}>
         ${formatPrice(liqPrice)}
       </span>
+
+      {/* TP / SL Bracket */}
+      <div className="flex flex-col justify-center">
+        {position.takeProfit || position.stopLoss ? (
+          <button
+            type="button"
+            onClick={() => onTPSL(position)}
+            className="flex flex-col items-start text-[10px] leading-tight hover:underline cursor-pointer"
+            title="Edit TP/SL Bracket"
+          >
+            {position.takeProfit && (
+              <span className="text-[#00d084] font-medium">TP: ${formatPrice(position.takeProfit)}</span>
+            )}
+            {position.stopLoss && (
+              <span className="text-[#ff4757] font-medium">SL: ${formatPrice(position.stopLoss)}</span>
+            )}
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={() => onTPSL(position)}
+            className="text-[11px] text-[#627a80] hover:text-[#22d3ee] transition-colors cursor-pointer text-left"
+            title="Add Take-Profit / Stop-Loss"
+          >
+            + Add
+          </button>
+        )}
+      </div>
+
       <span className={cn("tabular-nums font-semibold", pnlClass)}>
         {position.pnl >= 0 ? "+" : ""}
         ${formatNumber(position.pnl, 2)} ({position.pnlPercent >= 0 ? "+" : ""}
@@ -132,6 +163,8 @@ export function OpenPositionsTable() {
   const [selectedPosition, setSelectedPosition] = useState<Position | null>(null);
   const [partialModalOpen, setPartialModalOpen] = useState(false);
   const [partialPosition, setPartialPosition] = useState<Position | null>(null);
+  const [tpslModalOpen, setTpslModalOpen] = useState(false);
+  const [tpslPosition, setTpslPosition] = useState<Position | null>(null);
 
   const positions = useMemo(() => {
     return isPaperTrading ? paperPositions : realPositions;
@@ -154,6 +187,12 @@ export function OpenPositionsTable() {
     terminalAudio.playClick();
     setPartialPosition(position);
     setPartialModalOpen(true);
+  };
+
+  const handleTPSL = (position: Position) => {
+    terminalAudio.playClick();
+    setTpslPosition(position);
+    setTpslModalOpen(true);
   };
 
   const handleReverse = (position: Position) => {
@@ -192,6 +231,7 @@ export function OpenPositionsTable() {
       isPaperTrading,
       onClose: handleClose,
       onPartialClose: handlePartialClose,
+      onTPSL: handleTPSL,
       onReverse: handleReverse,
       onShare: handleShare,
     }),
@@ -200,7 +240,7 @@ export function OpenPositionsTable() {
 
   return (
     <div className="rounded-md border border-[#1a2830] bg-[#0c181b]">
-      <div className="grid grid-cols-10 border-b border-[#1a2830] px-2 py-2 text-[10px] uppercase text-[#64748b] font-mono">
+      <div className="grid grid-cols-11 border-b border-[#1a2830] px-2 py-2 text-[10px] uppercase text-[#64748b] font-mono">
         {headers.map((header) => (
           <span key={header}>{header}</span>
         ))}
@@ -247,6 +287,13 @@ export function OpenPositionsTable() {
         position={partialPosition}
         open={partialModalOpen}
         onOpenChange={setPartialModalOpen}
+      />
+
+      {/* Position Take-Profit / Stop-Loss Modal */}
+      <PositionTPSLModal
+        position={tpslPosition}
+        open={tpslModalOpen}
+        onOpenChange={setTpslModalOpen}
       />
     </div>
   );

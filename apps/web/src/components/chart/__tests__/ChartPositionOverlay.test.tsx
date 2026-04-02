@@ -147,4 +147,65 @@ describe("ChartPositionOverlay (Interactive Chart Trading)", () => {
     unmount();
     expect(mockSeries.removePriceLine).toHaveBeenCalled();
   });
+
+  it("renders TP and SL price lines and interactive chips with cancellation", () => {
+    usePaperTradingStore.setState({
+      positions: [
+        {
+          id: "pos-btc-1",
+          market: "BTC-USD",
+          side: "long",
+          size: 0.5,
+          entryPrice: 76000,
+          markPrice: 77500,
+          pnl: 750,
+          pnlPercent: 19.74,
+          margin: 3800,
+          leverage: 10,
+          openedAt: "2026-09-19T00:00:00Z",
+          takeProfit: 80000,
+          stopLoss: 74000,
+        },
+      ],
+      openOrders: [],
+    });
+
+    render(
+      <ChartPositionOverlay
+        market="BTC-USD"
+        series={mockSeries as ISeriesApi<"Candlestick">}
+        chart={mockChart as IChartApi}
+      />
+    );
+
+    // Verify TP price line created
+    expect(mockSeries.createPriceLine).toHaveBeenCalledWith(
+      expect.objectContaining({
+        price: 80000,
+        color: "#00d084",
+        lineStyle: 1,
+      })
+    );
+
+    // Verify SL price line created
+    expect(mockSeries.createPriceLine).toHaveBeenCalledWith(
+      expect.objectContaining({
+        price: 74000,
+        color: "#ff4757",
+        lineStyle: 1,
+      })
+    );
+
+    // Verify chips rendered
+    expect(screen.getByText("TP:")).toBeInTheDocument();
+    expect(screen.getByText("SL:")).toBeInTheDocument();
+    expect(screen.getByTitle("Cancel Take-Profit")).toBeInTheDocument();
+    expect(screen.getByTitle("Cancel Stop-Loss")).toBeInTheDocument();
+
+    // Click cancel TP
+    fireEvent.click(screen.getByTitle("Cancel Take-Profit"));
+    const updated = usePaperTradingStore.getState().positions.find((p) => p.id === "pos-btc-1");
+    expect(updated?.takeProfit).toBeUndefined();
+    expect(updated?.stopLoss).toBe(74000);
+  });
 });
