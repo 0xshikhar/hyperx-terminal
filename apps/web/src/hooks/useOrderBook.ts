@@ -91,7 +91,7 @@ export function useOrderBook(market: string) {
   const openOrders = useOrdersStore((state) => state.openOrders);
   const centerPrice = useMarketStore(
     (state) =>
-      state.markets.find((m) => normalizeMarketSymbol(m.symbol) === normalizedMarket)?.lastPrice ||
+      state.markets?.find((m) => normalizeMarketSymbol(m.symbol) === normalizedMarket)?.lastPrice ||
       76045.9
   );
 
@@ -189,11 +189,14 @@ export function useOrderBook(market: string) {
     }));
   }, [aggregatedAsks, minePriceSet]);
 
-  const feedHealth = getMarketFeedHealth(normalizedMarket);
+  const feedHealth =
+    typeof getMarketFeedHealth === "function"
+      ? getMarketFeedHealth(normalizedMarket)
+      : { isFresh: true };
   const isReference =
     sourceBids.length === 0 &&
     sourceAsks.length === 0 &&
-    (connectionState !== "connected" || !feedHealth.isFresh);
+    (connectionState !== "connected" || !feedHealth?.isFresh);
 
   return {
     aggregation,
