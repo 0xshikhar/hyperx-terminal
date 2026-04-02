@@ -21,6 +21,9 @@ import { usePaperTradingStore } from "@/store/paperTradingStore";
 import { terminalAudio } from "@/lib/terminalAudio";
 import { AccountRiskHUD } from "@/components/risk/AccountRiskHUD";
 import { ScaledOrderForm } from "@/components/trade-form/ScaledOrderForm";
+import { ChevronDown, Sliders } from "lucide-react";
+import { useMarginSettingsStore } from "@/store/marginSettingsStore";
+import { LeverageMarginModal } from "@/components/trade-form/LeverageMarginModal";
 
 export type TradeOrder = {
   market: string;
@@ -70,6 +73,12 @@ export function TradeForm({ onSubmit }: TradeFormProps) {
   });
   const account = accountData ?? null;
   const { registerShortcut, unregisterShortcut } = useKeyboardShortcuts();
+
+  const marginMode = useMarginSettingsStore((s) => s.marginMode);
+  const storeGetLeverage = useMarginSettingsStore((s) => s.getLeverage);
+  const setStoreLeverage = useMarginSettingsStore((s) => s.setLeverage);
+  const [marginModalOpen, setMarginModalOpen] = useState(false);
+
   const [side, setSide] = useState<"buy" | "sell">("buy");
   const [orderType, setOrderType] = useState<"market" | "limit" | "stop" | "scale">("market");
   const [size, setSize] = useState("");
@@ -77,8 +86,16 @@ export function TradeForm({ onSubmit }: TradeFormProps) {
   const [stopPrice, setStopPrice] = useState("");
   const [takeProfit, setTakeProfit] = useState("");
   const [stopLoss, setStopLoss] = useState("");
-  const [leverage, setLeverage] = useState(10);
-  const [executionPreset, setExecutionPreset] = useState<"cross" | "scaled" | "classic">("cross");
+  const [leverage, setLeverageState] = useState(() => storeGetLeverage(activeMarket));
+
+  useEffect(() => {
+    setLeverageState(storeGetLeverage(activeMarket));
+  }, [activeMarket, storeGetLeverage]);
+
+  const setLeverage = (val: number) => {
+    setLeverageState(val);
+    setStoreLeverage(val, activeMarket);
+  };
   const [reduceOnly, setReduceOnly] = useState(false);
   const [postOnly, setPostOnly] = useState(false);
   const [tif, setTif] = useState<"GTC" | "IOC" | "FOK">("GTC");
@@ -96,7 +113,6 @@ export function TradeForm({ onSubmit }: TradeFormProps) {
     setStopPrice("");
     setTakeProfit("");
     setStopLoss("");
-    setLeverage(10);
     setOrderType("market");
   };
 
@@ -335,28 +351,46 @@ export function TradeForm({ onSubmit }: TradeFormProps) {
 
   return (
     <div id="terminal-trade-form" className="flex h-full min-h-0 flex-col bg-[#091416] text-[#c8d4d7] overflow-y-auto">
-      {/* ── Preset selector ── */}
-      <div className="grid grid-cols-3 gap-1.5 border-b border-[#1a2830] bg-[#0a1518] p-2.5">
-        {(
-          [
-            { value: "cross", label: "Cross" },
-            { value: "scaled", label: `${leverage}x` },
-            { value: "classic", label: "Classic" },
-          ] as const
-        ).map((preset) => (
+      {/* ── Margin Mode & Leverage Controls ── */}
+      <div className="flex items-center justify-between border-b border-[#1a2830] bg-[#0a1518] px-2.5 py-2 text-xs">
+        <div className="flex items-center gap-1.5">
           <button
-            key={preset.value}
-            onClick={() => setExecutionPreset(preset.value)}
-            className={cn(
-              "rounded px-2.5 py-1.5 text-xs font-medium transition-colors",
-              executionPreset === preset.value
-                ? "bg-[#16272c] text-[#22d3ee] border border-[#1d4a50]"
-                : "bg-[#0c181b] text-[#6b7c82] hover:bg-[#112025] hover:text-[#c8d4d7]"
-            )}
+            type="button"
+            onClick={() => {
+              terminalAudio.playClick();
+              setMarginModalOpen(true);
+            }}
+            className="flex items-center gap-1.5 rounded border border-[#1b3842] bg-[#0e2227] px-2.5 py-1 text-xs font-semibold text-[#22d3ee] hover:border-[#22d3ee]/60 hover:bg-[#13323a] transition-all cursor-pointer"
+            title="Configure Margin Mode (Cross vs. Isolated)"
           >
-            {preset.label}
+            <span className="capitalize">{marginMode}</span>
+            <ChevronDown className="h-3 w-3 text-[#22d3ee]/70" />
           </button>
-        ))}
+
+          <button
+            type="button"
+            onClick={() => {
+              terminalAudio.playClick();
+              setMarginModalOpen(true);
+            }}
+            className="flex items-center gap-1 rounded border border-[#1b3842] bg-[#0e2227] px-2.5 py-1 font-mono text-xs font-bold text-white hover:border-[#22d3ee]/60 hover:bg-[#13323a] transition-all cursor-pointer"
+            title="Adjust Leverage (1x - 50x)"
+          >
+            <span>{leverage}x</span>
+            <Sliders className="h-2.5 w-2.5 text-[#8ea2a6]" />
+          </button>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => {
+            terminalAudio.playClick();
+            setMarginModalOpen(true);
+          }}
+          className="text-[10px] text-[#627a80] hover:text-[#22d3ee] transition-colors cursor-pointer"
+        >
+          Margin Config
+        </button>
       </div>
 
       {/* ── Order type tabs ── */}
@@ -780,6 +814,18 @@ export function TradeForm({ onSubmit }: TradeFormProps) {
         onOpenChange={setWalletPromptOpen}
         title="Connect to trade"
         description="Trading actions are disabled until you connect a Starknet wallet."
+      />
+
+      {/* ── Leverage & Margin Mode Modal ── */}
+      <LeverageMarginModal
+        open={marginModalOpen}
+        onOpenChange={setMarginModalOpen}
+        market={activeMarket}
+        initialLeverage={leverage}
+        initialMode={marginMode}
+        onConfirm={(_mode, lev) => {
+          setLeverageState(lev);
+        }}
       />
     </div>
   );
