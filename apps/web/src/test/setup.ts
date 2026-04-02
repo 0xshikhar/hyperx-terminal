@@ -40,13 +40,22 @@ Object.defineProperty(window, "ResizeObserver", {
   value: MockResizeObserver,
 });
 
-// Mock localStorage
+// Mock localStorage with in-memory backing store
+const localStorageStore = new Map<string, string>();
 const localStorageMock = {
-  getItem: vi.fn(),
-  setItem: vi.fn(),
-  removeItem: vi.fn(),
-  clear: vi.fn(),
+  getItem: vi.fn((key: string) => localStorageStore.get(key) ?? null),
+  setItem: vi.fn((key: string, val: string) => {
+    localStorageStore.set(key, String(val));
+  }),
+  removeItem: vi.fn((key: string) => {
+    localStorageStore.delete(key);
+  }),
+  clear: vi.fn(() => {
+    localStorageStore.clear();
+  }),
 };
 Object.defineProperty(window, "localStorage", {
   value: localStorageMock,
+  writable: true,
 });
+
