@@ -6,11 +6,12 @@ import { usePaperTradingStore } from "@/store/paperTradingStore";
 import { cn } from "@/lib/utils";
 import type { Position } from "@/store/positionsStore";
 import { toast } from "sonner";
-import { X, Share2, RefreshCw, Percent } from "lucide-react";
+import { X, Share2, RefreshCw, Percent, Target } from "lucide-react";
 import { PnLShareModal } from "@/components/positions/PnLShareModal";
 import { PartialCloseModal } from "@/components/positions/PartialCloseModal";
 import { PositionTPSLModal } from "@/components/positions/PositionTPSLModal";
 import { terminalAudio } from "@/lib/terminalAudio";
+import { usePnlSettingsStore, calculateBreakevenPrice, type PnLDisplayMode } from "@/store/pnlSettingsStore";
 
 const ROW_HEIGHT = 40;
 
@@ -24,15 +25,17 @@ const formatPrice = (value: number) => formatNumber(value, value >= 1000 ? 2 : 4
 interface RowItemData {
   positions: Position[];
   isPaperTrading: boolean;
+  pnlMode: PnLDisplayMode;
   onClose: (pos: Position) => void;
   onPartialClose: (pos: Position) => void;
   onTPSL: (pos: Position) => void;
   onReverse: (pos: Position) => void;
   onShare: (pos: Position) => void;
+  onBreakevenLimit: (pos: Position) => void;
 }
 
 const PositionRow = memo(({ index, style, data }: ListChildComponentProps<RowItemData>) => {
-  const { positions, onClose, onPartialClose, onTPSL, onReverse, onShare } = data;
+  const { positions, pnlMode, onClose, onPartialClose, onTPSL, onReverse, onShare, onBreakevenLimit } = data;
   const position = positions[index];
   if (!position) return null;
   const pnlClass = position.pnl >= 0 ? "text-[#00d084]" : "text-[#ff4757]";
@@ -41,6 +44,8 @@ const PositionRow = memo(({ index, style, data }: ListChildComponentProps<RowIte
     position.side === "long"
       ? Math.max(0, position.entryPrice * (1 - 0.9 / (position.leverage || 10)))
       : position.entryPrice * (1 + 0.9 / (position.leverage || 10));
+
+  const breakevenPrice = calculateBreakevenPrice(position.side, position.entryPrice);
 
   // Risk closeness (within 5% of liquidation is critical danger)
   const isNearLiquidation =
@@ -66,7 +71,18 @@ const PositionRow = memo(({ index, style, data }: ListChildComponentProps<RowIte
         {position.side}
       </span>
       <span className="tabular-nums">{formatNumber(position.size, 4)}</span>
-      <span className="text-[#c8d4d7] tabular-nums">${formatPrice(position.entryPrice)}</span>
+      
+      {/* Entry Price & Fee-Adjusted Breakeven */}
+      <div className="flex flex-col justify-center leading-tight">
+        <span className="text-[#c8d4d7] tabular-nums">${formatPrice(position.entryPrice)}</span>
+        <span
+          className="text-[10px] text-[#22d3ee]/85 tabular-nums"
+          title={`Round-trip fee-adjusted breakeven price: $${formatPrice(breakevenPrice)}`}
+        >
+          BE: ${formatPrice(breakevenPrice)}
+        </span>
+      </div>
+
       <span className="text-[#c8d4d7] tabular-nums">${formatPrice(position.markPrice)}</span>
       <span className={cn("tabular-nums", isNearLiquidation ? "text-rose-400 font-bold" : "text-amber-400/90")}>
         ${formatPrice(liqPrice)}
@@ -100,11 +116,21 @@ const PositionRow = memo(({ index, style, data }: ListChildComponentProps<RowIte
         )}
       </div>
 
+      {/* PnL formatting based on pnlMode */}
       <span className={cn("tabular-nums font-semibold", pnlClass)}>
-        {position.pnl >= 0 ? "+" : ""}
-        ${formatNumber(position.pnl, 2)} ({position.pnlPercent >= 0 ? "+" : ""}
-        {formatNumber(position.pnlPercent, 2)}%)
+        {pnlMode === "usd" && (
+          <span>{position.pnl >= 0 ? "+" : ""}${formatNumber(position.pnl, 2)}</span>
+        )}
+        {pnlMode === "percent" && (
+          <span>{position.pnlPercent >= 0 ? "+" : ""}{formatNumber(position.pnlPercent, 2)}%</span>
+        )}
+        {pnlMode === "both" && (
+          <span>
+            {position.pnl >= 0 ? "+" : ""}${formatNumber(position.pnl, 2)} ({position.pnlPercent >= 0 ? "+" : ""}{formatNumber(position.pnlPercent, 2)}%)
+          </span>
+        )}
       </span>
+
       <span className="text-[#c8d4d7] tabular-nums">${formatNumber(position.margin, 2)}</span>
       <span className="text-[#8ea4a9]">{position.leverage}x</span>
       <div className="flex items-center gap-1">
@@ -124,6 +150,16 @@ const PositionRow = memo(({ index, style, data }: ListChildComponentProps<RowIte
           title="Reverse Position (Flip side at market)"
         >
           <RefreshCw className="h-2.5 w-2.5" />
+        </button>
+
+        {/* Breakeven Limit Close */}
+        <button
+          onClick={() => onBreakevenLimit(position)}
+          className="flex items-center gap-0.5 rounded border border-[#22d3ee]/40 bg-[#22d3ee]/10 px-1.5 py-0.5 text-[10px] font-semibold text-[#22d3ee] hover:bg-[#22d3ee]/25 transition-colors cursor-pointer"
+          title={`Place reduce-only limit exit order at exact breakeven price ($${formatPrice(breakevenPrice)})`}
+        >
+          <Target className="h-2.5 w-2.5" />
+          BE
         </button>
 
         {/* Partial Close */}
@@ -165,6 +201,10 @@ export function OpenPositionsTable() {
   const [partialPosition, setPartialPosition] = useState<Position | null>(null);
   const [tpslModalOpen, setTpslModalOpen] = useState(false);
   const [tpslPosition, setTpslPosition] = useState<Position | null>(null);
+
+  const pnlMode = usePnlSettingsStore((s) => s.pnlMode);
+  const setPnlMode = usePnlSettingsStore((s) => s.setPnlMode);
+  const feeRate = usePnlSettingsStore((s) => s.feeRate);
 
   const positions = useMemo(() => {
     return isPaperTrading ? paperPositions : realPositions;
@@ -225,21 +265,87 @@ export function OpenPositionsTable() {
     setShareModalOpen(true);
   };
 
+  const handleBreakevenLimit = (position: Position) => {
+    terminalAudio.playOrderSubmit();
+    const bePrice = calculateBreakevenPrice(position.side, position.entryPrice, feeRate);
+    if (isPaperTrading) {
+      executeOrder(
+        {
+          market: position.market,
+          side: position.side === "long" ? "sell" : "buy",
+          type: "limit",
+          size: position.size,
+          price: bePrice,
+          leverage: position.leverage || 10,
+        },
+        position.markPrice
+      );
+      terminalAudio.playOrderSubmit();
+      toast.success(
+        `⚡ Placed Breakeven limit exit for ${position.market} @ $${formatPrice(bePrice)}`
+      );
+    } else {
+      toast.info(`Submitting BE limit exit @ $${formatPrice(bePrice)}...`);
+    }
+  };
+
   const rowData: RowItemData = useMemo(
     () => ({
       positions,
       isPaperTrading,
+      pnlMode,
       onClose: handleClose,
       onPartialClose: handlePartialClose,
       onTPSL: handleTPSL,
       onReverse: handleReverse,
       onShare: handleShare,
+      onBreakevenLimit: handleBreakevenLimit,
     }),
-    [positions, isPaperTrading]
+    [positions, isPaperTrading, pnlMode, feeRate]
   );
 
   return (
     <div className="rounded-md border border-[#1a2830] bg-[#0c181b]">
+      {/* ── Table Top Toolbar: PnL Display Mode & Position Count ── */}
+      <div className="flex items-center justify-between border-b border-[#1a2830] px-3 py-1.5 bg-[#091518] text-xs">
+        <div className="flex items-center gap-2">
+          <span className="font-semibold text-white">Positions</span>
+          <span className="rounded bg-[#16272e] px-1.5 py-0.2 font-mono text-[10px] text-[#22d3ee]">
+            {positions.length}
+          </span>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] text-[#64748b] font-mono">PnL Mode:</span>
+          <div className="flex items-center rounded border border-[#1b343c] bg-[#071316] p-0.5 text-[10px] font-medium">
+            {(
+              [
+                { id: "both", label: "Both" },
+                { id: "usd", label: "$ USD" },
+                { id: "percent", label: "% ROE" },
+              ] as const
+            ).map((mode) => (
+              <button
+                key={mode.id}
+                type="button"
+                onClick={() => {
+                  terminalAudio.playClick();
+                  setPnlMode(mode.id);
+                }}
+                className={cn(
+                  "rounded px-2 py-0.5 transition-colors cursor-pointer",
+                  pnlMode === mode.id
+                    ? "bg-[#22d3ee]/20 text-[#22d3ee] font-bold"
+                    : "text-[#64748b] hover:text-[#c8d4d7]"
+                )}
+              >
+                {mode.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
       <div className="grid grid-cols-11 border-b border-[#1a2830] px-2 py-2 text-[10px] uppercase text-[#64748b] font-mono">
         {headers.map((header) => (
           <span key={header}>{header}</span>
