@@ -21,6 +21,7 @@ import { usePaperTradingStore } from "@/store/paperTradingStore";
 import { terminalAudio } from "@/lib/terminalAudio";
 import { AccountRiskHUD } from "@/components/risk/AccountRiskHUD";
 import { ScaledOrderForm } from "@/components/trade-form/ScaledOrderForm";
+import { TWAPOrderForm } from "@/components/trade-form/TWAPOrderForm";
 import { ChevronDown, Sliders, Zap } from "lucide-react";
 import { useMarginSettingsStore } from "@/store/marginSettingsStore";
 import { LeverageMarginModal } from "@/components/trade-form/LeverageMarginModal";
@@ -80,7 +81,7 @@ export function TradeForm({ onSubmit }: TradeFormProps) {
   const [marginModalOpen, setMarginModalOpen] = useState(false);
 
   const [side, setSide] = useState<"buy" | "sell">("buy");
-  const [orderType, setOrderType] = useState<"market" | "limit" | "stop" | "scale">("market");
+  const [orderType, setOrderType] = useState<"market" | "limit" | "stop" | "scale" | "twap">("market");
   const [size, setSize] = useState("");
   const [price, setPrice] = useState("");
   const [stopPrice, setStopPrice] = useState("");
@@ -154,7 +155,7 @@ export function TradeForm({ onSubmit }: TradeFormProps) {
   } = useTradeForm({
     market: activeMarket,
     side,
-    type: orderType === "scale" ? "limit" : orderType,
+    type: orderType === "scale" || orderType === "twap" ? "limit" : orderType,
     size,
     price,
     stopPrice,
@@ -170,7 +171,7 @@ export function TradeForm({ onSubmit }: TradeFormProps) {
     const activeSide = targetSide || side;
     if (isSubmitting || !isValid) return;
     const safeOrderType: "market" | "limit" | "stop" =
-      orderType === "scale" ? "limit" : orderType;
+      orderType === "scale" || orderType === "twap" ? "limit" : orderType;
     const order: PlaceOrderPayload = {
       market: activeMarket,
       side: activeSide,
@@ -457,13 +458,13 @@ export function TradeForm({ onSubmit }: TradeFormProps) {
       </div>
 
       {/* ── Order type tabs ── */}
-      <div className="grid grid-cols-4 border-b border-[#1a2830] bg-[#081214]">
-        {(["market", "limit", "stop", "scale"] as const).map((value) => (
+      <div className="grid grid-cols-5 border-b border-[#1a2830] bg-[#081214]">
+        {(["market", "limit", "stop", "scale", "twap"] as const).map((value) => (
           <button
             key={value}
             onClick={() => setOrderType(value)}
             className={cn(
-              "py-2 text-xs font-semibold uppercase tracking-wider transition-colors cursor-pointer",
+              "py-2 text-[11px] font-semibold uppercase tracking-wider transition-colors cursor-pointer",
               orderType === value
                 ? "border-b-2 border-[#22d3ee] bg-[#0c181b] text-white"
                 : "text-[#64748b] hover:bg-[#0a1518] hover:text-[#c8d4d7]"
@@ -503,6 +504,14 @@ export function TradeForm({ onSubmit }: TradeFormProps) {
       {/* ── Form Inputs ── */}
       {orderType === "scale" ? (
         <ScaledOrderForm
+          activeMarket={activeMarket}
+          side={side}
+          leverage={leverage}
+          markPrice={market?.lastPrice || 0}
+          isPaperTrading={Boolean(isPaperTrading)}
+        />
+      ) : orderType === "twap" ? (
+        <TWAPOrderForm
           activeMarket={activeMarket}
           side={side}
           leverage={leverage}
