@@ -7,13 +7,17 @@ import {
   Crosshair,
   Expand,
   Keyboard,
+  LayoutGrid,
   LineChart,
   Maximize2,
+  Minimize2,
+  RotateCcw,
   Search,
   Settings2,
   Sigma,
   Waves,
 } from "lucide-react";
+import { useLayoutStore } from "@/store/layoutStore";
 import { cn } from "@/lib/utils";
 import {
   useActiveMarket,
@@ -123,6 +127,10 @@ function MarketQuickSwitcher({
   const activeMarket = useActiveMarket();
   const setActiveMarket = useSetActiveMarket();
   const symbols = useMarketSymbols();
+  const layoutPreset = useLayoutStore((s) => s.layoutPreset);
+  const setLayoutPreset = useLayoutStore((s) => s.setLayoutPreset);
+  const resetLayout = useLayoutStore((s) => s.resetLayout);
+  const [layoutMenuOpen, setLayoutMenuOpen] = useState(false);
 
   return (
     <div className="flex items-center gap-2">
@@ -171,6 +179,81 @@ function MarketQuickSwitcher({
         <Keyboard className="h-3.5 w-3.5 text-[#556b73]" />
         <kbd className="font-mono text-[10px] text-[#556b73]">?</kbd>
       </button>
+
+      {/* Workspace Layout Presets Menu */}
+      <div className="relative">
+        <button
+          type="button"
+          onClick={() => {
+            terminalAudio.playClick();
+            setLayoutMenuOpen(!layoutMenuOpen);
+          }}
+          className={cn(
+            "flex items-center gap-1.5 rounded border px-2 py-1 text-xs font-medium transition-all cursor-pointer",
+            layoutMenuOpen
+              ? "border-[#22d3ee] bg-[#112a32] text-white"
+              : "border-[#1b343c] bg-[#0b1b1f] text-[#8ea2a6] hover:border-[#22d3ee]/60 hover:text-white"
+          )}
+          title="Terminal Workspace Layout Presets"
+        >
+          <LayoutGrid className="h-3 w-3 text-[#22d3ee]" />
+          <span className="capitalize">{layoutPreset}</span>
+        </button>
+
+        {layoutMenuOpen && (
+          <div className="absolute right-0 top-full mt-1.5 z-40 w-44 rounded-md border border-[#1b343c] bg-[#081518] p-1 shadow-2xl backdrop-blur-md">
+            <div className="px-2 py-1 text-[10px] font-mono uppercase text-[#64748b]">
+              Layout Presets
+            </div>
+            {(
+              [
+                { id: "default", label: "Default Split" },
+                { id: "scalper", label: "Scalper Split" },
+                { id: "depth", label: "Deep Book Split" },
+              ] as const
+            ).map((preset) => (
+              <button
+                key={preset.id}
+                type="button"
+                onClick={() => {
+                  terminalAudio.playClick();
+                  setLayoutPreset(preset.id);
+                  setLayoutMenuOpen(false);
+                  toast.success(`Applied ${preset.label}`);
+                }}
+                className={cn(
+                  "flex w-full items-center justify-between rounded px-2 py-1 text-xs transition-colors cursor-pointer",
+                  layoutPreset === preset.id
+                    ? "bg-[#22d3ee]/20 text-[#22d3ee] font-medium"
+                    : "text-[#8ea2a6] hover:bg-[#0e242a] hover:text-white"
+                )}
+              >
+                <span>{preset.label}</span>
+                {layoutPreset === preset.id && <span className="text-[10px]">✓</span>}
+              </button>
+            ))}
+
+            <div className="my-1 border-t border-[#15272e]" />
+
+            <button
+              type="button"
+              onClick={() => {
+                terminalAudio.playClick();
+                resetLayout();
+                setLayoutMenuOpen(false);
+                toast.success("Workspace layout reset to default split");
+              }}
+              className="flex w-full items-center justify-between rounded px-2 py-1 text-xs text-rose-400 hover:bg-rose-950/30 transition-colors cursor-pointer"
+            >
+              <div className="flex items-center gap-1.5">
+                <RotateCcw className="h-3 w-3" />
+                <span>Reset Layout</span>
+              </div>
+              <kbd className="font-mono text-[9px] text-[#64748b]">Alt+R</kbd>
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -223,7 +306,13 @@ export function TerminalPage() {
   const [marketModalOpen, setMarketModalOpen] = useState(false);
   const [shortcutsModalOpen, setShortcutsModalOpen] = useState(false);
 
-  // Global hotkeys for ⌘K and Shift+C (Panic Cancel)
+  const isFullscreenChart = useLayoutStore((s) => s.isFullscreenChart);
+  const setFullscreenChart = useLayoutStore((s) => s.setFullscreenChart);
+  const toggleFullscreenChart = useLayoutStore((s) => s.toggleFullscreenChart);
+  const layoutVersion = useLayoutStore((s) => s.layoutVersion);
+  const resetLayout = useLayoutStore((s) => s.resetLayout);
+
+  // Global hotkeys for ⌘K, Shift+C (Panic Cancel), F (Fullscreen), and Alt+R (Reset Layout)
   const cancelAllPaperOrders = usePaperTradingStore((s) => s.cancelAllOrders);
   const cancelAllRealOrders = useOrdersStore((s) => s.cancelAllOrders);
   const isPaperTrading = useNetworkStore((s) => s.isPaperTrading);
@@ -278,14 +367,88 @@ export function TerminalPage() {
         handlePanicCancel();
         return;
       }
+
+      // F key toggles chart fullscreen
+      if (e.key.toLowerCase() === "f" && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        e.preventDefault();
+        toggleFullscreenChart();
+        return;
+      }
+
+      // Alt+R resets layout
+      if (e.altKey && e.key.toLowerCase() === "r") {
+        e.preventDefault();
+        resetLayout();
+        toast.success("Workspace layout reset to default split");
+        return;
+      }
+
+      // Esc closes fullscreen chart if active
+      if (e.key === "Escape" && isFullscreenChart) {
+        e.preventDefault();
+        setFullscreenChart(false);
+        return;
+      }
     };
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [handlePanicCancel]);
+  }, [handlePanicCancel, isFullscreenChart, resetLayout, setFullscreenChart, toggleFullscreenChart]);
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-[#081214] text-[#c8d4d7]">
+      {/* ── Chart Fullscreen View (TradingView / Binance Standard) ── */}
+      {isFullscreenChart && (
+        <div className="fixed inset-0 z-50 flex flex-col bg-[#081214]">
+          {/* Fullscreen Header */}
+          <div className="flex items-center justify-between border-b border-[#1a2830] bg-[#091416] px-4 py-2">
+            <div className="flex items-center gap-3">
+              <span className="font-bold text-white text-sm">
+                {activeMarket} Fullscreen Chart
+              </span>
+              <div className="flex items-center gap-1">
+                {INTERVALS.map((interval) => (
+                  <button
+                    key={interval}
+                    onClick={() => setSelectedInterval(interval)}
+                    className={cn(
+                      "rounded px-2.5 py-1 font-mono text-xs font-medium transition-colors cursor-pointer",
+                      selectedInterval === interval
+                        ? "bg-[#132126] text-white"
+                        : "text-[#64748b] hover:bg-[#101b1f] hover:text-[#c8d4d7]"
+                    )}
+                  >
+                    {interval}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  terminalAudio.playClick();
+                  setFullscreenChart(false);
+                }}
+                className="flex items-center gap-1.5 rounded border border-[#1d4a50] bg-[#0e252a] px-3 py-1 text-xs font-semibold text-[#22d3ee] hover:bg-[#102c32] transition-colors cursor-pointer"
+                title="Exit Fullscreen (Esc or F)"
+              >
+                <Minimize2 className="h-3.5 w-3.5" />
+                <span>Exit Fullscreen</span>
+                <kbd className="rounded border border-[#1f3137] bg-[#071316] px-1 font-mono text-[10px] text-[#8ea2a6]">
+                  Esc
+                </kbd>
+              </button>
+            </div>
+          </div>
+
+          <div className="flex-1 p-2 min-h-0 bg-[#081214]">
+            <TradingChart interval={selectedInterval} />
+          </div>
+        </div>
+      )}
+
       {/* ── Top market header ── */}
       <header className="border-b border-[#1a2830] bg-[#0a1518]">
         {/* Row 1: Symbol + Price + Market switcher */}
@@ -305,6 +468,7 @@ export function TerminalPage() {
       {/* ── Draggable Resizable Trading Interface ── */}
       <div className="flex-1 min-h-0 w-full overflow-hidden">
         <ResizablePanelGroup
+          key={`main-${layoutVersion}`}
           direction="horizontal"
           autoSaveId="hyperx-terminal-panels-main"
           className="h-full w-full"
@@ -312,6 +476,7 @@ export function TerminalPage() {
           {/* Left + Center Area (Chart, Book, Bottom Dock) */}
           <ResizablePanel defaultSize={78} minSize={55} className="min-w-0">
             <ResizablePanelGroup
+              key={`left-${layoutVersion}`}
               direction="vertical"
               autoSaveId="hyperx-terminal-panels-left"
               className="h-full w-full"
@@ -319,6 +484,7 @@ export function TerminalPage() {
               {/* Top Row: Chart (Left) + Order Book / Trades (Right) */}
               <ResizablePanel defaultSize={68} minSize={35} className="min-h-0">
                 <ResizablePanelGroup
+                  key={`top-${layoutVersion}`}
                   direction="horizontal"
                   autoSaveId="hyperx-terminal-panels-top"
                   className="h-full w-full"
@@ -383,7 +549,14 @@ export function TerminalPage() {
 
                         <IconButton icon={Sigma} label="Metrics" />
                         <IconButton icon={Settings2} label="Settings" />
-                        <IconButton icon={Maximize2} label="Expand" />
+                        <IconButton
+                          icon={Maximize2}
+                          label="Fullscreen Chart (F)"
+                          onClick={() => {
+                            terminalAudio.playClick();
+                            setFullscreenChart(true);
+                          }}
+                        />
                       </div>
                     </div>
 
@@ -547,13 +720,17 @@ function ToolIconButton({
 function IconButton({
   icon: Icon,
   label,
+  onClick,
 }: {
   icon: typeof Activity;
   label: string;
+  onClick?: () => void;
 }) {
   return (
     <button
-      className="flex h-7 w-7 items-center justify-center rounded border border-[#1a2830] bg-[#091416] text-[#64748b] transition-colors hover:border-[#2a3a44] hover:text-[#c8d4d7]"
+      type="button"
+      onClick={onClick}
+      className="flex h-7 w-7 items-center justify-center rounded border border-[#1a2830] bg-[#091416] text-[#64748b] transition-colors hover:border-[#2a3a44] hover:text-[#c8d4d7] cursor-pointer"
       title={label}
     >
       <Icon className="h-3.5 w-3.5" />

@@ -59,8 +59,20 @@ const SHORTCUT_CATEGORIES: ShortcutCategory[] = [
         badge: "Global",
         badgeTone: "cyan",
       },
+      {
+        keys: ["F"],
+        description: "Toggle Chart Fullscreen view",
+        badge: "Chart",
+        badgeTone: "cyan",
+      },
+      {
+        keys: ["Alt", "R"],
+        description: "Reset Workspace Layout to default split",
+        badge: "Layout",
+        badgeTone: "amber",
+      },
       { keys: ["?"], description: "Toggle this Keyboard Shortcuts HUD" },
-      { keys: ["Esc"], description: "Close any modal or reset form inputs" },
+      { keys: ["Esc"], description: "Close any modal or exit fullscreen" },
     ],
   },
 ];
