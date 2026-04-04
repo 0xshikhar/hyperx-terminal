@@ -42,6 +42,7 @@ import {
 import { SettlementCountdown } from "@/components/risk/SettlementCountdown";
 import { MarketSelectorModal } from "@/components/market-selector/MarketSelectorModal";
 import { KeyboardShortcutsModal } from "@/components/modals/KeyboardShortcutsModal";
+import { FundingMatrixModal } from "@/components/modals/FundingMatrixModal";
 import { usePaperTradingStore } from "@/store/paperTradingStore";
 import { useOrdersStore } from "@/store/ordersStore";
 import { useNetworkStore } from "@/store/networkStore";
@@ -259,7 +260,7 @@ function MarketQuickSwitcher({
 }
 
 // ─── Compact market stats strip (Hyperliquid-style) ─────────────────────────
-function MarketStatsStrip() {
+function MarketStatsStrip({ onOpenFundingModal }: { onOpenFundingModal?: () => void }) {
   const {
     markPrice,
     oraclePrice,
@@ -271,17 +272,36 @@ function MarketStatsStrip() {
   } = useActiveMarketStats();
 
   return (
-    <div className="flex items-center overflow-x-auto scrollbar-hide divide-x divide-[#1a2830]">
-      <StatChip label="Mark" value={`$${formatPrice(markPrice)}`} />
-      <StatChip label="Oracle" value={`$${formatPrice(oraclePrice)}`} />
-      <StatChip
-        label="24h Change"
-        value={`${isPositive ? "+" : ""}${changePercent24h.toFixed(2)}%`}
-        tone={isPositive ? "up" : "down"}
-      />
-      <StatChip label="24h Vol" value={formatCompactUsd(volume24h)} />
-      <StatChip label="Open Int." value={formatCompactUsd(openInterest)} />
-      <SettlementCountdown fundingRate={fundingRate} />
+    <div className="flex items-center justify-between overflow-x-auto scrollbar-hide pr-3">
+      <div className="flex items-center divide-x divide-[#1a2830]">
+        <StatChip label="Mark" value={`$${formatPrice(markPrice)}`} />
+        <StatChip label="Oracle" value={`$${formatPrice(oraclePrice)}`} />
+        <StatChip
+          label="24h Change"
+          value={`${isPositive ? "+" : ""}${changePercent24h.toFixed(2)}%`}
+          tone={isPositive ? "up" : "down"}
+        />
+        <StatChip label="24h Vol" value={formatCompactUsd(volume24h)} />
+        <StatChip label="Open Int." value={formatCompactUsd(openInterest)} />
+        <SettlementCountdown fundingRate={fundingRate} />
+      </div>
+
+      {/* Yield / APR Matrix Trigger */}
+      <button
+        type="button"
+        onClick={() => {
+          terminalAudio.playClick();
+          onOpenFundingModal?.();
+        }}
+        className="flex items-center gap-1.5 rounded border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 font-mono text-[11px] font-semibold text-emerald-400 transition-all hover:bg-emerald-500/20 hover:border-emerald-500/50 shadow-[0_0_12px_rgba(16,185,129,0.12)] shrink-0 cursor-pointer ml-3"
+        title="Open Cross-Market Funding & APR Matrix (Yield Monitor)"
+      >
+        <Activity className="h-3 w-3 text-emerald-400 animate-pulse" />
+        <span>Yield Matrix</span>
+        <span className="rounded bg-emerald-500/20 px-1 py-0.2 text-[9px] text-emerald-300">
+          APR ⚡
+        </span>
+      </button>
     </div>
   );
 }
@@ -305,6 +325,7 @@ export function TerminalPage() {
 
   const [marketModalOpen, setMarketModalOpen] = useState(false);
   const [shortcutsModalOpen, setShortcutsModalOpen] = useState(false);
+  const [fundingModalOpen, setFundingModalOpen] = useState(false);
 
   const isFullscreenChart = useLayoutStore((s) => s.isFullscreenChart);
   const setFullscreenChart = useLayoutStore((s) => s.setFullscreenChart);
@@ -461,7 +482,7 @@ export function TerminalPage() {
         </div>
         {/* Row 2: Stats strip */}
         <div className="border-t border-[#1a2830]">
-          <MarketStatsStrip />
+          <MarketStatsStrip onOpenFundingModal={() => setFundingModalOpen(true)} />
         </div>
       </header>
 
@@ -635,6 +656,12 @@ export function TerminalPage() {
       <KeyboardShortcutsModal
         open={shortcutsModalOpen}
         onOpenChange={setShortcutsModalOpen}
+      />
+
+      {/* ── Cross-Market Funding & APR Matrix Modal ── */}
+      <FundingMatrixModal
+        open={fundingModalOpen}
+        onOpenChange={setFundingModalOpen}
       />
     </div>
   );

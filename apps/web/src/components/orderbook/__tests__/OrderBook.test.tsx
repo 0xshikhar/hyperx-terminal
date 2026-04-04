@@ -62,4 +62,20 @@ describe("OrderBook", () => {
       asksBtn.click();
     });
   });
+
+  it("renders Book and Depth tab switcher and toggles to Depth chart", () => {
+    render(<OrderBook />);
+    const bookTab = screen.getByRole("button", { name: "Book" });
+    const depthTab = screen.getByRole("button", { name: "Depth" });
+
+    expect(bookTab).toBeInTheDocument();
+    expect(depthTab).toBeInTheDocument();
+
+    // Click Depth tab
+    act(() => {
+      depthTab.click();
+    });
+
+    expect(screen.getByTestId("depth-chart-container")).toBeInTheDocument();
+  });
 });

@@ -1,8 +1,9 @@
-import { memo, useRef, useState, useEffect } from "react";
+import { memo, useRef, useState, useEffect, useMemo } from "react";
 import { FixedSizeList, type ListChildComponentProps } from "react-window";
 import { useMarketStore } from "@/store/marketStore";
 import { RecentTradeRow } from "@/components/recent-trades/RecentTradeRow";
 import { useRecentTrades } from "@/hooks/useRecentTrades";
+import { terminalAudio } from "@/lib/terminalAudio";
 import { cn } from "@/lib/utils";
 import type { Trade } from "@/store/tradeStore";
 
@@ -33,7 +34,8 @@ const getTradeItemKey = (index: number, data: Trade[]) =>
 
 export function RecentTrades({ embedded = false }: RecentTradesProps) {
   const activeMarket = useMarketStore((s) => s.activeMarket);
-  const { trades, listData, isReference } = useRecentTrades(activeMarket);
+  const { trades, isReference } = useRecentTrades(activeMarket);
+  const [filterMode, setFilterMode] = useState<"all" | "whales">("all");
 
   const containerRef = useRef<HTMLDivElement>(null);
   const [listHeight, setListHeight] = useState(480);
@@ -54,6 +56,18 @@ export function RecentTrades({ embedded = false }: RecentTradesProps) {
 
   const baseSymbol = activeMarket.split("-")[0] || "ASSET";
 
+  // Filtered trades based on notional whale threshold ($25k)
+  const filteredTrades = useMemo(() => {
+    if (filterMode === "whales") {
+      return trades.filter((t) => t.price * t.size >= 25000);
+    }
+    return trades;
+  }, [trades, filterMode]);
+
+  const whaleCount = useMemo(() => {
+    return trades.filter((t) => t.price * t.size >= 25000).length;
+  }, [trades]);
+
   return (
     <div
       ref={containerRef}
@@ -67,7 +81,7 @@ export function RecentTrades({ embedded = false }: RecentTradesProps) {
       {/* Header Bar */}
       <div
         className={cn(
-          "flex items-center justify-between border-b border-[#152327] px-3 py-2",
+          "flex items-center justify-between border-b border-[#152327] px-3 py-1.5",
           embedded ? "bg-[#0a1518]" : ""
         )}
       >
@@ -82,7 +96,49 @@ export function RecentTrades({ embedded = false }: RecentTradesProps) {
             </span>
           )}
         </div>
-        <span className="text-[11px] text-[#506068]">{trades.length} trades</span>
+
+        {/* Filter Switcher: All vs Whales */}
+        <div className="flex items-center gap-2">
+          <div className="flex items-center rounded border border-[#1d2d32] bg-[#0c181b] p-0.5 text-[10px] font-mono">
+            <button
+              type="button"
+              onClick={() => {
+                terminalAudio.playClick();
+                setFilterMode("all");
+              }}
+              className={cn(
+                "px-2 py-0.5 rounded transition-colors cursor-pointer",
+                filterMode === "all"
+                  ? "bg-[#162a30] text-[#22d3ee] font-semibold shadow-[0_0_8px_rgba(34,211,238,0.15)]"
+                  : "text-[#506068] hover:text-[#94a3b8]"
+              )}
+            >
+              All
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                terminalAudio.playClick();
+                setFilterMode("whales");
+              }}
+              className={cn(
+                "px-2 py-0.5 rounded transition-colors flex items-center gap-1 cursor-pointer",
+                filterMode === "whales"
+                  ? "bg-amber-500/20 text-amber-400 font-semibold border border-amber-500/30 shadow-[0_0_8px_rgba(245,158,11,0.2)]"
+                  : "text-[#506068] hover:text-amber-400/80"
+              )}
+              title="Filter institutional trades ≥ $25,000"
+            >
+              <span>🐋</span>
+              <span>Whales</span>
+              {whaleCount > 0 && (
+                <span className="text-[9px] px-1 rounded-full bg-amber-500/30 text-amber-300">
+                  {whaleCount}
+                </span>
+              )}
+            </button>
+          </div>
+        </div>
       </div>
 
       {/* Column Headers */}
@@ -100,16 +156,23 @@ export function RecentTrades({ embedded = false }: RecentTradesProps) {
           </div>
         )}
 
-        <FixedSizeList
-          height={listHeight}
-          width="100%"
-          itemCount={trades.length}
-          itemSize={24}
-          itemData={listData}
-          itemKey={getTradeItemKey}
-        >
-          {RecentTradeRowRenderer}
-        </FixedSizeList>
+        {filteredTrades.length === 0 ? (
+          <div className="flex h-32 flex-col items-center justify-center gap-1 text-center font-mono text-xs text-[#506068]">
+            <span>🐋 No whale trades (≥ $25k) detected</span>
+            <span className="text-[10px] text-[#3d4d52]">Waiting for high-volume market prints...</span>
+          </div>
+        ) : (
+          <FixedSizeList
+            height={listHeight}
+            width="100%"
+            itemCount={filteredTrades.length}
+            itemSize={24}
+            itemData={filteredTrades}
+            itemKey={getTradeItemKey}
+          >
+            {RecentTradeRowRenderer}
+          </FixedSizeList>
+        )}
       </div>
     </div>
   );

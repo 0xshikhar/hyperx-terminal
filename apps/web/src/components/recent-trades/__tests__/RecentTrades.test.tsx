@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
 import { RecentTrades } from "../RecentTrades";
 
 vi.mock("@/store/marketStore", () => ({
@@ -78,11 +78,27 @@ describe("RecentTrades", () => {
     expect(screen.getByText("Tape")).toBeInTheDocument();
   });
 
-  it("renders trade rows with correct price formatting", () => {
+  it("renders trade rows with correct price formatting and whale radar badge", () => {
     render(<RecentTrades />);
-    expect(screen.getByText("76,500")).toBeInTheDocument();
-    expect(screen.getByText("76,495")).toBeInTheDocument();
+    expect(screen.getByText("76,500.00")).toBeInTheDocument();
+    expect(screen.getByText("76,495.00")).toBeInTheDocument();
     expect(screen.getByText("0.2500")).toBeInTheDocument();
     expect(screen.getByText("1.1000")).toBeInTheDocument();
+
+    // Verify Whale badge on $84k trade (in addition to the header button emoji)
+    expect(screen.getAllByText(/🐋/).length).toBe(2);
+    expect(screen.getByText(/84/)).toBeInTheDocument();
+  });
+
+  it("filters for institutional whale trades when toggled", () => {
+    render(<RecentTrades />);
+
+    // Toggle to Whales
+    const whaleFilterBtn = screen.getByRole("button", { name: /Whales/i });
+    fireEvent.click(whaleFilterBtn);
+
+    // Only whale trade ($76,495.00) should be in list, non-whale trade ($76,500.00) should be filtered out
+    expect(screen.getByText("76,495.00")).toBeInTheDocument();
+    expect(screen.queryByText("76,500.00")).not.toBeInTheDocument();
   });
 });
