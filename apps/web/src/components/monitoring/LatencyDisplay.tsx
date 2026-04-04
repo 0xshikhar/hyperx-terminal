@@ -13,11 +13,13 @@ type LatencyDisplayData = {
 type LatencyDisplayProps = {
   showDetails?: boolean;
   className?: string;
+  onClick?: () => void;
 };
 
 export function LatencyDisplay({
   showDetails = false,
   className,
+  onClick,
 }: LatencyDisplayProps) {
   useWebSocket(true);
   const wsClient = useWSClient();
@@ -40,7 +42,17 @@ export function LatencyDisplay({
   };
 
   return (
-    <div className={cn("flex items-center gap-2", className)}>
+    <div
+      onClick={onClick}
+      role={onClick ? "button" : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      title={onClick ? "Network Latency (Click to open Diagnostics HUD)" : undefined}
+      className={cn(
+        "flex items-center gap-2",
+        onClick && "cursor-pointer rounded px-1.5 py-0.5 hover:bg-[#122327] transition-colors",
+        className
+      )}
+    >
       {isConnected ? (
         <Wifi className="h-3 w-3 text-emerald-500" />
       ) : (

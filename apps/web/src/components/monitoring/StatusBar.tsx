@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Blocks, Clock, Zap, Activity, RefreshCw, Volume2, VolumeX, Keyboard } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { LatencyDisplay } from "@/components/monitoring/LatencyDisplay";
+import { DiagnosticsModal } from "@/components/modals/DiagnosticsModal";
 import { useWebSocket } from "@/hooks/useWebSocket";
 import { useMarketStore } from "@/store/marketStore";
 import { useNetworkStore } from "@/store/networkStore";
@@ -30,12 +31,20 @@ export function StatusBar({ className, showDetails = true }: StatusBarProps) {
   const [timeAgo, setTimeAgo] = useState<number | null>(null);
   const [currentTime, setCurrentTime] = useState<string>("");
   const [soundEnabled, setSoundEnabled] = useState(() => terminalAudio.isEnabled());
+  const [diagnosticsModalOpen, setDiagnosticsModalOpen] = useState(false);
   const { state: wsState, on, subscribe } = useWebSocket(true);
   const reconnectCount = useRuntimeHealthStore((state) => state.reconnectCount);
   const reconnectPlan = useRuntimeHealthStore((state) => state.reconnectPlan);
   const lastPongAt = useRuntimeHealthStore((state) => state.lastPongAt);
   const getMarketFeedHealth = useRuntimeHealthStore((state) => state.getMarketFeedHealth);
   const feedHealth = getMarketFeedHealth(activeMarket);
+
+  // Global listener to open diagnostics HUD from anywhere
+  useEffect(() => {
+    const handleOpen = () => setDiagnosticsModalOpen(true);
+    window.addEventListener("hyperx:open-diagnostics", handleOpen);
+    return () => window.removeEventListener("hyperx:open-diagnostics", handleOpen);
+  }, []);
 
   useEffect(() => {
     const unsubscribeStatus = on("status", (message) => {
@@ -198,16 +207,29 @@ export function StatusBar({ className, showDetails = true }: StatusBarProps) {
       </div>
 
       <div className="flex items-center gap-6">
-        {/* Latency */}
-        <LatencyDisplay />
+        {/* Latency - Interactive trigger for Diagnostics HUD */}
+        <LatencyDisplay
+          onClick={() => {
+            terminalAudio.playClick();
+            setDiagnosticsModalOpen(true);
+          }}
+        />
 
-        {/* Render Performance / FPS */}
-        <div className="hidden sm:flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+        {/* Render Performance / FPS - Interactive trigger for Diagnostics HUD */}
+        <button
+          type="button"
+          onClick={() => {
+            terminalAudio.playClick();
+            setDiagnosticsModalOpen(true);
+          }}
+          className="hidden sm:flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-wider text-muted-foreground hover:text-white px-1.5 py-0.5 rounded hover:bg-[#122327] transition-colors cursor-pointer"
+          title="Frame Pacing & Telemetry (Click to open Diagnostics HUD)"
+        >
           <Zap className={cn("h-3 w-3", fps >= 55 ? "text-emerald-400" : fps >= 30 ? "text-amber-400" : "text-rose-400")} />
           <span className={cn("font-semibold", fps >= 55 ? "text-emerald-400" : fps >= 30 ? "text-amber-400" : "text-rose-400")}>
             {fps} FPS
           </span>
-        </div>
+        </button>
 
         {/* Tactile Audio Toggle */}
         <button
@@ -256,6 +278,12 @@ export function StatusBar({ className, showDetails = true }: StatusBarProps) {
           <span className="font-mono text-foreground">{currentTime}</span>
         </div>
       </div>
+
+      {/* Real-time Diagnostics & Speedometer Modal */}
+      <DiagnosticsModal
+        open={diagnosticsModalOpen}
+        onOpenChange={setDiagnosticsModalOpen}
+      />
     </div>
   );
 }

@@ -28,6 +28,11 @@ type TradingChartProps = {
   interval: CandleInterval;
 };
 
+function getCandleVolume(c: { open: number; close: number; volume?: number }): number {
+  if (typeof c.volume === "number" && c.volume > 0) return c.volume;
+  return Math.max(1, Math.abs(c.close - c.open) * 100);
+}
+
 export function TradingChart({ interval }: TradingChartProps) {
   const activeMarket = useMarketStore((state) => state.activeMarket);
   const { candles, isReference } = useCandleStream(activeMarket, interval);
@@ -35,6 +40,7 @@ export function TradingChart({ interval }: TradingChartProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
+  const volumeSeriesRef = useRef<ISeriesApi<"Histogram"> | null>(null);
   const [chartInstance, setChartInstance] = useState<IChartApi | null>(null);
   const [seriesInstance, setSeriesInstance] = useState<ISeriesApi<"Candlestick"> | null>(null);
   const lastTimeRef = useRef<UTCTimestamp | null>(null);
@@ -76,7 +82,7 @@ export function TradingChart({ interval }: TradingChartProps) {
       closes[i] = c.close;
       highsArr[i] = c.high;
       lowsArr[i] = c.low;
-      volumes[i] = Math.max(1, Math.abs(c.close - c.open) * 100);
+      volumes[i] = getCandleVolume(c);
     }
 
     const emaArr = calculateEMA(closes, 20);
@@ -223,11 +229,28 @@ export function TradingChart({ interval }: TradingChartProps) {
       lastValueVisible: true,
     });
 
+    const volumeSeries = chart.addHistogramSeries({
+      priceFormat: {
+        type: "volume",
+      },
+      priceScaleId: "volume",
+      priceLineVisible: false,
+      lastValueVisible: false,
+    });
+
+    chart.priceScale("volume").applyOptions({
+      scaleMargins: {
+        top: 0.82,
+        bottom: 0,
+      },
+    });
+
     const notifyOverlay = () => setOverlayTrigger((value) => value + 1);
     chart.timeScale().subscribeVisibleLogicalRangeChange(notifyOverlay);
 
     chartRef.current = chart;
     seriesRef.current = series;
+    volumeSeriesRef.current = volumeSeries;
     setChartInstance(chart);
     setSeriesInstance(series);
 
@@ -249,6 +272,7 @@ export function TradingChart({ interval }: TradingChartProps) {
       chart.remove();
       chartRef.current = null;
       seriesRef.current = null;
+      volumeSeriesRef.current = null;
       setChartInstance(null);
       setSeriesInstance(null);
       lastTimeRef.current = null;
@@ -299,6 +323,11 @@ export function TradingChart({ interval }: TradingChartProps) {
         low: latestCandle.low,
         close: latestCandle.close,
       });
+      volumeSeriesRef.current?.update({
+        time: latestCandle.time as UTCTimestamp,
+        value: getCandleVolume(latestCandle),
+        color: latestCandle.close >= latestCandle.open ? "rgba(83, 216, 200, 0.4)" : "rgba(241, 109, 117, 0.4)",
+      });
       lastTimeRef.current = latestCandle.time as UTCTimestamp;
       lastCountRef.current = candles.length;
       return;
@@ -316,9 +345,16 @@ export function TradingChart({ interval }: TradingChartProps) {
         }) as CandlestickData
     );
 
+    const nextVolumeData = candles.map((candle) => ({
+      time: candle.time as UTCTimestamp,
+      value: getCandleVolume(candle),
+      color: candle.close >= candle.open ? "rgba(83, 216, 200, 0.4)" : "rgba(241, 109, 117, 0.4)",
+    }));
+
     const shouldFitContent = isNewSeries || lastTime === null || (candles.length > 5 && prevCount <= 2);
 
     series.setData(nextData);
+    volumeSeriesRef.current?.setData(nextVolumeData);
     lastSeriesKeyRef.current = currentKey;
     lastTimeRef.current = latestCandle.time as UTCTimestamp;
     lastCountRef.current = candles.length;
@@ -370,6 +406,9 @@ export function TradingChart({ interval }: TradingChartProps) {
         </span>
         <span className="rounded-full border border-[#193338] bg-[#102125] px-2 py-0.5 text-[#8ea2a6]">
           RSI 14 {latestRsi?.toFixed(1) ?? "--"}
+        </span>
+        <span className="rounded-full border border-[#193338] bg-[#102125] px-2 py-0.5 text-[#8ea2a6]">
+          Vol {candles.length > 0 && candles[candles.length - 1] ? new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 2 }).format(getCandleVolume(candles[candles.length - 1])) : "--"}
         </span>
         {!connectionState || connectionState !== "connected" ? (
           <span

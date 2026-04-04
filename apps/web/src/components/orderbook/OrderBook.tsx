@@ -3,6 +3,7 @@ import { useMarketStore } from "@/store/marketStore";
 import { useOrderBook } from "@/hooks/useOrderBook";
 import { OrderBookSide } from "@/components/orderbook/OrderBookSide";
 import { OrderBookSpread } from "@/components/orderbook/OrderBookSpread";
+import { DepthChart } from "@/components/orderbook/DepthChart";
 import { useRuntimeHealthStore } from "@/store/runtimeHealthStore";
 import { terminalAudio } from "@/lib/terminalAudio";
 import { cn } from "@/lib/utils";
@@ -12,6 +13,7 @@ type OrderBookProps = {
 };
 
 type ViewMode = "both" | "bids" | "asks";
+type DisplayTab = "book" | "depth";
 
 export function OrderBook({ embedded = false }: OrderBookProps) {
   const activeMarket = useMarketStore((s) => s.activeMarket);
@@ -21,6 +23,7 @@ export function OrderBook({ embedded = false }: OrderBookProps) {
   const getMarketFeedHealth = useRuntimeHealthStore((state) => state.getMarketFeedHealth);
   const feedHealth = getMarketFeedHealth(activeMarket);
 
+  const [displayTab, setDisplayTab] = useState<DisplayTab>("book");
   const [viewMode, setViewMode] = useState<ViewMode>("both");
   const containerRef = useRef<HTMLDivElement>(null);
   const [sideHeight, setSideHeight] = useState(220);
@@ -100,146 +103,197 @@ export function OrderBook({ embedded = false }: OrderBookProps) {
         </div>
 
         <div className="flex items-center gap-2">
-          {/* View Mode Switcher */}
-          <div className="flex items-center rounded border border-[#1d2d32] bg-[#0c181b] p-0.5">
+          {/* Tab Switcher: Book vs Depth */}
+          <div className="flex items-center rounded border border-[#1d2d32] bg-[#0c181b] p-0.5 text-[10px] font-medium">
             <button
+              type="button"
               onClick={() => {
                 terminalAudio.playClick();
-                setViewMode("both");
+                setDisplayTab("book");
               }}
-              title="Both Asks and Bids"
               className={cn(
-                "rounded p-1 transition-colors",
-                viewMode === "both"
-                  ? "bg-[#162a30] text-[#22d3ee]"
+                "px-2 py-0.5 rounded transition-colors",
+                displayTab === "book"
+                  ? "bg-[#162a30] text-[#22d3ee] font-semibold shadow-[0_0_8px_rgba(34,211,238,0.15)]"
                   : "text-[#506068] hover:text-[#94a3b8]"
               )}
             >
-              <svg width="13" height="13" viewBox="0 0 16 16" fill="none" className="shrink-0">
-                <rect x="2" y="2" width="12" height="2" rx="0.5" fill="#ff4757" />
-                <rect x="2" y="5" width="8" height="2" rx="0.5" fill="#ff4757" />
-                <rect x="2" y="9" width="8" height="2" rx="0.5" fill="#00d084" />
-                <rect x="2" y="12" width="12" height="2" rx="0.5" fill="#00d084" />
-              </svg>
+              Book
             </button>
             <button
+              type="button"
               onClick={() => {
                 terminalAudio.playClick();
-                setViewMode("bids");
+                setDisplayTab("depth");
               }}
-              title="Bids Only"
               className={cn(
-                "rounded p-1 transition-colors",
-                viewMode === "bids"
-                  ? "bg-[#162a30] text-[#00d084]"
+                "px-2 py-0.5 rounded transition-colors",
+                displayTab === "depth"
+                  ? "bg-[#162a30] text-[#22d3ee] font-semibold shadow-[0_0_8px_rgba(34,211,238,0.15)]"
                   : "text-[#506068] hover:text-[#94a3b8]"
               )}
             >
-              <svg width="13" height="13" viewBox="0 0 16 16" fill="none" className="shrink-0">
-                <rect x="2" y="2" width="12" height="2" rx="0.5" fill="#00d084" />
-                <rect x="2" y="5" width="9" height="2" rx="0.5" fill="#00d084" />
-                <rect x="2" y="8" width="11" height="2" rx="0.5" fill="#00d084" />
-                <rect x="2" y="11" width="7" height="2" rx="0.5" fill="#00d084" />
-              </svg>
-            </button>
-            <button
-              onClick={() => {
-                terminalAudio.playClick();
-                setViewMode("asks");
-              }}
-              title="Asks Only"
-              className={cn(
-                "rounded p-1 transition-colors",
-                viewMode === "asks"
-                  ? "bg-[#162a30] text-[#ff4757]"
-                  : "text-[#506068] hover:text-[#94a3b8]"
-              )}
-            >
-              <svg width="13" height="13" viewBox="0 0 16 16" fill="none" className="shrink-0">
-                <rect x="2" y="2" width="7" height="2" rx="0.5" fill="#ff4757" />
-                <rect x="2" y="5" width="11" height="2" rx="0.5" fill="#ff4757" />
-                <rect x="2" y="8" width="9" height="2" rx="0.5" fill="#ff4757" />
-                <rect x="2" y="11" width="12" height="2" rx="0.5" fill="#ff4757" />
-              </svg>
+              Depth
             </button>
           </div>
 
-          <div className="h-3.5 w-px bg-[#1d2d32]" />
+          {displayTab === "book" && (
+            <>
+              {/* View Mode Switcher */}
+              <div className="flex items-center rounded border border-[#1d2d32] bg-[#0c181b] p-0.5">
+                <button
+                  onClick={() => {
+                    terminalAudio.playClick();
+                    setViewMode("both");
+                  }}
+                  title="Both Asks and Bids"
+                  className={cn(
+                    "rounded p-1 transition-colors",
+                    viewMode === "both"
+                      ? "bg-[#162a30] text-[#22d3ee]"
+                      : "text-[#506068] hover:text-[#94a3b8]"
+                  )}
+                >
+                  <svg width="13" height="13" viewBox="0 0 16 16" fill="none" className="shrink-0">
+                    <rect x="2" y="2" width="12" height="2" rx="0.5" fill="#ff4757" />
+                    <rect x="2" y="5" width="8" height="2" rx="0.5" fill="#ff4757" />
+                    <rect x="2" y="9" width="8" height="2" rx="0.5" fill="#00d084" />
+                    <rect x="2" y="12" width="12" height="2" rx="0.5" fill="#00d084" />
+                  </svg>
+                </button>
+                <button
+                  onClick={() => {
+                    terminalAudio.playClick();
+                    setViewMode("bids");
+                  }}
+                  title="Bids Only"
+                  className={cn(
+                    "rounded p-1 transition-colors",
+                    viewMode === "bids"
+                      ? "bg-[#162a30] text-[#00d084]"
+                      : "text-[#506068] hover:text-[#94a3b8]"
+                  )}
+                >
+                  <svg width="13" height="13" viewBox="0 0 16 16" fill="none" className="shrink-0">
+                    <rect x="2" y="2" width="12" height="2" rx="0.5" fill="#00d084" />
+                    <rect x="2" y="5" width="9" height="2" rx="0.5" fill="#00d084" />
+                    <rect x="2" y="8" width="11" height="2" rx="0.5" fill="#00d084" />
+                    <rect x="2" y="11" width="7" height="2" rx="0.5" fill="#00d084" />
+                  </svg>
+                </button>
+                <button
+                  onClick={() => {
+                    terminalAudio.playClick();
+                    setViewMode("asks");
+                  }}
+                  title="Asks Only"
+                  className={cn(
+                    "rounded p-1 transition-colors",
+                    viewMode === "asks"
+                      ? "bg-[#162a30] text-[#ff4757]"
+                      : "text-[#506068] hover:text-[#94a3b8]"
+                  )}
+                >
+                  <svg width="13" height="13" viewBox="0 0 16 16" fill="none" className="shrink-0">
+                    <rect x="2" y="2" width="7" height="2" rx="0.5" fill="#ff4757" />
+                    <rect x="2" y="5" width="11" height="2" rx="0.5" fill="#ff4757" />
+                    <rect x="2" y="8" width="9" height="2" rx="0.5" fill="#ff4757" />
+                    <rect x="2" y="11" width="12" height="2" rx="0.5" fill="#ff4757" />
+                  </svg>
+                </button>
+              </div>
 
-          {/* Tick Aggregation */}
-          <div className="flex items-center gap-1">
-            <span className="text-[10px] uppercase tracking-wider text-[#506068]">Tick</span>
-            <select
-              value={aggregation}
-              onChange={(event) => setAggregation(Number(event.target.value))}
-              className="rounded border border-[#213136] bg-[#102125] px-1.5 py-0.5 font-mono text-[11px] text-[#dde5e7] outline-none hover:border-[#2f4349]"
-            >
-              {[1, 2, 5, 10, 25, 50].map((value) => (
-                <option key={value} value={value}>
-                  {value}
-                </option>
-              ))}
-            </select>
-          </div>
+              <div className="h-3.5 w-px bg-[#1d2d32]" />
+
+              {/* Tick Aggregation */}
+              <div className="flex items-center gap-1">
+                <span className="text-[10px] uppercase tracking-wider text-[#506068]">Tick</span>
+                <select
+                  value={aggregation}
+                  onChange={(event) => setAggregation(Number(event.target.value))}
+                  className="rounded border border-[#213136] bg-[#102125] px-1.5 py-0.5 font-mono text-[11px] text-[#dde5e7] outline-none hover:border-[#2f4349]"
+                >
+                  {[1, 2, 5, 10, 25, 50].map((value) => (
+                    <option key={value} value={value}>
+                      {value}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </>
+          )}
         </div>
       </div>
 
-      {/* Column Headers (3 columns: Price, Size, Total) */}
-      <div className="grid grid-cols-3 items-center border-b border-[#152327] bg-[#081214] px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-[#506068]">
-        <span className="text-left">Price</span>
-        <span className="text-right">Size ({baseSymbol})</span>
-        <span className="text-right">Total ({baseSymbol})</span>
-      </div>
-
-      {/* Ladder Body */}
-      <div className="min-h-0 flex-1 flex flex-col justify-between overflow-hidden">
-        {!feedHealth.isFresh && !isReference && (
-          <div className="mx-2 my-1 rounded border border-amber-500/20 bg-amber-500/5 px-2 py-1 text-[10px] text-amber-300">
-            Feed paused · reconnecting
+      {/* Main Body */}
+      {displayTab === "depth" ? (
+        <div className="min-h-0 flex-1 overflow-hidden p-2 flex flex-col">
+          <DepthChart
+            bidRows={bidRows}
+            askRows={askRows}
+            activeMarket={activeMarket}
+          />
+        </div>
+      ) : (
+        <>
+          {/* Column Headers (3 columns: Price, Size, Total) */}
+          <div className="grid grid-cols-3 items-center border-b border-[#152327] bg-[#081214] px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-[#506068]">
+            <span className="text-left">Price</span>
+            <span className="text-right">Size ({baseSymbol})</span>
+            <span className="text-right">Total ({baseSymbol})</span>
           </div>
-        )}
 
-        {/* Both Mode: Asks top, Spread middle, Bids bottom */}
-        {viewMode === "both" && (
-          <>
-            <div className="min-h-0 flex-1 overflow-hidden flex flex-col justify-end">
-              <OrderBookSide rows={reversedAskRows} height={sideHeight} />
-            </div>
+          {/* Ladder Body */}
+          <div className="min-h-0 flex-1 flex flex-col justify-between overflow-hidden">
+            {!feedHealth.isFresh && !isReference && (
+              <div className="mx-2 my-1 rounded border border-amber-500/20 bg-amber-500/5 px-2 py-1 text-[10px] text-amber-300">
+                Feed paused · reconnecting
+              </div>
+            )}
 
-            <div className="border-y border-[#1a2830] bg-[#0c181b]">
-              <OrderBookSpread bids={aggregatedBids} asks={aggregatedAsks} />
-            </div>
+            {/* Both Mode: Asks top, Spread middle, Bids bottom */}
+            {viewMode === "both" && (
+              <>
+                <div className="min-h-0 flex-1 overflow-hidden flex flex-col justify-end">
+                  <OrderBookSide rows={reversedAskRows} height={sideHeight} />
+                </div>
 
-            <div className="min-h-0 flex-1 overflow-hidden">
-              <OrderBookSide rows={bidRows} height={sideHeight} />
-            </div>
-          </>
-        )}
+                <div className="border-y border-[#1a2830] bg-[#0c181b]">
+                  <OrderBookSpread bids={aggregatedBids} asks={aggregatedAsks} />
+                </div>
 
-        {/* Bids Only Mode: Spread on top, full height Bids */}
-        {viewMode === "bids" && (
-          <>
-            <div className="border-b border-[#1a2830] bg-[#0c181b]">
-              <OrderBookSpread bids={aggregatedBids} asks={aggregatedAsks} />
-            </div>
-            <div className="min-h-0 flex-1 overflow-hidden">
-              <OrderBookSide rows={bidRows} height={sideHeight} />
-            </div>
-          </>
-        )}
+                <div className="min-h-0 flex-1 overflow-hidden">
+                  <OrderBookSide rows={bidRows} height={sideHeight} />
+                </div>
+              </>
+            )}
 
-        {/* Asks Only Mode: Full height Asks, Spread on bottom */}
-        {viewMode === "asks" && (
-          <>
-            <div className="min-h-0 flex-1 overflow-hidden flex flex-col justify-end">
-              <OrderBookSide rows={reversedAskRows} height={sideHeight} />
-            </div>
-            <div className="border-t border-[#1a2830] bg-[#0c181b]">
-              <OrderBookSpread bids={aggregatedBids} asks={aggregatedAsks} />
-            </div>
-          </>
-        )}
-      </div>
+            {/* Bids Only Mode: Spread on top, full height Bids */}
+            {viewMode === "bids" && (
+              <>
+                <div className="border-b border-[#1a2830] bg-[#0c181b]">
+                  <OrderBookSpread bids={aggregatedBids} asks={aggregatedAsks} />
+                </div>
+                <div className="min-h-0 flex-1 overflow-hidden">
+                  <OrderBookSide rows={bidRows} height={sideHeight} />
+                </div>
+              </>
+            )}
+
+            {/* Asks Only Mode: Full height Asks, Spread on bottom */}
+            {viewMode === "asks" && (
+              <>
+                <div className="min-h-0 flex-1 overflow-hidden flex flex-col justify-end">
+                  <OrderBookSide rows={reversedAskRows} height={sideHeight} />
+                </div>
+                <div className="border-t border-[#1a2830] bg-[#0c181b]">
+                  <OrderBookSpread bids={aggregatedBids} asks={aggregatedAsks} />
+                </div>
+              </>
+            )}
+          </div>
+        </>
+      )}
     </div>
   );
 }

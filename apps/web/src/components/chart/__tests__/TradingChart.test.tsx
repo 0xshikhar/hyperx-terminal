@@ -5,6 +5,9 @@ import { TradingChart } from "../TradingChart";
 const mockSetData = vi.fn();
 const mockUpdate = vi.fn();
 const mockFitContent = vi.fn();
+const mockVolumeSetData = vi.fn();
+const mockVolumeUpdate = vi.fn();
+const mockPriceScaleApplyOptions = vi.fn();
 
 const mockSeries = {
   setData: mockSetData,
@@ -13,9 +16,18 @@ const mockSeries = {
   priceToCoordinate: vi.fn(() => 100),
 };
 
+const mockVolumeSeries = {
+  setData: mockVolumeSetData,
+  update: mockVolumeUpdate,
+};
+
 const mockChart = {
   applyOptions: vi.fn(),
   addCandlestickSeries: vi.fn(() => mockSeries),
+  addHistogramSeries: vi.fn(() => mockVolumeSeries),
+  priceScale: vi.fn(() => ({
+    applyOptions: mockPriceScaleApplyOptions,
+  })),
   timeScale: vi.fn(() => ({
     fitContent: mockFitContent,
     subscribeVisibleLogicalRangeChange: vi.fn(),
@@ -63,16 +75,26 @@ describe("TradingChart", () => {
     expect(screen.getByText("BTC-USD · 1M")).toBeInTheDocument();
   });
 
-  it("calls series.setData on initial load", () => {
+  it("calls series.setData on initial load and configures volume scale margins", () => {
     render(<TradingChart interval="1m" />);
     expect(mockSetData).toHaveBeenCalledTimes(1);
+    expect(mockVolumeSetData).toHaveBeenCalledTimes(1);
+    expect(mockPriceScaleApplyOptions).toHaveBeenCalledWith({
+      scaleMargins: {
+        top: 0.82,
+        bottom: 0,
+      },
+    });
     expect(mockFitContent).toHaveBeenCalledTimes(1);
     expect(mockUpdate).not.toHaveBeenCalled();
+    expect(mockVolumeUpdate).not.toHaveBeenCalled();
+    expect(screen.getByText(/Vol\b/)).toBeInTheDocument();
   });
 
   it("calls series.update instead of series.setData on streaming candle updates", () => {
     const { rerender } = render(<TradingChart interval="1m" />);
     expect(mockSetData).toHaveBeenCalledTimes(1);
+    expect(mockVolumeSetData).toHaveBeenCalledTimes(1);
 
     // Simulate incoming price tick on the active bar
     mockCandles = [
@@ -82,7 +104,7 @@ describe("TradingChart", () => {
 
     rerender(<TradingChart interval="1m" />);
 
-    // series.update should have been called in O(1) time
+    // series.update and volume.update should have been called in O(1) time
     expect(mockUpdate).toHaveBeenCalledTimes(1);
     expect(mockUpdate).toHaveBeenCalledWith({
       time: 1710000060,
@@ -91,8 +113,10 @@ describe("TradingChart", () => {
       low: 76000,
       close: 76220,
     });
+    expect(mockVolumeUpdate).toHaveBeenCalledTimes(1);
 
     // series.setData should STILL have been called only once!
     expect(mockSetData).toHaveBeenCalledTimes(1);
+    expect(mockVolumeSetData).toHaveBeenCalledTimes(1);
   });
 });
