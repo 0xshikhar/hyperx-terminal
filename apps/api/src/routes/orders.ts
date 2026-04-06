@@ -20,6 +20,12 @@ const orderSchema = z.object({
   signature: z.string().optional(),
   signatureTimestamp: z.number().optional(),
   clientId: z.string().optional(),
+  instruction: z
+    .union([z.literal("GTC"), z.literal("IOC"), z.literal("FOK"), z.literal("POST_ONLY")])
+    .optional(),
+  tif: z.union([z.literal("GTC"), z.literal("IOC"), z.literal("FOK")]).optional(),
+  reduceOnly: z.boolean().optional(),
+  postOnly: z.boolean().optional(),
 });
 
 export async function orderRoutes(app: FastifyInstance) {
@@ -62,6 +68,12 @@ export async function orderRoutes(app: FastifyInstance) {
             ? "LIMIT"
             : "MARKET";
 
+      const instruction = body.data.instruction;
+      const timeInForce =
+        instruction === "IOC" || instruction === "FOK" || instruction === "GTC"
+          ? instruction
+          : (body.data.tif ?? "GTC");
+
       const order = await client.createOrder({
         market: toParadexMarketSymbol(body.data.market),
         side: body.data.side === "buy" ? "BUY" : "SELL",
@@ -69,7 +81,12 @@ export async function orderRoutes(app: FastifyInstance) {
         size: body.data.size,
         price: body.data.price,
         stopPrice: body.data.stopPrice,
-        timeInForce: "GTC",
+        timeInForce,
+        postOnly: body.data.postOnly || instruction === "POST_ONLY",
+        reduceOnly: body.data.reduceOnly,
+        clientId: body.data.clientId,
+        signature: body.data.signature,
+        signatureTimestamp: body.data.signatureTimestamp,
       });
 
       const id = (order as { id?: string }).id ?? `${body.data.market}-${Date.now()}`;

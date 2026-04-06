@@ -135,8 +135,8 @@ export function ScaledOrderForm({
       }
 
       onOrdersPlaced?.();
-    } catch (err: any) {
-      toast.error(err?.message || "Failed to place scaled orders");
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Failed to place scaled orders");
     } finally {
       setIsSubmitting(false);
     }

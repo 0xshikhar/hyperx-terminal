@@ -107,7 +107,9 @@ export function DepthChart({ bidRows, askRows, activeMarket }: DepthChartProps) 
   };
 
   // Build SVG Paths for Bids (left slope) and Asks (right slope)
-  const { bidPath, askPath, bidLine, askLine } = useMemo(() => {
+  // Note: scaleX/scaleY are re-created each render, so useMemo would be
+  // defeated anyway — compute paths directly.
+  const buildPaths = () => {
     if (filteredBids.length === 0 && filteredAsks.length === 0) {
       return { bidPath: "", askPath: "", bidLine: "", askLine: "" };
     }
@@ -157,7 +159,8 @@ export function DepthChart({ bidRows, askRows, activeMarket }: DepthChartProps) 
     }
 
     return { bidPath: bFill, askPath: aFill, bidLine: bLine, askLine: aLine };
-  }, [filteredBids, filteredAsks, minPrice, maxPrice, maxVolume, width, height]);
+  };
+  const { bidPath, askPath, bidLine, askLine } = buildPaths();
 
   // Handle Mouse Hover / Crosshair Tracking
   const handleMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {

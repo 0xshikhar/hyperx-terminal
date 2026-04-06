@@ -12,29 +12,11 @@ export default defineConfig({
     tailwindcss(),
   ],
   build: {
-    chunkSizeWarningLimit: 2000,
-    rollupOptions: {
-      output: {
-        manualChunks(id) {
-          if (!id.includes("node_modules")) return undefined;
-
-          if (id.includes("lightweight-charts")) return "vendor-charts";
-          if (id.includes("@starknet-io/get-starknet")) return "vendor-wallet";
-          if (id.includes("@cartridge/controller")) return "vendor-wallet";
-          if (id.includes("starkzap")) return "vendor-starkzap";
-          if (id.includes("starknet")) return "vendor-starknet-core";
-          if (id.includes("framer-motion")) return "vendor-motion";
-          if (id.includes("cmdk")) return "vendor-cmdk";
-          if (id.includes("react-router-dom")) return "vendor-router";
-          if (id.includes("@tanstack/react-query")) return "vendor-query";
-          if (id.includes("@radix-ui")) return "vendor-radix";
-          if (id.includes("react-window")) return "vendor-window";
-          if (id.includes("sonner")) return "vendor-toast";
-
-          return "vendor";
-        },
-      },
-    },
+    chunkSizeWarningLimit: 500,
+    // No manualChunks: Rollup splits on actual static/dynamic import
+    // reachability. Wallet + signing SDKs (starknet, starkzap, get-starknet,
+    // cartridge) are only reachable via import() — wallet connect and order
+    // signing — so they stay out of the eager path automatically.
   },
   server: {
     proxy: {

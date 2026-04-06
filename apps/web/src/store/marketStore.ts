@@ -14,11 +14,21 @@ export type MarketSnapshot = {
     volume24h: number;
     openInterest: number;
     fundingRate: number;
+    /** Venue constraints (when the API returns them). */
+    tickSize?: number;
+    sizeIncrement?: number;
+    minOrderSize?: number;
+    minNotional?: number;
+    maxLeverage?: number;
+    /** Venue maintenance-margin rate for exact liquidation math (0-1). */
+    maintenanceMarginRate?: number;
 };
 
 type MarketState = {
     activeMarket: string;
     markets: MarketSnapshot[];
+    /** True once live market metadata has hydrated — placeholder prices before then. */
+    hasHydrated: boolean;
     setActiveMarket: (symbol: string) => void;
     setMarkets: (markets: MarketSnapshot[]) => void;
     updateMarket: (symbol: string, data: Partial<MarketSnapshot>) => void;
@@ -95,6 +105,7 @@ const DEFAULT_MARKETS: MarketSnapshot[] = [
 export const useMarketStore = create<MarketState>()((set) => ({
     activeMarket: "BTC-USD",
     markets: DEFAULT_MARKETS,
+    hasHydrated: false,
     setActiveMarket: (symbol: string) => set({ activeMarket: normalizeMarketSymbol(symbol) }),
     setMarkets: (markets: MarketSnapshot[]) => {
         const seen = new Set<string>();
@@ -113,6 +124,7 @@ export const useMarketStore = create<MarketState>()((set) => ({
         set((state) => ({
             markets: deduped.length > 0 ? deduped : state.markets,
             activeMarket: state.activeMarket || (deduped[0]?.symbol ?? "BTC-USD"),
+            hasHydrated: deduped.length > 0 ? true : state.hasHydrated,
         }));
     },
     updateMarket: (symbol: string, data: Partial<MarketSnapshot>) =>

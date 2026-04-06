@@ -5,6 +5,7 @@ import { useMarketStore } from "@/store/marketStore";
 import { useOrderbookStore } from "@/store/orderbookStore";
 import { useOrdersStore } from "@/store/ordersStore";
 import { usePositionsStore } from "@/store/positionsStore";
+import { useLatencyStore } from "@/store/latencyStore";
 import { useRuntimeHealthStore } from "@/store/runtimeHealthStore";
 import { useTradeStore } from "@/store/tradeStore";
 import { normalizeMarketSymbol } from "@hyperx/types/common";
@@ -22,6 +23,22 @@ export function startClientServices() {
 
   wsClient.onConnectionEvent((event) => {
     useRuntimeHealthStore.getState().recordConnectionEvent(event);
+    if (event.type === "heartbeat") {
+      useLatencyStore.getState().setWsPing(event.rttMs);
+    }
+  });
+
+  // Resume fast when the tab comes back: background tabs throttle timers to
+  // ~1Hz, so feeds may be minutes stale. Reconnect if the socket died or went
+  // silent while hidden.
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState !== "visible") return;
+    const state = wsClient.connectionState;
+    if (state === "disconnected" || state === "error") {
+      wsClient.connect();
+    } else if (state === "connected" && Date.now() - wsClient.lastInboundAt > 15_000) {
+      wsClient.reconnectNow();
+    }
   });
 
   wsClient.onStateChange((nextState) => {
@@ -96,6 +113,12 @@ async function hydrateMarkets() {
           volume24h: market.volume24h ?? snapshot?.volume24h ?? 0,
           openInterest: market.openInterest ?? snapshot?.openInterest ?? 0,
           fundingRate: market.fundingRate ?? snapshot?.fundingRate ?? 0,
+          tickSize: market.tickSize ?? snapshot?.tickSize,
+          sizeIncrement: market.sizeIncrement ?? snapshot?.sizeIncrement,
+          minOrderSize: market.minOrderSize ?? snapshot?.minOrderSize,
+          minNotional: market.minNotional ?? snapshot?.minNotional,
+          maxLeverage: market.maxLeverage ?? snapshot?.maxLeverage,
+          maintenanceMarginRate: market.maintenanceMarginRate ?? snapshot?.maintenanceMarginRate,
         };
       })
       .filter((m) => {

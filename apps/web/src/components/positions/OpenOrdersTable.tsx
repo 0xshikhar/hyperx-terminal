@@ -8,6 +8,8 @@ import { useWallet } from "@/components/wallet/useWallet";
 import { toast } from "sonner";
 import { X, Trash2 } from "lucide-react";
 import { terminalAudio } from "@/lib/terminalAudio";
+import { cancelOrder as cancelOrderApi, cancelAllOrders as cancelAllOrdersApi } from "@/services/apiClient/orders.api";
+import { orderErrorMessage } from "@/services/submitOrder";
 import {
   Table,
   TableBody,
@@ -63,8 +65,36 @@ export function OpenOrdersTable() {
         toast.info("No active open live orders to cancel");
         return;
       }
-      toast.info(`Cancelled ${count} live order(s)`);
+      void (async () => {
+        try {
+          const res = await cancelAllOrdersApi();
+          toast.success(`Cancelled ${res.cancelledCount ?? count} live order(s)`);
+        } catch (e) {
+          toast.error(`Cancel-all failed: ${orderErrorMessage(e)}`);
+          void fetchOrders();
+        }
+      })();
     }
+  };
+
+  const handleCancelOrder = (orderId: string) => {
+    terminalAudio.playOrderCancel();
+    if (isPaperTrading) {
+      cancelPaperOrder(orderId);
+      toast.info(`Cancelled paper order ${orderId}`);
+      return;
+    }
+    // Optimistic mark, then confirm with the venue; refetch on failure.
+    markOrderCancelled(orderId);
+    void (async () => {
+      try {
+        await cancelOrderApi(orderId);
+        toast.success(`Cancelled order ${orderId}`);
+      } catch (e) {
+        toast.error(`Cancel failed: ${orderErrorMessage(e)}`);
+        void fetchOrders();
+      }
+    })();
   };
 
   useEffect(() => {
@@ -187,16 +217,7 @@ export function OpenOrdersTable() {
                   <TableCell className="text-right">
                     {(order.status === "open" || order.status === "pending") && (
                       <button
-                        onClick={() => {
-                          terminalAudio.playOrderCancel();
-                          if (isPaperTrading) {
-                            cancelPaperOrder(order.id);
-                            toast.info(`Cancelled paper order ${order.id}`);
-                          } else {
-                            markOrderCancelled(order.id);
-                            toast.info(`Cancelled order ${order.id}`);
-                          }
-                        }}
+                        onClick={() => handleCancelOrder(order.id)}
                         className="inline-flex items-center gap-1 rounded border border-rose-500/30 bg-rose-500/10 px-2 py-0.5 text-[10px] text-rose-300 hover:bg-rose-500/20"
                       >
                         <X className="h-2.5 w-2.5" />

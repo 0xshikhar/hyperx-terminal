@@ -1,4 +1,4 @@
-import { useMemo, useState, memo } from "react";
+import { useMemo, useState, useCallback, memo } from "react";
 import { FixedSizeList, type ListChildComponentProps } from "react-window";
 import { usePositions } from "@/hooks/usePositions";
 import { useIsPaperTrading } from "@/hooks/useIsPaperTrading";
@@ -12,6 +12,12 @@ import { PartialCloseModal } from "@/components/positions/PartialCloseModal";
 import { PositionTPSLModal } from "@/components/positions/PositionTPSLModal";
 import { terminalAudio } from "@/lib/terminalAudio";
 import { usePnlSettingsStore, calculateBreakevenPrice, type PnLDisplayMode } from "@/store/pnlSettingsStore";
+import { useOrdersStore } from "@/store/ordersStore";
+import { submitSignedOrder, orderErrorMessage } from "@/services/submitOrder";
+import type { TradeOrder } from "@/components/trade-form/TradeForm";
+import { estimateLiquidationPrice } from "@/lib/liquidation";
+import { useMarketStore } from "@/store/marketStore";
+import { normalizeMarketSymbol } from "@hyperx/types/common";
 
 const ROW_HEIGHT = 40;
 
@@ -37,13 +43,19 @@ interface RowItemData {
 const PositionRow = memo(({ index, style, data }: ListChildComponentProps<RowItemData>) => {
   const { positions, pnlMode, onClose, onPartialClose, onTPSL, onReverse, onShare, onBreakevenLimit } = data;
   const position = positions[index];
+  const marketMmr = useMarketStore(
+    (s) =>
+      s.markets.find(
+        (m) =>
+          position &&
+          normalizeMarketSymbol(m.symbol) === normalizeMarketSymbol(position.market)
+      )?.maintenanceMarginRate
+  );
   if (!position) return null;
   const pnlClass = position.pnl >= 0 ? "text-[#00d084]" : "text-[#ff4757]";
 
   const liqPrice =
-    position.side === "long"
-      ? Math.max(0, position.entryPrice * (1 - 0.9 / (position.leverage || 10)))
-      : position.entryPrice * (1 + 0.9 / (position.leverage || 10));
+    estimateLiquidationPrice(position.side, position.entryPrice, position.leverage || 10, marketMmr) ?? 0;
 
   const breakevenPrice = calculateBreakevenPrice(position.side, position.entryPrice);
 
@@ -210,7 +222,31 @@ export function OpenPositionsTable() {
     return isPaperTrading ? paperPositions : realPositions;
   }, [isPaperTrading, paperPositions, realPositions]);
 
-  const handleClose = (position: Position) => {
+  const createOptimisticOrder = useOrdersStore((s) => s.createOptimisticOrder);
+  const acknowledgeOrder = useOrdersStore((s) => s.acknowledgeOrder);
+  const rejectOrder = useOrdersStore((s) => s.rejectOrder);
+
+  // Submit a live close/flip through the signed-order path, tracking it as an
+  // optimistic order so it appears in Open Orders until the venue acks.
+  const submitLiveExit = useCallback(
+    async (order: TradeOrder, label: string) => {
+      const optimisticId = createOptimisticOrder(order, order.price ? Number(order.price) : undefined);
+      try {
+        const res = await submitSignedOrder(order);
+        acknowledgeOrder(optimisticId, res.id);
+        toast.success(label);
+        return res;
+      } catch (e) {
+        const msg = orderErrorMessage(e);
+        rejectOrder(optimisticId, msg);
+        toast.error(`${label} failed: ${msg}`);
+        throw e;
+      }
+    },
+    [createOptimisticOrder, acknowledgeOrder, rejectOrder]
+  );
+
+  const handleClose = useCallback((position: Position) => {
     terminalAudio.playClick();
     if (isPaperTrading) {
       const { realizedPnl } = closePaperPosition(position.id);
@@ -219,23 +255,33 @@ export function OpenPositionsTable() {
         `Closed ${position.side.toUpperCase()} ${position.market} (${realizedPnl >= 0 ? "+" : ""}$${realizedPnl.toFixed(2)})`
       );
     } else {
-      toast.info(`Closing live ${position.market} position on Starknet...`);
+      void submitLiveExit(
+        {
+          market: position.market,
+          side: position.side === "long" ? "sell" : "buy",
+          type: "market",
+          size: String(position.size),
+          reduceOnly: true,
+          tif: "IOC",
+        },
+        `Closing live ${position.market} position`
+      );
     }
-  };
+  }, [isPaperTrading, closePaperPosition, submitLiveExit]);
 
-  const handlePartialClose = (position: Position) => {
+  const handlePartialClose = useCallback((position: Position) => {
     terminalAudio.playClick();
     setPartialPosition(position);
     setPartialModalOpen(true);
-  };
+  }, []);
 
-  const handleTPSL = (position: Position) => {
+  const handleTPSL = useCallback((position: Position) => {
     terminalAudio.playClick();
     setTpslPosition(position);
     setTpslModalOpen(true);
-  };
+  }, []);
 
-  const handleReverse = (position: Position) => {
+  const handleReverse = useCallback((position: Position) => {
     terminalAudio.playOrderSubmit();
     if (isPaperTrading) {
       closePaperPosition(position.id);
@@ -255,17 +301,28 @@ export function OpenPositionsTable() {
         `⚡ Reversed position: Now ${oppositeSide.toUpperCase()} ${position.size} ${position.market}`
       );
     } else {
-      toast.info(`Reverse position submitted for ${position.market}...`);
+      // Flip atomically: one opposite-side market order at 2x position size
+      // closes the current side and opens the reverse in a single fill.
+      void submitLiveExit(
+        {
+          market: position.market,
+          side: position.side === "long" ? "sell" : "buy",
+          type: "market",
+          size: String(position.size * 2),
+          tif: "IOC",
+        },
+        `Reverse submitted for ${position.market}`
+      );
     }
-  };
+  }, [isPaperTrading, closePaperPosition, executeOrder, submitLiveExit]);
 
-  const handleShare = (position: Position) => {
+  const handleShare = useCallback((position: Position) => {
     terminalAudio.playClick();
     setSelectedPosition(position);
     setShareModalOpen(true);
-  };
+  }, []);
 
-  const handleBreakevenLimit = (position: Position) => {
+  const handleBreakevenLimit = useCallback((position: Position) => {
     terminalAudio.playOrderSubmit();
     const bePrice = calculateBreakevenPrice(position.side, position.entryPrice, feeRate);
     if (isPaperTrading) {
@@ -285,9 +342,21 @@ export function OpenPositionsTable() {
         `⚡ Placed Breakeven limit exit for ${position.market} @ $${formatPrice(bePrice)}`
       );
     } else {
-      toast.info(`Submitting BE limit exit @ $${formatPrice(bePrice)}...`);
+      void submitLiveExit(
+        {
+          market: position.market,
+          side: position.side === "long" ? "sell" : "buy",
+          type: "limit",
+          size: String(position.size),
+          price: String(bePrice),
+          reduceOnly: true,
+          postOnly: true,
+          tif: "GTC",
+        },
+        `BE limit exit submitted @ $${formatPrice(bePrice)}`
+      );
     }
-  };
+  }, [isPaperTrading, executeOrder, feeRate, submitLiveExit]);
 
   const rowData: RowItemData = useMemo(
     () => ({
@@ -301,7 +370,17 @@ export function OpenPositionsTable() {
       onShare: handleShare,
       onBreakevenLimit: handleBreakevenLimit,
     }),
-    [positions, isPaperTrading, pnlMode, feeRate]
+    [
+      positions,
+      isPaperTrading,
+      pnlMode,
+      handleClose,
+      handlePartialClose,
+      handleTPSL,
+      handleReverse,
+      handleShare,
+      handleBreakevenLimit,
+    ]
   );
 
   return (

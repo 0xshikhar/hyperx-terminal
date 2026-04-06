@@ -47,14 +47,14 @@ export function QuickTradeHUD({ market }: QuickTradeHUDProps) {
     setIsCollapsed(next);
     try {
       localStorage.setItem(STORAGE_KEY, String(next));
-    } catch {}
+    } catch { /* best-effort: ignore */ }
   };
 
   const handleSizeChange = (val: string) => {
     setSizeStr(val);
     try {
       localStorage.setItem(SIZE_STORAGE_KEY, val);
-    } catch {}
+    } catch { /* best-effort: ignore */ }
   };
 
   const adjustSize = (delta: number) => {
@@ -111,8 +111,8 @@ export function QuickTradeHUD({ market }: QuickTradeHUDProps) {
         });
         toast.success(`⚡ Scalp Submitted: ${side.toUpperCase()} ${currentSize} ${market}`);
       }
-    } catch (err: any) {
-      toast.error(err?.message || "Execution failed");
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Execution failed");
     } finally {
       setIsExecuting(false);
     }

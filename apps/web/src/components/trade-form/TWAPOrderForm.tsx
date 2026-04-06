@@ -97,8 +97,8 @@ export function TWAPOrderForm({
       }
 
       onOrderPlaced?.();
-    } catch (err: any) {
-      toast.error(err?.message || "Failed to launch TWAP order");
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Failed to launch TWAP order");
     } finally {
       setIsSubmitting(false);
     }

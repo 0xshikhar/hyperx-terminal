@@ -18,10 +18,7 @@ type OrderbookState = {
   market: string | null;
   bids: OrderbookLevel[];
   asks: OrderbookLevel[];
-  pendingBatch: OrderbookDelta[];
-  flushTimer: ReturnType<typeof setTimeout> | number | null;
   aggregation: number;
-  pendingBatchDepth: number;
   lastBatchSize: number;
   lastAppliedAt: number | null;
   lastApplyDurationMs: number | null;
@@ -34,6 +31,7 @@ type OrderbookState = {
 };
 
 const MAX_LEVELS = 200;
+const MAX_PENDING_DELTAS = 1000;
 export const FLUSH_WINDOW_MS = 50;
 
 /**
@@ -125,14 +123,16 @@ function applyCoalescedSideDeltas(
 let internalPendingDeltas: OrderbookDelta[] = [];
 let internalFlushTimer: ReturnType<typeof setTimeout> | null = null;
 
+/** Current buffered-delta depth — non-reactive, for diagnostics/metrics. */
+export function getOrderbookQueueDepth() {
+  return internalPendingDeltas.length;
+}
+
 export const useOrderbookStore = create<OrderbookState>()((set, get) => ({
   market: null,
   bids: [],
   asks: [],
-  pendingBatch: [],
-  flushTimer: null,
   aggregation: 1,
-  pendingBatchDepth: 0,
   lastBatchSize: 0,
   lastAppliedAt: null,
   lastApplyDurationMs: null,
@@ -148,9 +148,6 @@ export const useOrderbookStore = create<OrderbookState>()((set, get) => ({
       market,
       bids: [],
       asks: [],
-      pendingBatch: [],
-      flushTimer: null,
-      pendingBatchDepth: 0,
       lastBatchSize: 0,
       lastAppliedAt: null,
       lastApplyDurationMs: null,
@@ -163,8 +160,15 @@ export const useOrderbookStore = create<OrderbookState>()((set, get) => ({
     const currentMarket = get().market;
     if (currentMarket && currentMarket !== delta.market) return;
 
-    // Buffer internally: O(1) push, zero object spreads, ZERO React store notifications
+    // Buffer internally: O(1) push, zero object spreads, ZERO React store
+    // notifications. Bounded: background tabs throttle timers to ~1Hz, so an
+    // unbounded queue would balloon memory and produce one giant flush on
+    // refocus. Beyond the cap we drop oldest deltas — the next snapshot or
+    // watchdog resync restores correctness.
     internalPendingDeltas.push(delta);
+    if (internalPendingDeltas.length > MAX_PENDING_DELTAS) {
+      internalPendingDeltas.splice(0, internalPendingDeltas.length - MAX_PENDING_DELTAS);
+    }
 
     if (internalFlushTimer) return;
 
@@ -189,9 +193,6 @@ export const useOrderbookStore = create<OrderbookState>()((set, get) => ({
         market: last.market,
         bids,
         asks,
-        pendingBatch: [],
-        pendingBatchDepth: 0,
-        flushTimer: null,
         lastBatchSize: batch.length,
         lastAppliedAt: Date.now(),
         lastApplyDurationMs: durationMs,
@@ -205,7 +206,6 @@ export const useOrderbookStore = create<OrderbookState>()((set, get) => ({
       internalFlushTimer = null;
     }
     internalPendingDeltas = [];
-    set({ flushTimer: null, pendingBatch: [], pendingBatchDepth: 0 });
   },
 
   applyBatch: (batch) => {

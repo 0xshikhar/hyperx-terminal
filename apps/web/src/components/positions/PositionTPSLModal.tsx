@@ -38,11 +38,14 @@ export function PositionTPSLModal({
 
   useEffect(() => {
     if (position) {
-      const hasExisting = Boolean(position.takeProfit || position.stopLoss);
-      setTpEnabled(hasExisting ? Boolean(position.takeProfit) : true);
-      setTpPriceStr(position.takeProfit ? String(position.takeProfit) : "");
-      setSlEnabled(hasExisting ? Boolean(position.stopLoss) : true);
-      setSlPriceStr(position.stopLoss ? String(position.stopLoss) : "");
+      const raf = requestAnimationFrame(() => {
+        const hasExisting = Boolean(position.takeProfit || position.stopLoss);
+        setTpEnabled(hasExisting ? Boolean(position.takeProfit) : true);
+        setTpPriceStr(position.takeProfit ? String(position.takeProfit) : "");
+        setSlEnabled(hasExisting ? Boolean(position.stopLoss) : true);
+        setSlPriceStr(position.stopLoss ? String(position.stopLoss) : "");
+      });
+      return () => cancelAnimationFrame(raf);
     }
   }, [position, open]);
 

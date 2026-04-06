@@ -43,8 +43,11 @@ export function LeverageMarginModal({
   // Synchronize when opened
   useEffect(() => {
     if (open) {
-      setMode(initialMode || storeMode);
-      setLeverage(initialLeverage || storeGetLeverage(market));
+      const raf = requestAnimationFrame(() => {
+        setMode(initialMode || storeMode);
+        setLeverage(initialLeverage || storeGetLeverage(market));
+      });
+      return () => cancelAnimationFrame(raf);
     }
   }, [open, initialMode, initialLeverage, storeMode, storeGetLeverage, market]);
 

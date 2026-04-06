@@ -80,16 +80,22 @@ export function MarketSelectorModal({ open, onOpenChange }: MarketSelectorModalP
 
   // Keep selected index within bounds
   useEffect(() => {
-    setSelectedIndex(0);
+    const raf = requestAnimationFrame(() => setSelectedIndex(0));
+    return () => cancelAnimationFrame(raf);
   }, [category, search]);
 
   // Auto-focus input on open
   useEffect(() => {
     if (open) {
-      setSearch("");
-      setSelectedIndex(0);
+      const raf = requestAnimationFrame(() => {
+        setSearch("");
+        setSelectedIndex(0);
+      });
       const timer = setTimeout(() => inputRef.current?.focus(), 50);
-      return () => clearTimeout(timer);
+      return () => {
+        cancelAnimationFrame(raf);
+        clearTimeout(timer);
+      };
     }
   }, [open]);
 

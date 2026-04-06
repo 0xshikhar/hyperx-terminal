@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { useMarketStore } from "@/store/marketStore";
 import { cn } from "@/lib/utils";
-import { placeOrder } from "@/services/apiClient/orders.api";
 import type { PlaceOrderPayload } from "@/services/apiClient/orders.api";
+import { submitSignedOrder, orderErrorMessage } from "@/services/submitOrder";
 import { getAccountSummary } from "@/services/apiClient/account.api";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
@@ -13,8 +13,6 @@ import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { useOrdersStore } from "@/store/ordersStore";
 import { useWallet } from "@/components/wallet/useWallet";
 import { useNetworkStore } from "@/store/networkStore";
-import { getParadexSigner } from "@/services/paradex/l2Signer";
-import { toParadexMarketSymbol } from "@hyperx/types/common";
 import { WalletConnectDialog } from "@/components/wallet/WalletConnectDialog";
 import { useQuery } from "@tanstack/react-query";
 import { usePaperTradingStore } from "@/store/paperTradingStore";
@@ -25,6 +23,34 @@ import { TWAPOrderForm } from "@/components/trade-form/TWAPOrderForm";
 import { ChevronDown, Sliders, Zap } from "lucide-react";
 import { useMarginSettingsStore } from "@/store/marginSettingsStore";
 import { LeverageMarginModal } from "@/components/trade-form/LeverageMarginModal";
+import { useOrderbookStore, type OrderbookLevel } from "@/store/orderbookStore";
+
+/** Default taker fee tier — replace with the account's actual tier when the API exposes it. */
+const TAKER_FEE_RATE = 0.00035;
+
+/**
+ * Estimated slippage (bps) for a market order by walking the live book to a
+ * VWAP. Returns null when the book is empty or too thin to fill the size.
+ */
+function estimateSlippageBps(
+  levels: OrderbookLevel[] | undefined,
+  size: number
+): number | null {
+  if (!levels || levels.length === 0 || size <= 0) return null;
+  const top = levels[0].price;
+  if (top <= 0) return null;
+  let remaining = size;
+  let cost = 0;
+  for (const lvl of levels) {
+    if (remaining <= 0) break;
+    const take = Math.min(remaining, lvl.size);
+    cost += take * lvl.price;
+    remaining -= take;
+  }
+  if (remaining > 0) return null;
+  const vwap = cost / size;
+  return Math.abs(vwap / top - 1) * 10_000;
+}
 
 export type TradeOrder = {
   market: string;
@@ -36,6 +62,9 @@ export type TradeOrder = {
   takeProfit?: string;
   stopLoss?: string;
   leverage?: number;
+  reduceOnly?: boolean;
+  postOnly?: boolean;
+  tif?: "GTC" | "IOC" | "FOK";
 };
 
 type TradeFormProps = {
@@ -45,6 +74,7 @@ type TradeFormProps = {
 export function TradeForm({ onSubmit }: TradeFormProps) {
   const activeMarket = useMarketStore((s) => s.activeMarket);
   const market = useMarketStore((s) => s.markets.find((item) => item.symbol === s.activeMarket));
+  const maxLeverage = market?.maxLeverage ?? 50;
   const createOptimisticOrder = useOrdersStore((state) => state.createOptimisticOrder);
   const acknowledgeOrder = useOrdersStore((state) => state.acknowledgeOrder);
   const rejectOrder = useOrdersStore((state) => state.rejectOrder);
@@ -90,8 +120,9 @@ export function TradeForm({ onSubmit }: TradeFormProps) {
   const [leverage, setLeverageState] = useState(() => storeGetLeverage(activeMarket));
 
   useEffect(() => {
-    setLeverageState(storeGetLeverage(activeMarket));
-  }, [activeMarket, storeGetLeverage]);
+    const stored = storeGetLeverage(activeMarket);
+    setLeverageState(Math.min(stored, maxLeverage));
+  }, [activeMarket, storeGetLeverage, maxLeverage]);
 
   const setLeverage = (val: number) => {
     setLeverageState(val);
@@ -149,6 +180,8 @@ export function TradeForm({ onSubmit }: TradeFormProps) {
   const {
     errors,
     isValid,
+    numericSize,
+    entryPrice,
     notional,
     margin,
     liquidationEstimate,
@@ -163,9 +196,25 @@ export function TradeForm({ onSubmit }: TradeFormProps) {
     stopLoss,
     leverage,
     lastPrice: market?.lastPrice,
+    constraints: {
+      tickSize: market?.tickSize,
+      sizeIncrement: market?.sizeIncrement,
+      minOrderSize: market?.minOrderSize,
+      minNotional: market?.minNotional,
+      maxLeverage: market?.maxLeverage,
+      maintenanceMarginRate: market?.maintenanceMarginRate,
+    },
   });
 
+
   const walletAccount = useWallet((state) => state.account);
+
+  // Walk the live book for a market-order slippage estimate. The selector
+  // returns a primitive so the form only re-renders when the estimate changes.
+  const estSlippageBps = useOrderbookStore((s) => {
+    if (orderType !== "market" || numericSize <= 0) return null;
+    return estimateSlippageBps(side === "buy" ? s.asks : s.bids, numericSize);
+  });
 
   const submit = async (targetSide?: "buy" | "sell") => {
     const activeSide = targetSide || side;
@@ -179,13 +228,25 @@ export function TradeForm({ onSubmit }: TradeFormProps) {
       size,
       price: safeOrderType === "limit" ? price : undefined,
       stopPrice: safeOrderType === "stop" ? stopPrice : undefined,
-      takeProfit: takeProfit || undefined,
-      stopLoss: stopLoss || undefined,
+      takeProfit: bracketEnabled ? takeProfit || undefined : undefined,
+      stopLoss: bracketEnabled ? stopLoss || undefined : undefined,
       leverage,
+      reduceOnly: reduceOnly || undefined,
+      postOnly: safeOrderType === "limit" ? postOnly || undefined : undefined,
+      tif,
     };
     setIsSubmitting(true);
     terminalAudio.playOrderSubmit();
-    const effectivePrice = market?.lastPrice || Number(price) || Number(stopPrice) || 100;
+    // Resolve the execution reference price: live last/mark first, then the
+    // entered limit/stop price. If nothing is available, abort — falling back
+    // to a hardcoded number would fill at a phantom price.
+    const effectivePrice =
+      market?.lastPrice || market?.markPrice || Number(price) || Number(stopPrice) || 0;
+    if (effectivePrice <= 0) {
+      toast.error(`No live price for ${activeMarket} — order rejected`);
+      setIsSubmitting(false);
+      return;
+    }
     const optimisticOrderId = createOptimisticOrder(order, effectivePrice);
     try {
       if (isPaperTrading) {
@@ -197,6 +258,9 @@ export function TradeForm({ onSubmit }: TradeFormProps) {
             size,
             price: safeOrderType === "limit" ? price : undefined,
             stopPrice: safeOrderType === "stop" ? stopPrice : undefined,
+            takeProfit: bracketEnabled ? takeProfit || undefined : undefined,
+            stopLoss: bracketEnabled ? stopLoss || undefined : undefined,
+            reduceOnly,
             leverage,
           },
           effectivePrice
@@ -218,46 +282,13 @@ export function TradeForm({ onSubmit }: TradeFormProps) {
         terminalAudio.playOrderFill();
         toast.success("Order submitted");
       } else {
-        const signer = getParadexSigner(walletAccount);
-        if (signer) {
-          try {
-            const network = useNetworkStore.getState().network;
-            const chainId =
-              network === "mainnet"
-                ? "PRIVATE_SN_PARADEX_MAINNET"
-                : "PRIVATE_SN_PARADEX_SEPOLIA";
-            const signed = await signer.signOrder({
-              market: toParadexMarketSymbol(activeMarket),
-              side: side === "buy" ? "BUY" : "SELL",
-              orderType:
-                orderType === "limit"
-                  ? "LIMIT"
-                  : orderType === "stop"
-                    ? "STOP_MARKET"
-                    : "MARKET",
-              size,
-              price: orderType === "limit" ? price : undefined,
-              chainId,
-            });
-            order.signature = signed.signature;
-            order.signatureTimestamp = signed.signatureTimestamp;
-          } catch (e) {
-            console.warn("Client signing skipped or failed:", e);
-          }
-        }
-        const placed = await placeOrder(order);
+        const placed = await submitSignedOrder(order, walletAccount);
         acknowledgeOrder(optimisticOrderId, placed.id);
         toast.success(`Order submitted (${placed.id})`);
       }
       resetForm();
     } catch (err: unknown) {
-      const errorMsg =
-        (err as { response?: { data?: { error?: string; message?: string } } })
-          ?.response?.data?.message ||
-        (err as { response?: { data?: { error?: string } } })?.response?.data
-          ?.error ||
-        (err instanceof Error ? err.message : null) ||
-        "Order submission failed";
+      const errorMsg = orderErrorMessage(err);
       rejectOrder(optimisticOrderId, errorMsg);
       toast.error(errorMsg);
     } finally {
@@ -387,7 +418,7 @@ export function TradeForm({ onSubmit }: TradeFormProps) {
     return () => {
       shortcuts.forEach((shortcut) => unregisterShortcut(shortcut.key));
     };
-  }, [isWalletConnected, registerShortcut, unregisterShortcut]);
+  }, [canTrade, isWalletConnected, registerShortcut, unregisterShortcut]);
 
   return (
     <div id="terminal-trade-form" className="flex h-full min-h-0 flex-col bg-[#091416] text-[#c8d4d7] overflow-y-auto">
@@ -652,6 +683,46 @@ export function TradeForm({ onSubmit }: TradeFormProps) {
           />
         </div>
 
+        {/* Bracket exits: TP / SL prices applied to the resulting position */}
+        {bracketEnabled && (
+          <div className="grid grid-cols-2 gap-1.5">
+            <div className="space-y-1">
+              <label className="text-[10px] uppercase tracking-wide text-[#4b5a60]">
+                Take Profit
+              </label>
+              <input
+                type="number"
+                inputMode="decimal"
+                value={takeProfit}
+                onChange={(e) => setTakeProfit(e.target.value)}
+                placeholder={side === "buy" ? "Above entry" : "Below entry"}
+                aria-label="Take profit price"
+                className="w-full rounded border border-[#1a2830] bg-[#0c181b] px-2.5 py-1.5 font-mono text-xs text-white placeholder-[#3e4f55] outline-none focus:border-[#22d3ee]"
+              />
+              {errors.takeProfit && (
+                <p className="text-[10px] text-[#ff4757]">{errors.takeProfit}</p>
+              )}
+            </div>
+            <div className="space-y-1">
+              <label className="text-[10px] uppercase tracking-wide text-[#4b5a60]">
+                Stop Loss
+              </label>
+              <input
+                type="number"
+                inputMode="decimal"
+                value={stopLoss}
+                onChange={(e) => setStopLoss(e.target.value)}
+                placeholder={side === "buy" ? "Below entry" : "Above entry"}
+                aria-label="Stop loss price"
+                className="w-full rounded border border-[#1a2830] bg-[#0c181b] px-2.5 py-1.5 font-mono text-xs text-white placeholder-[#3e4f55] outline-none focus:border-[#22d3ee]"
+              />
+              {errors.stopLoss && (
+                <p className="text-[10px] text-[#ff4757]">{errors.stopLoss}</p>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Time In Force (TIF) */}
         <div className="flex items-center justify-between rounded-md border border-[#142328] bg-[#0a1518] px-2.5 py-1.5 text-xs">
           <span className="text-[11px] font-mono text-[#64748b]">Time in Force</span>
@@ -683,28 +754,33 @@ export function TradeForm({ onSubmit }: TradeFormProps) {
 
         {/* Order details summary box */}
         <div className="space-y-1.5 rounded border border-[#1a2830] bg-[#0c181b] p-2.5">
-          <InfoRow label="Est. Entry" value={market?.lastPrice ? `$${market.lastPrice.toFixed(2)}` : "--"} />
-          <InfoRow 
-            label="Liq. Price" 
-            value={liquidationEstimate ? `$${liquidationEstimate.toFixed(2)}` : "--"} 
+          <InfoRow label="Est. Entry" value={entryPrice ? `$${entryPrice.toFixed(2)}` : "--"} />
+          <InfoRow
+            label="Liq. Price"
+            value={liquidationEstimate ? `$${liquidationEstimate.toFixed(2)}` : "--"}
           />
-          <InfoRow 
-            label="Margin" 
+          <InfoRow
+            label="Margin"
             value={margin ? `$${margin.toFixed(2)}` : "--"}
           />
-          <InfoRow 
-            label="Notional" 
+          <InfoRow
+            label="Notional"
             value={notional ? `$${notional.toFixed(2)}` : "--"}
           />
-          <InfoRow 
-            label="Slippage" 
-            value="0.00%"
-            suffix="Est: 0% / Max: 0.05%"
+          <InfoRow
+            label="Est. Slippage"
+            value={
+              estSlippageBps != null
+                ? `${(estSlippageBps / 100).toFixed(3)}%`
+                : orderType === "market"
+                  ? "--"
+                  : "0%"
+            }
           />
-          <InfoRow 
-            label="Fee" 
-            value="0.035%"
-            suffix="$0.00"
+          <InfoRow
+            label="Est. Fee (taker)"
+            value={notional ? `$${(notional * TAKER_FEE_RATE).toFixed(2)}` : "--"}
+            suffix={`${(TAKER_FEE_RATE * 100).toFixed(3)}%`}
           />
         </div>
 
@@ -717,15 +793,15 @@ export function TradeForm({ onSubmit }: TradeFormProps) {
           <input
             type="range"
             min={1}
-            max={50}
+            max={maxLeverage}
             value={leverage}
             onChange={(e) => setLeverage(Number(e.target.value))}
             className="w-full accent-[#00d084]"
           />
           <div className="flex items-center justify-between text-[10px] text-[#506068]">
             <span>1x</span>
-            <span>25x</span>
-            <span>50x</span>
+            <span>{Math.round(maxLeverage / 2)}x</span>
+            <span>{maxLeverage}x</span>
           </div>
         </div>
 
@@ -753,7 +829,7 @@ export function TradeForm({ onSubmit }: TradeFormProps) {
               disabled={isSubmitting || !isValid}
               className="rounded bg-[#00d084] px-4 py-3 text-sm font-bold text-black transition-colors hover:bg-[#00e090] disabled:opacity-50 cursor-pointer"
             >
-              {isPaperTrading ? "Buy / Long" : "Buy / Long"}
+              Buy / Long
             </button>
             <button
               data-testid="sell-submit-btn"
@@ -761,7 +837,7 @@ export function TradeForm({ onSubmit }: TradeFormProps) {
               disabled={isSubmitting || !isValid}
               className="rounded bg-[#ff4757] px-4 py-3 text-sm font-bold text-white transition-colors hover:bg-[#ff5e6c] disabled:opacity-50 cursor-pointer"
             >
-              {isPaperTrading ? "Sell / Short" : "Sell / Short"}
+              Sell / Short
             </button>
           </div>
         )}
@@ -864,7 +940,7 @@ export function TradeForm({ onSubmit }: TradeFormProps) {
                   setOneClickTrading(checked);
                   try {
                     localStorage.setItem(ONE_CLICK_STORAGE_KEY, String(checked));
-                  } catch {}
+                  } catch { /* best-effort: ignore */ }
                   if (checked) {
                     toast.info("⚡ 1-Click Trading enabled");
                   }

@@ -82,17 +82,18 @@ export function OrderBook({ embedded = false }: OrderBookProps) {
           <span
             className={cn(
               "rounded-full px-2 py-0.5 text-[10px] uppercase font-semibold tracking-wider",
-              feedHealth.isFresh
-                ? "bg-emerald-500/10 text-emerald-400"
-                : isReference
-                  ? "bg-sky-500/10 text-sky-300"
+              isReference
+                ? "bg-sky-500/10 text-sky-300"
+                : feedHealth.isFresh
+                  ? "bg-emerald-500/10 text-emerald-400"
                   : "bg-amber-500/10 text-amber-400"
             )}
+            title={isReference ? "Showing simulated reference depth — live order book not yet connected" : undefined}
           >
-            {feedHealth.isFresh
-              ? "Live"
-              : isReference
-                ? "Ref"
+            {isReference
+              ? "Ref"
+              : feedHealth.isFresh
+                ? "Live"
                 : connectionState === "connected"
                   ? "Stale"
                   : "Offline"}

@@ -12,7 +12,7 @@ import { cn } from "@/lib/utils";
 import { useMemoryTracker } from "@/hooks/useMemoryTracker";
 import { useMarketStore } from "@/store/marketStore";
 import { useLatencyStore } from "@/store/latencyStore";
-import { FLUSH_WINDOW_MS, useOrderbookStore } from "@/store/orderbookStore";
+import { FLUSH_WINDOW_MS, getOrderbookQueueDepth, useOrderbookStore } from "@/store/orderbookStore";
 import { useRenderMetricsStore } from "@/store/renderMetricsStore";
 import { useRuntimeHealthStore } from "@/store/runtimeHealthStore";
 
@@ -23,7 +23,7 @@ export function PerformanceDashboard() {
   const { latest, growthMB, mountedComponents, isSupported } = useMemoryTracker();
   const { wsPing, apiLatency } = useLatencyStore((s) => s.latency);
   const activeMarket = useMarketStore((state) => state.activeMarket);
-  const pendingBatchDepth = useOrderbookStore((state) => state.pendingBatchDepth);
+  const queueDepth = getOrderbookQueueDepth();
   const lastBatchSize = useOrderbookStore((state) => state.lastBatchSize);
   const lastAppliedAt = useOrderbookStore((state) => state.lastAppliedAt);
   const lastApplyDurationMs = useOrderbookStore((state) => state.lastApplyDurationMs);
@@ -120,8 +120,8 @@ export function PerformanceDashboard() {
         <CompactMetric
           icon={Layers}
           label="Queue"
-          value={String(pendingBatchDepth)}
-          status={pendingBatchDepth === 0 ? "good" : pendingBatchDepth < 10 ? "fair" : "poor"}
+          value={String(queueDepth)}
+          status={queueDepth === 0 ? "good" : queueDepth < 10 ? "fair" : "poor"}
         />
         <CompactMetric
           icon={Zap}

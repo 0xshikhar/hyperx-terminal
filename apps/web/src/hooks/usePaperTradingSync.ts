@@ -6,10 +6,12 @@ import { useRuntimeHealthStore } from "@/store/runtimeHealthStore";
 
 export function usePaperTradingSync() {
   const isPaperTrading = useIsPaperTrading();
-  const lastFundingSettlementRef = useRef<number>(Date.now());
+  const lastFundingSettlementRef = useRef<number>(0);
 
   useEffect(() => {
     if (!isPaperTrading) return;
+    // Reset the funding window whenever paper trading (re)activates.
+    lastFundingSettlementRef.current = Date.now();
 
     // Check positions, open orders, and TWAP orders once per second
     const intervalId = setInterval(() => {

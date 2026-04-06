@@ -11,6 +11,8 @@ import { useIsPaperTrading } from "@/hooks/useIsPaperTrading";
 import { usePaperTradingStore } from "@/store/paperTradingStore";
 import { terminalAudio } from "@/lib/terminalAudio";
 import { cn } from "@/lib/utils";
+import { useOrdersStore } from "@/store/ordersStore";
+import { submitSignedOrder, orderErrorMessage } from "@/services/submitOrder";
 import type { Position } from "@/store/positionsStore";
 import { toast } from "sonner";
 import { Percent, ArrowDownRight, ArrowUpRight } from "lucide-react";
@@ -31,6 +33,9 @@ export function PartialCloseModal({
   const isPaperTrading = useIsPaperTrading();
   const partialClosePosition = usePaperTradingStore((s) => s.partialClosePosition);
   const paperBalance = usePaperTradingStore((s) => s.balance);
+  const createOptimisticOrder = useOrdersStore((s) => s.createOptimisticOrder);
+  const acknowledgeOrder = useOrdersStore((s) => s.acknowledgeOrder);
+  const rejectOrder = useOrdersStore((s) => s.rejectOrder);
 
   const [closeType, setCloseType] = useState<"market" | "limit">("market");
   const [percentage, setPercentage] = useState<number>(50);
@@ -39,11 +44,14 @@ export function PartialCloseModal({
 
   useEffect(() => {
     if (position) {
-      const initialSize = (position.size * 0.5).toFixed(4);
-      setPercentage(50);
-      setCustomSize(initialSize);
-      setLimitPrice(position.markPrice.toFixed(2));
-      setCloseType("market");
+      const raf = requestAnimationFrame(() => {
+        const initialSize = (position.size * 0.5).toFixed(4);
+        setPercentage(50);
+        setCustomSize(initialSize);
+        setLimitPrice(position.markPrice.toFixed(2));
+        setCloseType("market");
+      });
+      return () => cancelAnimationFrame(raf);
     }
   }, [position, open]);
 
@@ -111,9 +119,38 @@ export function PartialCloseModal({
       onCloseSuccess?.();
       onOpenChange(false);
     } else {
-      toast.info(`Submitted live partial close for ${parsedSize.toFixed(4)} ${position.market}`);
-      onCloseSuccess?.();
-      onOpenChange(false);
+      void (async () => {
+        const optimisticId = createOptimisticOrder({
+          market: position.market,
+          side: isLong ? "sell" : "buy",
+          type: closeType,
+          size: String(parsedSize),
+          price: closeType === "limit" ? limitPrice : undefined,
+          reduceOnly: true,
+          tif: closeType === "market" ? "IOC" : "GTC",
+        }, position.markPrice);
+        try {
+          const res = await submitSignedOrder({
+            market: position.market,
+            side: isLong ? "sell" : "buy",
+            type: closeType,
+            size: String(parsedSize),
+            price: closeType === "limit" ? limitPrice : undefined,
+            reduceOnly: true,
+            tif: closeType === "market" ? "IOC" : "GTC",
+          });
+          acknowledgeOrder(optimisticId, res.id);
+          toast.success(
+            `Live ${closeType} partial close submitted: ${parsedSize.toFixed(4)} ${position.market}`
+          );
+          onCloseSuccess?.();
+          onOpenChange(false);
+        } catch (e) {
+          const msg = orderErrorMessage(e);
+          rejectOrder(optimisticId, msg);
+          toast.error(`Partial close failed: ${msg}`);
+        }
+      })();
     }
   };
 

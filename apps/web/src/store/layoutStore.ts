@@ -58,7 +58,7 @@ export const useLayoutStore = create<LayoutState>((set) => ({
       } else {
         STORAGE_KEYS.forEach((key) => localStorage.removeItem(key));
       }
-    } catch {}
+    } catch { /* best-effort: ignore */ }
 
     set((s) => ({ layoutPreset: preset, layoutVersion: s.layoutVersion + 1 }));
   },
@@ -66,7 +66,7 @@ export const useLayoutStore = create<LayoutState>((set) => ({
   resetLayout: () => {
     try {
       STORAGE_KEYS.forEach((key) => localStorage.removeItem(key));
-    } catch {}
+    } catch { /* best-effort: ignore */ }
     set((s) => ({
       layoutPreset: "default",
       isFullscreenChart: false,

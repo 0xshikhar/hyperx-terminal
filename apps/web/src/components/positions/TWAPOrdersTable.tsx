@@ -21,11 +21,15 @@ export function TWAPOrdersTable() {
   const createTwapOrder = usePaperTradingStore((s) => s.createTwapOrder);
   const activeMarket = useMarketStore((s) => s.activeMarket);
 
-  // Force re-render every second to update "Next Slice" countdown
-  const [, setTick] = useState(0);
+  // Tick every second to update the "Next Slice" countdown
+  const [now, setNow] = useState(0);
   useEffect(() => {
-    const timer = setInterval(() => setTick((t) => t + 1), 1000);
-    return () => clearInterval(timer);
+    const raf = requestAnimationFrame(() => setNow(Date.now()));
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => {
+      cancelAnimationFrame(raf);
+      clearInterval(timer);
+    };
   }, []);
 
   const handleLaunchDemoTwap = () => {
@@ -102,7 +106,7 @@ export function TWAPOrdersTable() {
                   ? Math.min(100, Math.round((order.executedSize / order.totalSize) * 100))
                   : 0;
 
-              const remainingSec = Math.max(0, Math.ceil((order.nextSliceAt - Date.now()) / 1000));
+              const remainingSec = Math.max(0, Math.ceil((order.nextSliceAt - now) / 1000));
 
               return (
                 <TableRow key={order.id} className="border-b border-[#142228] hover:bg-[#112025]/50 font-mono">

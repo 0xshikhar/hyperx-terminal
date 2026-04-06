@@ -116,6 +116,8 @@ export class ParadexUserClient {
       time_in_force: orderRequest.timeInForce || "GTC",
     };
 
+    if (orderRequest.postOnly) payload.instruction = "POST_ONLY";
+    if (orderRequest.reduceOnly) payload.flags = ["REDUCE_ONLY"];
     if (orderRequest.price) payload.price = orderRequest.price;
     if (orderRequest.stopPrice) payload.trigger_price = orderRequest.stopPrice;
     if (orderRequest.clientId) payload.client_id = orderRequest.clientId;

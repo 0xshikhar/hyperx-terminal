@@ -23,6 +23,7 @@ import {
   useActiveMarket,
   useActiveMarketSummary,
   useActiveMarketStats,
+  useMarketStore,
   useMarketSymbols,
   useSetActiveMarket,
 } from "@/store/marketStore";
@@ -40,6 +41,8 @@ import {
   ResizableHandle,
 } from "@/components/ui/resizable";
 import { SettlementCountdown } from "@/components/risk/SettlementCountdown";
+import { cancelAllOrders as cancelAllOrdersApi } from "@/services/apiClient/orders.api";
+import { orderErrorMessage } from "@/services/submitOrder";
 import { MarketSelectorModal } from "@/components/market-selector/MarketSelectorModal";
 import { KeyboardShortcutsModal } from "@/components/modals/KeyboardShortcutsModal";
 import { FundingMatrixModal } from "@/components/modals/FundingMatrixModal";
@@ -61,10 +64,13 @@ function usePriceFlash(price: number) {
     const prev = prevRef.current;
     if (price !== prev && prev !== 0) {
       const cls = price > prev ? "flash-up" : "flash-down";
-      setFlashClass(cls);
+      const raf = requestAnimationFrame(() => setFlashClass(cls));
       const t = window.setTimeout(() => setFlashClass(""), 420);
       prevRef.current = price;
-      return () => window.clearTimeout(t);
+      return () => {
+        cancelAnimationFrame(raf);
+        window.clearTimeout(t);
+      };
     }
     prevRef.current = price;
   }, [price]);
@@ -270,12 +276,21 @@ function MarketStatsStrip({ onOpenFundingModal }: { onOpenFundingModal?: () => v
     openInterest,
     fundingRate,
   } = useActiveMarketStats();
+  const hasHydrated = useMarketStore((s) => s.hasHydrated);
 
   return (
     <div className="flex items-center justify-between overflow-x-auto scrollbar-hide pr-3">
       <div className="flex items-center divide-x divide-[#1a2830]">
-        <StatChip label="Mark" value={`$${formatPrice(markPrice)}`} />
-        <StatChip label="Oracle" value={`$${formatPrice(oraclePrice)}`} />
+        {!hasHydrated && (
+          <span
+            className="mr-2 rounded-full bg-sky-500/10 px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider text-sky-300 animate-pulse"
+            title="Connecting to market data — values shown are placeholders"
+          >
+            Syncing
+          </span>
+        )}
+        <StatChip label="Mark" value={hasHydrated ? `$${formatPrice(markPrice)}` : "--"} />
+        <StatChip label="Oracle" value={hasHydrated ? `$${formatPrice(oraclePrice)}` : "--"} />
         <StatChip
           label="24h Change"
           value={`${isPositive ? "+" : ""}${changePercent24h.toFixed(2)}%`}
@@ -352,7 +367,10 @@ export function TerminalPage() {
     } else {
       const count = cancelAllRealOrders();
       if (count > 0) {
-        toast.success(`🚨 Panic cancelled ${count} open live order(s)`);
+        toast.success(`🚨 Panic cancelling ${count} open live order(s)...`);
+        void cancelAllOrdersApi().catch((e) => {
+          toast.error(`Panic cancel failed: ${orderErrorMessage(e)}`);
+        });
       } else {
         toast.info("No open live orders to cancel");
       }

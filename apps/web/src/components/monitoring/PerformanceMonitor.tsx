@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { usePerformanceReporter } from "@/hooks/usePerformanceReporter";
-import { useFPSMonitor } from "@/components/monitoring/FPSCounter";
+import { useFPSMonitor } from "@/hooks/useFPSMonitor";
 
 export function PerformanceMonitor() {
   const { report } = usePerformanceReporter();

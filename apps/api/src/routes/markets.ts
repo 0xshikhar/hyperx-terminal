@@ -124,6 +124,11 @@ export async function marketRoutes(app: FastifyInstance) {
             0
           );
 
+          const num = (v: unknown) => {
+            const n = Number(v);
+            return Number.isFinite(n) && n > 0 ? n : undefined;
+          };
+
           return {
             symbol,
             name: (m.name ?? m.baseCurrency ?? symbol ?? "") as string,
@@ -134,6 +139,16 @@ export async function marketRoutes(app: FastifyInstance) {
             volume24h: Math.round(volume24h * 100) / 100,
             openInterest: Math.round(openInterest * 100) / 100,
             fundingRate,
+            tickSize: num(m.price_tick_size ?? m.tickSize ?? m.priceTickSize),
+            sizeIncrement: num(m.order_size_increment ?? m.min_order_size_increment ?? m.sizeIncrement),
+            minOrderSize: num(m.min_order_size ?? m.min_order_size_increment),
+            minNotional: num(m.min_notional),
+            maxLeverage: num(m.max_leverage ?? m.maxLeverage),
+            maintenanceMarginRate: num(
+              m.maintenance_margin_fraction ??
+              m.maintenance_margin_requirement ??
+              m.maintenanceMarginRate
+            ),
           };
         });
       return { markets: mapped };

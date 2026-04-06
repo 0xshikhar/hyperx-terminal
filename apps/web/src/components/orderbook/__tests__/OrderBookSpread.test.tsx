@@ -5,8 +5,8 @@ import * as terminalActions from "@/lib/terminalActions";
 
 const mockDispatch = vi.spyOn(terminalActions, "dispatchTerminalAction").mockImplementation(() => {});
 
-let mockActiveMarket = "BTC-USD";
-let mockMarkets = [
+const mockActiveMarket = "BTC-USD";
+const mockMarkets = [
   {
     symbol: "BTC-USD",
     lastPrice: 76500.5,
@@ -16,7 +16,7 @@ let mockMarkets = [
 ];
 
 vi.mock("@/store/marketStore", () => ({
-  useMarketStore: (selector: (state: any) => unknown) =>
+  useMarketStore: (selector: (state: Record<string, unknown>) => unknown) =>
     selector({
       activeMarket: mockActiveMarket,
       markets: mockMarkets,

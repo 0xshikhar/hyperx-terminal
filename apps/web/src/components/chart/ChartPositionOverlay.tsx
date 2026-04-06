@@ -129,7 +129,7 @@ export function ChartPositionOverlay({
             title: `${position.side.toUpperCase()} ${position.size} @ $${position.entryPrice.toLocaleString()}`,
           });
           linesMap.set(entryKey, line);
-        } catch {}
+        } catch { /* best-effort: ignore */ }
       } else {
         linesMap.get(entryKey)?.applyOptions({
           price: position.entryPrice,
@@ -158,7 +158,7 @@ export function ChartPositionOverlay({
             title: `LIQ $${liqPrice.toFixed(2)}`,
           });
           linesMap.set(liqKey, line);
-        } catch {}
+        } catch { /* best-effort: ignore */ }
       } else {
         linesMap.get(liqKey)?.applyOptions({
           price: liqPrice,
@@ -182,7 +182,7 @@ export function ChartPositionOverlay({
               title: `TP $${position.takeProfit.toFixed(2)}`,
             });
             linesMap.set(tpKey, line);
-          } catch {}
+          } catch { /* best-effort: ignore */ }
         } else {
           linesMap.get(tpKey)?.applyOptions({
             price: position.takeProfit,
@@ -208,7 +208,7 @@ export function ChartPositionOverlay({
               title: `SL $${position.stopLoss.toFixed(2)}`,
             });
             linesMap.set(slKey, line);
-          } catch {}
+          } catch { /* best-effort: ignore */ }
         } else {
           linesMap.get(slKey)?.applyOptions({
             price: position.stopLoss,
@@ -241,7 +241,7 @@ export function ChartPositionOverlay({
             title: `${order.side.toUpperCase()} ${order.type?.toUpperCase() || "LIMIT"} ${order.size}`,
           });
           linesMap.set(orderKey, line);
-        } catch {}
+        } catch { /* best-effort: ignore */ }
       } else {
         linesMap.get(orderKey)?.applyOptions({
           price: orderPrice,
@@ -256,7 +256,7 @@ export function ChartPositionOverlay({
       if (!currentLineKeys.has(key)) {
         try {
           series.removePriceLine(line);
-        } catch {}
+        } catch { /* best-effort: ignore */ }
         linesMap.delete(key);
       }
     }
@@ -266,7 +266,7 @@ export function ChartPositionOverlay({
       for (const [, line] of linesMap.entries()) {
         try {
           series.removePriceLine(line);
-        } catch {}
+        } catch { /* best-effort: ignore */ }
       }
       linesMap.clear();
     };
@@ -274,7 +274,8 @@ export function ChartPositionOverlay({
 
   // Trigger coordinate re-calculation when chart pans, zooms, or ticks
   useEffect(() => {
-    setCoordsVersion((v) => v + 1);
+    const raf = requestAnimationFrame(() => setCoordsVersion((v) => v + 1));
+    return () => cancelAnimationFrame(raf);
   }, [overlayTrigger, activePositions, activeOrders, series]);
 
   // Compute live Y pixel coordinates for interactive chips

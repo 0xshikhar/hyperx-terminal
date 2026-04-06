@@ -27,6 +27,16 @@ export type Order = {
   updatedAt: number;
   rejectReason?: string;
   source: "api" | "optimistic";
+  /** Paper trading: leverage the order was placed with (for margin accounting). */
+  leverage?: number;
+  /** Paper trading: margin reserved at placement, refunded on cancel/fill. */
+  reservedMargin?: number;
+  /** Bracket exits carried through to the position when this order fills. */
+  takeProfit?: number;
+  stopLoss?: number;
+  reduceOnly?: boolean;
+  postOnly?: boolean;
+  tif?: "GTC" | "IOC" | "FOK";
 };
 
 type OrdersState = {
@@ -215,9 +225,21 @@ export const useOrdersStore = create<OrdersState>()((set) => ({
         updatedAt: now(),
         source: "api",
       }));
-      set({
-        openOrders: mapped.length > 0 ? mapped : [],
-        isLoading: false,
+      // Reconcile: keep optimistic orders still awaiting an exchange ack —
+      // replacing wholesale would make a just-placed order vanish until the
+      // next fetch cycle.
+      set((state) => {
+        const apiIds = new Set(mapped.map((o) => o.exchangeOrderId ?? o.id));
+        const pendingOptimistic = state.openOrders.filter(
+          (o) =>
+            o.source === "optimistic" &&
+            (o.status === "pending" || o.status === "cancel_pending") &&
+            !(o.exchangeOrderId && apiIds.has(o.exchangeOrderId))
+        );
+        return {
+          openOrders: [...pendingOptimistic, ...mapped],
+          isLoading: false,
+        };
       });
     } catch (error) {
       set({

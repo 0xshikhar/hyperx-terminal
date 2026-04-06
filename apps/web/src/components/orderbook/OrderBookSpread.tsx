@@ -23,11 +23,16 @@ export function OrderBookSpread({ bids, asks }: OrderBookSpreadProps) {
   useEffect(() => {
     if (currentPrice > 0 && prevPriceRef.current > 0 && currentPrice !== prevPriceRef.current) {
       const isUp = currentPrice > prevPriceRef.current;
-      setDirection(isUp ? "up" : "down");
-      setFlash(isUp ? "up" : "down");
+      const raf = requestAnimationFrame(() => {
+        setDirection(isUp ? "up" : "down");
+        setFlash(isUp ? "up" : "down");
+      });
       const timer = setTimeout(() => setFlash(null), 450);
       prevPriceRef.current = currentPrice;
-      return () => clearTimeout(timer);
+      return () => {
+        cancelAnimationFrame(raf);
+        clearTimeout(timer);
+      };
     }
     prevPriceRef.current = currentPrice;
   }, [currentPrice]);

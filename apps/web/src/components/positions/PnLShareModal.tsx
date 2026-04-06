@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Copy, Share2, TrendingUp, TrendingDown, Check } from "lucide-react";
 import { toast } from "sonner";
@@ -50,6 +50,9 @@ export function PnLShareModal({ position, open, onOpenChange }: PnLShareModalPro
             <Share2 className="h-4 w-4 text-[#22d3ee]" />
             SHARE P&L CARD
           </DialogTitle>
+          <DialogDescription className="sr-only">
+            Preview and share a card showing this position's profit and loss
+          </DialogDescription>
         </DialogHeader>
 
         {/* ── Brag Card Container ── */}

@@ -12,6 +12,19 @@ export type Trade = {
 
 export type IncomingTrade = Omit<Trade, "market" | "time">;
 
+// toLocaleTimeString allocates + formats per call — at 500+ trades/s that's
+// measurable GC pressure. Most trades share a second, so cache the string.
+let cachedSecond = -1;
+let cachedTimeStr = "";
+function formatTradeTime(timestamp: number) {
+  const second = Math.floor(timestamp / 1000);
+  if (second !== cachedSecond) {
+    cachedSecond = second;
+    cachedTimeStr = new Date(timestamp).toLocaleTimeString();
+  }
+  return cachedTimeStr;
+}
+
 type TradeState = {
   tradesByMarket: Record<string, Trade[]>;
   maxTrades: number;
@@ -29,7 +42,7 @@ export const useTradeStore = create<TradeState>()((set, get) => ({
       const normalized = trades.map((trade) => ({
         ...trade,
         market,
-        time: new Date(trade.timestamp).toLocaleTimeString(),
+        time: formatTradeTime(trade.timestamp),
       }));
       const combined = [...normalized, ...existing].slice(0, maxTrades);
       return { tradesByMarket: { ...state.tradesByMarket, [market]: combined } };

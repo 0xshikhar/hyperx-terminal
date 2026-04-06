@@ -4,7 +4,7 @@ import { QuickTradeHUD } from "../QuickTradeHUD";
 import { usePaperTradingStore } from "@/store/paperTradingStore";
 
 vi.mock("@/store/marketStore", () => ({
-  useMarketStore: (selector: (state: any) => any) =>
+  useMarketStore: (selector: (state: Record<string, unknown>) => unknown) =>
     selector({
       markets: [
         { symbol: "BTC-USD-PERP", lastPrice: 76000 },

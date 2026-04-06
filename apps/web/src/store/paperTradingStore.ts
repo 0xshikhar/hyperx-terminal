@@ -72,7 +72,10 @@ export interface PaperTradingState {
       size: string | number;
       price?: string | number;
       stopPrice?: string | number;
+      takeProfit?: string | number;
+      stopLoss?: string | number;
       leverage?: number;
+      reduceOnly?: boolean;
     },
     referencePrice?: number
   ) => { orderId: string; status: "filled" | "open"; price: number };
@@ -136,12 +139,25 @@ export const usePaperTradingStore = create<PaperTradingState>()(
         if (sizeNum <= 0) throw new Error("Order size must be greater than 0");
 
         const leverage = Math.max(1, order.leverage || 10);
+        const takeProfit = Number(order.takeProfit) || undefined;
+        const stopLoss = Number(order.stopLoss) || undefined;
         const state = get();
+
+        // Reduce-only orders must shrink an existing opposite-side position —
+        // never open, grow, or flip one (venue rule).
+        if (order.reduceOnly) {
+          const pos = state.positions.find((p) => p.market === order.market);
+          if (!pos) throw new Error("Reduce-only rejected: no open position");
+          if ((pos.side === "long") === (order.side === "buy"))
+            throw new Error("Reduce-only order must trade against the position side");
+          if (sizeNum > pos.size)
+            throw new Error(`Reduce-only size exceeds position size (${pos.size})`);
+        }
 
         // 1. MARKET ORDER
         if (order.type === "market") {
-          const execPrice = referencePrice || Number(order.price) || 100;
-          if (execPrice <= 0) throw new Error("Invalid market reference price");
+          const execPrice = referencePrice || Number(order.price) || 0;
+          if (execPrice <= 0) throw new Error("No valid reference price for market order");
 
           const reqMargin = (execPrice * sizeNum) / leverage;
           if (state.balance < reqMargin) {
@@ -153,7 +169,7 @@ export const usePaperTradingStore = create<PaperTradingState>()(
           const targetSide = order.side === "buy" ? "long" : "short";
           const existingIndex = state.positions.findIndex((p) => p.market === order.market);
 
-          let nextPositions = [...state.positions];
+          const nextPositions = [...state.positions];
           let nextBalance = state.balance - reqMargin;
           let realizedPnl = 0;
 
@@ -259,6 +275,19 @@ export const usePaperTradingStore = create<PaperTradingState>()(
             nextPositions.unshift(newPos);
           }
 
+          // Attach TP/SL to the resulting (or surviving) position when the
+          // order carried bracket exits — mirrors venue bracket orders.
+          if (takeProfit || stopLoss) {
+            const posIdx = nextPositions.findIndex((p) => p.market === order.market);
+            if (posIdx !== -1) {
+              nextPositions[posIdx] = {
+                ...nextPositions[posIdx],
+                ...(takeProfit ? { takeProfit } : {}),
+                ...(stopLoss ? { stopLoss } : {}),
+              };
+            }
+          }
+
           const orderId = `paper-trade-${Date.now()}`;
           const tradeRecord: PaperTradeRecord = {
             id: orderId,
@@ -319,6 +348,11 @@ export const usePaperTradingStore = create<PaperTradingState>()(
           createdAt: Date.now(),
           updatedAt: Date.now(),
           source: "optimistic",
+          leverage,
+          reservedMargin: reqMargin,
+          takeProfit,
+          stopLoss,
+          reduceOnly: order.reduceOnly || undefined,
         };
 
         set({
@@ -495,8 +529,11 @@ export const usePaperTradingStore = create<PaperTradingState>()(
           // Fill triggered orders
           for (const ord of triggeredOrders) {
             try {
-              // Order margin was already reserved when placed
-              const returnedMargin = (ord.price * ord.size) / 10;
+              // Refund the margin reserved at placement (order's own leverage),
+              // then execute as market at the trigger mark — TP/SL the order
+              // carried flow through to the resulting position.
+              const returnedMargin =
+                ord.reservedMargin ?? (ord.price * ord.size) / (ord.leverage ?? 10);
               set((s) => ({ balance: s.balance + returnedMargin }));
               get().executeOrder(
                 {
@@ -505,7 +542,10 @@ export const usePaperTradingStore = create<PaperTradingState>()(
                   type: "market",
                   size: ord.size,
                   price: ord.price,
-                  leverage: 10,
+                  leverage: ord.leverage ?? 10,
+                  takeProfit: ord.takeProfit,
+                  stopLoss: ord.stopLoss,
+                  reduceOnly: ord.reduceOnly,
                 },
                 markPrice
               );
@@ -529,7 +569,7 @@ export const usePaperTradingStore = create<PaperTradingState>()(
                   ...s.orderHistory,
                 ].slice(0, 100),
               }));
-            } catch {}
+            } catch { /* best-effort: ignore */ }
           }
         }
 
@@ -723,7 +763,8 @@ export const usePaperTradingStore = create<PaperTradingState>()(
         const order = state.openOrders.find((o) => o.id === orderId);
         if (!order) return;
 
-        const reservedMargin = (order.price * order.size) / 10;
+        const reservedMargin =
+          order.reservedMargin ?? (order.price * order.size) / (order.leverage ?? 10);
 
         const cancelledHistoryRecord: PaperOrderHistoryRecord = {
           id: order.id,
@@ -756,7 +797,8 @@ export const usePaperTradingStore = create<PaperTradingState>()(
         const cancelledRecords: PaperOrderHistoryRecord[] = [];
 
         for (const order of ordersToCancel) {
-          const reservedMargin = (order.price * order.size) / 10;
+          const reservedMargin =
+            order.reservedMargin ?? (order.price * order.size) / (order.leverage ?? 10);
           totalRefunded += reservedMargin;
           cancelledRecords.push({
             id: order.id,

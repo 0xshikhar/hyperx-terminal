@@ -100,7 +100,7 @@ class TerminalAudioEngine {
 
       osc.start(now);
       osc.stop(now + 0.045);
-    } catch {}
+    } catch { /* best-effort: ignore */ }
   }
 
   /**
@@ -136,7 +136,7 @@ class TerminalAudioEngine {
       gain2.connect(ctx.destination);
       osc2.start(now + 0.06);
       osc2.stop(now + 0.22);
-    } catch {}
+    } catch { /* best-effort: ignore */ }
   }
 
   /**
@@ -163,7 +163,7 @@ class TerminalAudioEngine {
 
       osc.start(now);
       osc.stop(now + 0.09);
-    } catch {}
+    } catch { /* best-effort: ignore */ }
   }
 
   /**
@@ -191,7 +191,7 @@ class TerminalAudioEngine {
         osc.start(now + offset);
         osc.stop(now + offset + 0.08);
       });
-    } catch {}
+    } catch { /* best-effort: ignore */ }
   }
 }
 

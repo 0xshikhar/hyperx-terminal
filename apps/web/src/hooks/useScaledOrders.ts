@@ -123,12 +123,9 @@ export function calculateScaledOrders({
 }
 
 export function useScaledOrders(params: UseScaledOrdersParams): ScaledOrdersResult {
-  return useMemo(() => calculateScaledOrders(params), [
-    params.startPrice,
-    params.endPrice,
-    params.totalSize,
-    params.orderCount,
-    params.distribution,
-    params.leverage,
-  ]);
+  const { startPrice, endPrice, totalSize, orderCount, distribution, leverage } = params;
+  return useMemo(
+    () => calculateScaledOrders({ startPrice, endPrice, totalSize, orderCount, distribution, leverage }),
+    [startPrice, endPrice, totalSize, orderCount, distribution, leverage]
+  );
 }

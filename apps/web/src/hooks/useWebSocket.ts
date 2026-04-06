@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   wsClient,
   type CandlesChannel,
@@ -7,7 +7,6 @@ import {
   type SubscribableChannel,
   type WSChannel,
 } from "@/services/wsClient";
-import { useLatencyStore } from "@/store/latencyStore";
 
 type Listener<T> = { bivarianceHack(payload: T): void }["bivarianceHack"];
 
@@ -17,9 +16,6 @@ export function useWSClient() {
 
 export function useWebSocket(autoConnect = true) {
   const [state, setState] = useState<ConnectionState>(wsClient.connectionState);
-  const pingIntervalRef = useRef<number | null>(null);
-  const pongUnsubscribeRef = useRef<(() => void) | null>(null);
-  const pongTimeoutRef = useRef<number | null>(null);
 
   useEffect(() => {
     const unsubscribe = wsClient.onStateChange(setState);
@@ -30,78 +26,6 @@ export function useWebSocket(autoConnect = true) {
       unsubscribe();
     };
   }, [autoConnect]);
-
-  useEffect(() => {
-    if (state !== "connected") {
-      if (pingIntervalRef.current) {
-        clearInterval(pingIntervalRef.current);
-        pingIntervalRef.current = null;
-      }
-      if (pongUnsubscribeRef.current) {
-        pongUnsubscribeRef.current();
-        pongUnsubscribeRef.current = null;
-      }
-      if (pongTimeoutRef.current) {
-        window.clearTimeout(pongTimeoutRef.current);
-        pongTimeoutRef.current = null;
-      }
-      return;
-    }
-
-    const sendPing = () => {
-      if (pongUnsubscribeRef.current) {
-        pongUnsubscribeRef.current();
-        pongUnsubscribeRef.current = null;
-      }
-      if (pongTimeoutRef.current) {
-        window.clearTimeout(pongTimeoutRef.current);
-        pongTimeoutRef.current = null;
-      }
-
-      const startTime = performance.now();
-      const handlePong = () => {
-        const ping = performance.now() - startTime;
-        useLatencyStore.getState().setWsPing(ping);
-        if (pongUnsubscribeRef.current) {
-          pongUnsubscribeRef.current();
-          pongUnsubscribeRef.current = null;
-        }
-        if (pongTimeoutRef.current) {
-          window.clearTimeout(pongTimeoutRef.current);
-          pongTimeoutRef.current = null;
-        }
-      };
-      
-      pongUnsubscribeRef.current = wsClient.on("pong", handlePong as Listener<unknown>);
-      wsClient.ping();
-      
-      pongTimeoutRef.current = window.setTimeout(() => {
-        if (pongUnsubscribeRef.current) {
-          pongUnsubscribeRef.current();
-          pongUnsubscribeRef.current = null;
-        }
-        pongTimeoutRef.current = null;
-      }, 1000);
-    };
-
-    sendPing();
-    pingIntervalRef.current = window.setInterval(sendPing, 5000);
-
-    return () => {
-      if (pingIntervalRef.current) {
-        clearInterval(pingIntervalRef.current);
-        pingIntervalRef.current = null;
-      }
-      if (pongUnsubscribeRef.current) {
-        pongUnsubscribeRef.current();
-        pongUnsubscribeRef.current = null;
-      }
-      if (pongTimeoutRef.current) {
-        window.clearTimeout(pongTimeoutRef.current);
-        pongTimeoutRef.current = null;
-      }
-    };
-  }, [state]);
 
   const subscribe = useCallback(
     (channel: SubscribableChannel | CandlesChannel, market?: string) => {

@@ -31,6 +31,14 @@ type RuntimeHealthState = {
   reconnectPlan: ReconnectPlan;
   lastDisconnect: DisconnectSnapshot;
   feedsByMarket: Record<string, FeedTimestamps>;
+  /** Smoothed WS round-trip measured by the client heartbeat (ms). */
+  heartbeatRttMs: number | null;
+  /** Inbound WS messages per second (1s sampling window). */
+  messagesPerSecond: number;
+  /** Per-channel message counts from the last sampling window. */
+  messageRateByChannel: Record<string, number>;
+  /** Last time the feed watchdog force-resubscribed. */
+  lastFeedWatchdogAt: number | null;
   setConnectionState: (state: ConnectionState) => void;
   recordConnectionEvent: (event: WSConnectionEvent) => void;
   recordPong: (timestamp?: number) => void;
@@ -58,6 +66,10 @@ export const useRuntimeHealthStore = create<RuntimeHealthState>()((set, get) => 
   reconnectPlan: null,
   lastDisconnect: null,
   feedsByMarket: {},
+  heartbeatRttMs: null,
+  messagesPerSecond: 0,
+  messageRateByChannel: {},
+  lastFeedWatchdogAt: null,
 
   setConnectionState: (state) =>
     set({
@@ -93,6 +105,22 @@ export const useRuntimeHealthStore = create<RuntimeHealthState>()((set, get) => 
           return {
             ...base,
             lastErrorAt: event.timestamp,
+          };
+        case "heartbeat":
+          return {
+            ...base,
+            heartbeatRttMs: Math.round(event.rttMs * 10) / 10,
+          };
+        case "rate_sample":
+          return {
+            ...base,
+            messagesPerSecond: event.messagesPerSecond,
+            messageRateByChannel: event.byChannel,
+          };
+        case "feed_watchdog":
+          return {
+            ...base,
+            lastFeedWatchdogAt: event.timestamp,
           };
         case "reconnect_scheduled":
           return {

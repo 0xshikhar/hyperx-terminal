@@ -9,7 +9,6 @@ import { NotificationsToastBridge } from "@/components/notifications/Notificatio
 import { useUIStore, getEffectiveTheme } from "@/store/uiStore";
 import { useMarketStore } from "@/store/marketStore";
 import { KeyboardShortcutsProvider } from "@/hooks/useKeyboardShortcuts";
-import { ToastContainer } from "@/components/toast/Toast";
 import { initAuth } from "@/services/auth.service";
 import { useThemeKeyboardShortcut } from "@/hooks/useTheme";
 import "~/styles/globals.css";
@@ -30,7 +29,18 @@ const KeyboardShortcutsHelp = lazy(() =>
   }))
 );
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      // Market/portfolio data goes stale fast but shouldn't refetch on every
+      // mount — WS feeds are the source of truth for live prices.
+      staleTime: 10_000,
+      gcTime: 5 * 60_000,
+      retry: 2,
+      refetchOnWindowFocus: true,
+    },
+  },
+});
 
 export function AppRoot() {
   const theme = useUIStore((s) => s.theme);
@@ -91,13 +101,18 @@ export function AppRoot() {
     <KeyboardShortcutsProvider>
       <QueryClientProvider client={queryClient}>
         <BrowserRouter>
+          <App />
+          <NotificationsToastBridge />
+          <SonnerToaster />
+          {/* Each lazy overlay gets its own boundary so a chunk fetch can
+              never blank the whole terminal. */}
           <Suspense fallback={null}>
-            <App />
-            <NotificationsToastBridge />
             <PerformanceMonitor />
-            <SonnerToaster />
-            <ToastContainer position="top-right" />
+          </Suspense>
+          <Suspense fallback={null}>
             <CommandPaletteV2 open={commandPaletteOpen} onOpenChange={setCommandPaletteOpen} />
+          </Suspense>
+          <Suspense fallback={null}>
             <KeyboardShortcutsHelp open={keyboardHelpOpen} onClose={() => setKeyboardHelpOpen(false)} />
           </Suspense>
         </BrowserRouter>

@@ -4,7 +4,6 @@ import { useOrderbookStore, type OrderbookLevel } from "@/store/orderbookStore";
 import { useOrdersStore } from "@/store/ordersStore";
 import { useNetworkStore } from "@/store/networkStore";
 import { useMarketStore } from "@/store/marketStore";
-import { useRuntimeHealthStore } from "@/store/runtimeHealthStore";
 import { normalizeMarketSymbol } from "@hyperx/types/common";
 
 export type OrderBookRow = {
@@ -82,8 +81,6 @@ const aggregateLevels = (levels: OrderbookLevel[], aggregation: number, side: "b
 export function useOrderBook(market: string) {
   const normalizedMarket = useMemo(() => normalizeMarketSymbol(market), [market]);
   const network = useNetworkStore((s) => s.network);
-  const connectionState = useRuntimeHealthStore((s) => s.connectionState);
-  const getMarketFeedHealth = useRuntimeHealthStore((s) => s.getMarketFeedHealth);
   const aggregation = useOrderbookStore((state) => state.aggregation);
   const setAggregation = useOrderbookStore((state) => state.setAggregation);
   const bids = useOrderbookStore((state) => state.bids);
@@ -120,19 +117,19 @@ export function useOrderBook(market: string) {
     return set;
   }, [openOrders, normalizedMarket, aggregation]);
 
+  // Only fall back to synthetic reference levels when there is NO live book at
+  // all — never mix fabricated liquidity into a side that has real data.
+  const hasLiveBook = bids.length > 0 || asks.length > 0;
+
   const sourceBids = useMemo(() => {
-    if (bids.length > 0 && bids[0].price > centerPrice * 0.5) {
-      return bids;
-    }
+    if (hasLiveBook) return bids;
     return generateReferenceLevels(centerPrice, "bid", 15);
-  }, [bids, centerPrice]);
+  }, [bids, hasLiveBook, centerPrice]);
 
   const sourceAsks = useMemo(() => {
-    if (asks.length > 0) {
-      return asks;
-    }
+    if (hasLiveBook) return asks;
     return generateReferenceLevels(centerPrice, "ask", 15);
-  }, [asks, centerPrice]);
+  }, [asks, hasLiveBook, centerPrice]);
 
   const aggregatedBids = useMemo(
     () => aggregateLevels(sourceBids, aggregation, "bid"),
@@ -189,14 +186,10 @@ export function useOrderBook(market: string) {
     }));
   }, [aggregatedAsks, minePriceSet]);
 
-  const feedHealth =
-    typeof getMarketFeedHealth === "function"
-      ? getMarketFeedHealth(normalizedMarket)
-      : { isFresh: true };
-  const isReference =
-    sourceBids.length === 0 &&
-    sourceAsks.length === 0 &&
-    (connectionState !== "connected" || !feedHealth?.isFresh);
+  // `isReference` marks the visible book as synthetic reference levels, not
+  // venue liquidity. It must be true whenever generated levels are shown —
+  // previously it could never be true, so fabricated depth rendered as "Live".
+  const isReference = !hasLiveBook;
 
   return {
     aggregation,

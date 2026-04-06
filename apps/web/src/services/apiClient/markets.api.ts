@@ -17,6 +17,13 @@ export type MarketSummary = {
   volume24h?: number;
   openInterest?: number;
   fundingRate?: number;
+  /** Venue constraints — parsed when the API returns them, undefined otherwise. */
+  tickSize?: number;
+  sizeIncrement?: number;
+  minOrderSize?: number;
+  minNotional?: number;
+  maxLeverage?: number;
+  maintenanceMarginRate?: number;
 };
 
 function toMarketSummary(market: Record<string, unknown>): MarketSummary | null {
@@ -48,7 +55,30 @@ function toMarketSummary(market: Record<string, unknown>): MarketSummary | null 
     volume24h: typeof market.volume24h === "number" ? market.volume24h : undefined,
     openInterest: typeof market.openInterest === "number" ? market.openInterest : undefined,
     fundingRate: typeof market.fundingRate === "number" ? market.fundingRate : undefined,
+    tickSize: pickNumber(market, ["tickSize", "priceTickSize", "price_tick_size"]),
+    sizeIncrement: pickNumber(market, ["sizeIncrement", "orderSizeIncrement", "order_size_increment", "lotSize"]),
+    minOrderSize: pickNumber(market, ["minOrderSize", "min_order_size", "min_order_size_increment", "minSize"]),
+    minNotional: pickNumber(market, ["minNotional", "min_notional", "minOrderValue"]),
+    maxLeverage: pickNumber(market, ["maxLeverage", "max_leverage"]),
+    maintenanceMarginRate: pickNumber(market, [
+      "maintenanceMarginRate",
+      "maintenanceMarginFraction",
+      "maintenance_margin_fraction",
+      "maintenance_margin_requirement",
+    ]),
   };
+}
+
+function pickNumber(source: Record<string, unknown>, keys: string[]): number | undefined {
+  for (const key of keys) {
+    const value = source[key];
+    if (typeof value === "number" && Number.isFinite(value) && value > 0) return value;
+    if (typeof value === "string") {
+      const parsed = Number(value);
+      if (Number.isFinite(parsed) && parsed > 0) return parsed;
+    }
+  }
+  return undefined;
 }
 
 export async function listMarkets(): Promise<MarketSummary[]> {
